@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase/client'
+import { locaisService } from '@/services/locais'
 
 export interface LocationItem {
   id: string
@@ -25,15 +25,17 @@ export function useLocations() {
     }
 
     const fetchLocations = async () => {
-      const { data, error } = await supabase
-        .from('locais')
-        .select('id, nome, endereco')
-        .eq('ativo', true)
-        .order('nome')
-
-      if (!error && data) {
-        cachedLocations = data
-        setLocations(data)
+      try {
+        const data = await locaisService.getAll()
+        const mapped = data.map((l: any) => ({
+          id: l.id,
+          nome: l.nome,
+          endereco: l.endereco,
+        }))
+        cachedLocations = mapped
+        setLocations(mapped)
+      } catch (e) {
+        console.error('Error fetching locations:', e)
       }
       setLoading(false)
     }

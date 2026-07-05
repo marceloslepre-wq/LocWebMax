@@ -1,14 +1,11 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { User, Session } from '@supabase/supabase-js'
-import { supabase } from '@/lib/supabase/client'
-import type { Database } from '@/lib/supabase/types'
-
-type Profile = Database['public']['Tables']['profiles']['Row']
+import pb from '@/lib/pocketbase/client'
 
 interface AuthContextType {
-  user: User | null
-  session: Session | null
-  profile: Profile | null
+  user: any | null
+  session: any | null
+  profile: any | null
+  isAuthenticated: boolean
   signIn: (email: string, password: string) => Promise<{ error: any }>
   signUp: (email: string, password: string) => Promise<{ error: any }>
   signOut: () => Promise<{ error: any }>
@@ -24,125 +21,68 @@ export const useAuth = () => {
 }
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
+  const [user, setUser] = useState<any | null>(pb.authStore.isValid ? pb.authStore.record : null)
+  const [isAuthenticated, setIsAuthenticated] = useState(pb.authStore.isValid)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    let mounted = true
-    let isFetching = false
-
-    const fetchProfile = async (userId: string) => {
-      if (isFetching) return
-      isFetching = true
-      try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('auth_user_id', userId)
-          .single()
-
-        if (error && error.code !== 'PGRST116') {
-          console.error('Profile fetch error:', error)
-        }
-
-        if (!mounted) return
-
-        if (data) {
-          setProfile(data)
-        } else {
-          // Fallback se não encontrar por auth_user_id
-          const { data: fallbackData, error: fallbackError } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', userId)
-            .single()
-
-          if (fallbackError && fallbackError.code !== 'PGRST116') {
-            console.error('Fallback profile fetch error:', fallbackError)
-          }
-
-          if (mounted && fallbackData) setProfile(fallbackData)
-        }
-      } catch (err) {
-        console.error('Error fetching profile:', err)
-      } finally {
-        isFetching = false
-        if (mounted) setLoading(false)
-      }
-    }
-
-    const initAuth = async () => {
-      try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession()
-
-        if (error) throw error
-        if (!mounted) return
-
-        setSession(session)
-        setUser(session?.user ?? null)
-
-        if (session?.user) {
-          fetchProfile(session.user.id)
-        } else {
-          setProfile(null)
-        }
-      } catch (err) {
-        console.error('Auth init error:', err)
-        if (mounted) {
-          setProfile(null)
-          setUser(null)
-          setSession(null)
-        }
-      } finally {
-        if (mounted) setLoading(false)
-      }
-    }
-
-    initAuth()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!mounted) return
-      setSession(session)
-      setUser(session?.user ?? null)
-      setLoading(false)
-
-      if (event === 'SIGNED_OUT') {
-        setProfile(null)
-      } else if (session?.user) {
-        fetchProfile(session.user.id)
-      }
+    const unsubscribe = pb.authStore.onChange((_token, record) => {
+      setUser(pb.authStore.isValid ? record : null)
+      setIsAuthenticated(pb.authStore.isValid)
     })
 
+    if (pb.authStore.isValid) {
+      pb.collection('users')
+        .authRefresh()
+        .catch(() => pb.authStore.clear())
+        .finally(() => setLoading(false))
+    } else {
+      if (pb.authStore.record) pb.authStore.clear()
+      setLoading(false)
+    }
+
     return () => {
-      mounted = false
-      subscription.unsubscribe()
+      unsubscribe()
     }
   }, [])
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return { error }
+    try {
+      await pb.collection('users').authWithPassword(email, password)
+      return { error: null }
+    } catch (error) {
+      return { error }
+    }
   }
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password })
-    return { error }
+    try {
+      await pb.collection('users').create({ email, password, passwordConfirm: password })
+      await pb.collection('users').authWithPassword(email, password)
+      return { error: null }
+    } catch (error) {
+      return { error }
+    }
   }
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut()
-    return { error }
+    pb.authStore.clear()
+    return { error: null }
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, signIn, signUp, signOut, loading }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session: null,
+        profile: user,
+        isAuthenticated,
+        signIn,
+        signUp,
+        signOut,
+        loading,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

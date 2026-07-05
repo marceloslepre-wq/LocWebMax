@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase/client'
+import pb from '@/lib/pocketbase/client'
 
 export interface WhatsAppMessage {
   to: string
@@ -7,15 +7,11 @@ export interface WhatsAppMessage {
 
 export const whatsappService = {
   async sendMessage({ to, message }: WhatsAppMessage) {
-    const { data, error } = await supabase.functions.invoke('whatsapp-send', {
-      body: { to, message },
+    return pb.send('/backend/v1/whatsapp/send', {
+      method: 'POST',
+      body: JSON.stringify({ to, message }),
+      headers: { 'Content-Type': 'application/json' },
     })
-
-    if (error) {
-      throw error
-    }
-
-    return data
   },
 
   async sendRentalNotification(phone: string, customerName: string, contractNumber: string) {

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase/client'
+import pb from '@/lib/pocketbase/client'
 import { Address } from '@/stores/main'
 
 export interface CustomerDocument {
@@ -47,7 +47,7 @@ const mapFromDb = (row: any): Customer => ({
   docIdentificacaoPath: row.doc_identificacao_url || null,
   comprovanteEnderecoPath: row.comprovante_endereco_url || null,
   attachment: row.attachment || null,
-  created_at: row.created_at,
+  created_at: row.created,
 })
 
 const mapToDb = (customer: Partial<Customer>) => {
@@ -76,64 +76,46 @@ export const customerService = {
   async checkDocumentExists(document: string, excludeId?: string) {
     const cleanDoc = document.replace(/\D/g, '')
     if (!cleanDoc) return false
-
-    let query = supabase.from('customers').select('id, document')
-    if (excludeId) {
-      query = query.neq('id', excludeId)
+    try {
+      const all = await pb.collection('customers').getFullList()
+      return all.some(
+        (c: any) => c.document && c.document.replace(/\D/g, '') === cleanDoc && c.id !== excludeId,
+      )
+    } catch {
+      return false
     }
-    const { data, error } = await query
-    if (error) return false
-
-    return data.some((c) => c.document && c.document.replace(/\D/g, '') === cleanDoc)
   },
 
   async getCustomers() {
-    const { data, error } = await supabase
-      .from('customers')
-      .select('*')
-      .order('matricula', { ascending: false })
-    if (error) throw error
+    const data = await pb.collection('customers').getFullList({ sort: '-created' })
     return data.map(mapFromDb)
   },
 
   async createCustomer(customer: Omit<Customer, 'id'>) {
     const dbPayload = mapToDb(customer)
-    if (!dbPayload.matricula) {
-      dbPayload.matricula = 'AUTO'
-    }
-    const { data, error } = await supabase.from('customers').insert(dbPayload).select().single()
-    if (error) throw error
+    if (!dbPayload.matricula) dbPayload.matricula = 'AUTO'
+    const data = await pb.collection('customers').create(dbPayload)
     return mapFromDb(data)
   },
 
   async updateCustomer(id: string, customer: Partial<Customer>) {
-    const { data, error } = await supabase
-      .from('customers')
-      .update(mapToDb(customer))
-      .eq('id', id)
-      .select()
-      .single()
-    if (error) throw error
+    const data = await pb.collection('customers').update(id, mapToDb(customer))
     return mapFromDb(data)
   },
 
   async deleteCustomer(id: string) {
-    const { error } = await supabase.from('customers').delete().eq('id', id)
-    if (error) throw error
+    await pb.collection('customers').delete(id)
   },
 
   async getNextMatricula() {
-    const { data, error } = await supabase
-      .from('customers')
-      .select('matricula')
-      .order('matricula', { ascending: false })
-      .limit(1)
-    if (error) throw error
-    if (data && data.length > 0 && data[0].matricula) {
-      const lastMatricula = parseInt(data[0].matricula, 10)
-      if (!isNaN(lastMatricula)) {
-        return String(lastMatricula + 1).padStart(4, '0')
+    try {
+      const data = await pb.collection('customers').getFullList({ sort: '-matricula' })
+      if (data.length > 0 && data[0].matricula) {
+        const last = parseInt(data[0].matricula, 10)
+        if (!isNaN(last)) return String(last + 1).padStart(4, '0')
       }
+    } catch {
+      /* intentionally ignored */
     }
     return '0001'
   },
@@ -143,65 +125,31 @@ export const customerService = {
     file: File,
     onProgress?: (progress: number) => void,
   ): Promise<CustomerDocument> {
-    const fileExt = file.name.split('.').pop() || ''
+    const formData = new FormData()
+    formData.append('customer_id', customerId)
+    formData.append('doc_type', file.name.split('.').pop() || '')
+    formData.append('file', file)
 
-    let progress = 0
-    const progressInterval = setInterval(() => {
-      progress += Math.random() * 15
-      if (progress > 90) progress = 90
-      if (onProgress) onProgress(Math.round(progress))
-    }, 500)
+    if (onProgress) onProgress(50)
 
-    let attempt = 0
-    const maxAttempts = 3
+    const record = await pb.collection('customer_documents').create(formData)
+    const fileUrl = pb.files.getUrl(record, (record as any).file).toString()
 
-    while (attempt < maxAttempts) {
-      try {
-        const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`
-        const filePath = `clientes/${customerId}/${fileName}`
+    if (onProgress) onProgress(100)
 
-        const uploadPromise = supabase.storage
-          .from('documentos_clientes')
-          .upload(filePath, file, { upsert: true })
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout')), 30000),
-        )
-
-        const result: any = await Promise.race([uploadPromise, timeoutPromise])
-
-        if (result.error) throw result.error
-
-        clearInterval(progressInterval)
-        if (onProgress) onProgress(100)
-
-        const { data: publicUrlData } = supabase.storage
-          .from('documentos_clientes')
-          .getPublicUrl(filePath)
-
-        return {
-          name: file.name,
-          url: publicUrlData.publicUrl,
-          date: new Date().toISOString(),
-          path: filePath,
-        }
-      } catch (err) {
-        attempt++
-        if (attempt >= maxAttempts) {
-          clearInterval(progressInterval)
-          throw new Error(
-            'Não foi possível enviar o arquivo após 3 tentativas. Verifique sua conexão e tente novamente.',
-          )
-        }
-        await new Promise((res) => setTimeout(res, 2000))
-      }
+    return {
+      name: file.name,
+      url: fileUrl,
+      date: new Date().toISOString(),
+      path: record.id,
     }
-
-    clearInterval(progressInterval)
-    throw new Error('Upload falhou')
   },
 
   async deleteDocument(path: string) {
-    const { error } = await supabase.storage.from('documentos_clientes').remove([path])
-    if (error) throw error
+    try {
+      await pb.collection('customer_documents').delete(path)
+    } catch {
+      /* intentionally ignored */
+    }
   },
 }
