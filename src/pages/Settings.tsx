@@ -272,19 +272,21 @@ export default function Settings() {
       }
 
       if (editingUser) {
-        updateUser(editingUser.id, {
+        const updateData: any = {
           name: userForm.name,
           email: userForm.email,
           role: userForm.role,
           permissions: userForm.role === 'Administrador' ? [] : userForm.permissions,
-        })
+        }
 
         if (userForm.password) {
-          await pb.collection('users').update(editingUser.id, {
-            password: userForm.password,
-            passwordConfirm: userForm.password,
-          })
+          updateData.password = userForm.password
+          updateData.passwordConfirm = userForm.password
         }
+
+        await pb.collection('users').update(editingUser.id, updateData)
+
+        updateUser(editingUser.id, updateData)
 
         toast({ title: 'Usuário Atualizado', description: 'Dados salvos com sucesso.' })
       } else {
@@ -626,7 +628,10 @@ export default function Settings() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => updateUser(u.id, { active: !u.active })}
+                          onClick={async () => {
+                            await pb.collection('users').update(u.id, { active: !u.active })
+                            updateUser(u.id, { active: !u.active })
+                          }}
                         >
                           {u.active ? 'Desativar' : 'Ativar'}
                         </Button>
@@ -659,7 +664,8 @@ export default function Settings() {
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancelar</AlertDialogCancel>
                               <AlertDialogAction
-                                onClick={() => {
+                                onClick={async () => {
+                                  await pb.collection('users').delete(u.id)
                                   deleteUser(u.id)
                                   toast({ title: 'Excluído' })
                                 }}

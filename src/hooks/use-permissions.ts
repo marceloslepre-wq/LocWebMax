@@ -1,4 +1,4 @@
-import useMainStore from '@/stores/main'
+import { useAuth } from '@/hooks/use-auth'
 
 export type PermissionKey =
   | 'items:write'
@@ -11,13 +11,13 @@ export type PermissionKey =
   | 'editar_contratos'
 
 export function usePermissions() {
-  const { currentUser } = useMainStore()
+  const { user } = useAuth()
 
   const can = (perm: PermissionKey) => {
-    if (!currentUser) return false
-    if (currentUser.role === 'Administrador') return true
-    return currentUser.permissions?.includes(perm) ?? false
+    if (!user) return false
+    if (user.role === 'Administrador') return true
+    return user.permissions?.includes(perm) ?? false
   }
 
-  return { can, currentUser }
+  return { can, currentUser: user }
 }

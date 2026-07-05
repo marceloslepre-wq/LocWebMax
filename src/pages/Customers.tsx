@@ -235,7 +235,7 @@ export default function Customers() {
                       <CustomerDocumentsCell customer={customer} />
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-1">
                         {can('customers:write') && (
                           <CustomerFormDialog
                             customer={customer as any}
