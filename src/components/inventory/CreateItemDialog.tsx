@@ -20,15 +20,13 @@ import {
 } from '@/components/ui/select'
 import { Plus } from 'lucide-react'
 import useMainStore, { InventoryItem } from '@/stores/main'
-import { supabase } from '@/lib/supabase/client'
 import { useToast } from '@/hooks/use-toast'
-import { usePermissions } from '@/hooks/use-permissions'
 import { useLocations } from '@/hooks/use-locations'
+import { inventoryService } from '@/services/inventory'
 
 export function CreateItemDialog() {
   const { addInventoryItem, settings } = useMainStore()
   const { toast } = useToast()
-  const { can } = usePermissions()
   const { locations } = useLocations()
   const [open, setOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -44,8 +42,6 @@ export function CreateItemDialog() {
     salePrice: '',
     locationId: '',
   })
-
-  if (!can('items:write')) return null
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -63,7 +59,15 @@ export function CreateItemDialog() {
     const qty = parseInt(formData.qty, 10)
     if (!formData.name || !formData.code || isNaN(qty)) return
 
-    const newItemId = crypto.randomUUID()
+    const generateId = () => {
+      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+      let id = ''
+      for (let i = 0; i < 15; i++) {
+        id += chars.charAt(Math.floor(Math.random() * chars.length))
+      }
+      return id
+    }
+    const newItemId = generateId()
 
     await addInventoryItem({
       id: newItemId,
@@ -90,15 +94,11 @@ export function CreateItemDialog() {
     const locationName = locations.find((l) => l.id === locationId)?.nome || 'estoque'
 
     if (locations.length > 0) {
-      const stockEntries = locations.map((loc) => ({
-        inventory_id: newItemId,
-        local_id: loc.id,
-        quantidade_total: loc.id === locationId ? qty : 0,
-        quantidade_locada: 0,
-      }))
-      await supabase.from('estoque_por_local').upsert(stockEntries, {
-        onConflict: 'inventory_id,local_id',
-      })
+      await Promise.all(
+        locations.map((loc) =>
+          inventoryService.upsertStock(newItemId, loc.id, loc.id === locationId ? qty : 0, 0),
+        ),
+      )
     }
 
     toast({

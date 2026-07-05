@@ -345,7 +345,7 @@ export default function Inventory() {
                             <ExternalLink className="w-4 h-4" />
                           </Link>
                         </Button>
-                        <EditItemDialog item={item} />
+                        {can('items:write') && <EditItemDialog item={item} />}
                         {can('items:delete') && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase/client'
 import {
   Dialog,
   DialogContent,
@@ -22,9 +21,9 @@ import {
 import { Edit } from 'lucide-react'
 import useMainStore, { InventoryItem } from '@/stores/main'
 import { useToast } from '@/hooks/use-toast'
-import { usePermissions } from '@/hooks/use-permissions'
 import { useLocations } from '@/hooks/use-locations'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { inventoryService } from '@/services/inventory'
 
 interface StockLoc {
   local_id: string
@@ -35,7 +34,6 @@ interface StockLoc {
 export function EditItemDialog({ item }: { item: InventoryItem }) {
   const { updateInventoryItem, settings } = useMainStore()
   const { toast } = useToast()
-  const { can } = usePermissions()
   const { locations } = useLocations()
   const [open, setOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -53,25 +51,19 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
 
   useEffect(() => {
     if (open) {
-      supabase
-        .from('estoque_por_local')
-        .select('local_id, quantidade_total, quantidade_locada')
-        .eq('inventory_id', item.id)
-        .then(({ data }) => {
-          const merged: StockLoc[] = locations.map((loc) => {
-            const existing = data?.find((d: any) => d.local_id === loc.id)
-            return {
-              local_id: loc.id,
-              quantidade_total: existing?.quantidade_total || 0,
-              quantidade_locada: existing?.quantidade_locada || 0,
-            }
-          })
-          setLocs(merged)
+      inventoryService.getStockByLocation(item.id).then((data) => {
+        const merged: StockLoc[] = locations.map((loc) => {
+          const existing = data?.find((d: any) => d.local_id === loc.id)
+          return {
+            local_id: loc.id,
+            quantidade_total: existing?.quantidade_total || 0,
+            quantidade_locada: existing?.quantidade_locada || 0,
+          }
         })
+        setLocs(merged)
+      })
     }
   }, [open, item.id, locations])
-
-  if (!can('items:write')) return null
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -129,9 +121,16 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
     }))
 
     if (toUpsert.length > 0) {
-      await supabase
-        .from('estoque_por_local')
-        .upsert(toUpsert, { onConflict: 'inventory_id,local_id' })
+      await Promise.all(
+        toUpsert.map((l) =>
+          inventoryService.upsertStock(
+            item.id,
+            l.local_id,
+            l.quantidade_total,
+            l.quantidade_locada,
+          ),
+        ),
+      )
     }
 
     toast({ title: 'Item Atualizado', description: `${formData.name} modificado com sucesso.` })
