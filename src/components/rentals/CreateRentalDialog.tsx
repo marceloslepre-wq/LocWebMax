@@ -33,11 +33,13 @@ import { useToast } from '@/hooks/use-toast'
 import { usePermissions } from '@/hooks/use-permissions'
 import { cn } from '@/lib/utils'
 import { useLocations } from '@/hooks/use-locations'
+import { useAuth } from '@/hooks/use-auth'
 
 export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental) => void }) {
   const { customers, inventory, addRental, settings } = useMainStore()
   const { toast } = useToast()
   const { can } = usePermissions()
+  const { user } = useAuth()
   const { locations: locaisList } = useLocations()
   const [open, setOpen] = useState(false)
 
@@ -52,6 +54,7 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
 
   const [customerOpen, setCustomerOpen] = useState(false)
   const [itemOpen, setItemOpen] = useState(false)
+  const [errors, setErrors] = useState<{ customerId?: string; paymentMethod?: string }>({})
 
   const applyDuration = (days: number) => {
     setDefaultDuration(days)
@@ -122,8 +125,6 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
     const rawTotal = items.reduce((acc, curr) => acc + (curr.totalPrice || 0), 0)
     return Math.round(rawTotal + freight)
   }, [items, freight])
-
-  if (!can('rentals:manage')) return null
 
   const handleAddItem = () => {
     if (!selectedItemId) return
@@ -275,23 +276,23 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!customerId || items.length === 0) {
-      toast({
-        title: 'Erro',
-        description: 'Selecione um cliente e adicione itens.',
-        variant: 'destructive',
-      })
-      return
-    }
 
-    if (!paymentMethod) {
-      toast({
-        title: 'Erro',
-        description: 'Forma de Pagamento é obrigatória para gerar o contrato.',
-        variant: 'destructive',
-      })
+    const newErrors: { customerId?: string; paymentMethod?: string } = {}
+    if (!customerId) newErrors.customerId = 'Selecione um cliente.'
+    if (!paymentMethod) newErrors.paymentMethod = 'Selecione a forma de pagamento.'
+
+    if (Object.keys(newErrors).length > 0 || items.length === 0) {
+      setErrors(newErrors)
+      if (items.length === 0) {
+        toast({
+          title: 'Erro',
+          description: 'Adicione pelo menos um item à locação.',
+          variant: 'destructive',
+        })
+      }
       return
     }
+    setErrors({})
 
     const startDates = items.map((i) => i.startDate || todayStr).sort()
     const endDates = items.map((i) => i.endDate || todayStr).sort()
@@ -317,17 +318,27 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
       } as any)
     }
 
+    const isDelivery = pickupLocationId === 'delivery'
+
     const createdRental = await addRental({
       id: newId,
       customerId,
+      customer_id: customerId,
       pickupLocationId,
+      local_retirada_id: isDelivery ? null : pickupLocationId,
       items: payloadItems,
       startDate: startDates[0],
+      start_date: startDates[0],
       expectedReturnDate: endDates[endDates.length - 1],
+      expected_return_date: endDates[endDates.length - 1],
       status: 'Ativo',
       total: finalTotal,
       customContractHtml: customHtml,
+      custom_contract_html: customHtml,
       paymentMethod,
+      payment_method: paymentMethod,
+      userId: user?.id,
+      user_id: user?.id,
     } as any)
 
     if (createdRental) {
@@ -343,10 +354,16 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
     setOpen(false)
     setCustomerId('')
     setItems([])
+    setErrors({})
+  }
+
+  const handleOpenChange = (newOpen: boolean) => {
+    setOpen(newOpen)
+    if (!newOpen) setErrors({})
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button>
           <Plus className="w-4 h-4 mr-2" /> Nova Locação
@@ -364,14 +381,19 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-6 pt-4">
           <div className="grid gap-2">
-            <Label>Cliente</Label>
+            <Label className={cn(errors.customerId && 'text-destructive')}>
+              Cliente <span className="text-destructive">*</span>
+            </Label>
             <Popover open={customerOpen} onOpenChange={setCustomerOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
                   role="combobox"
                   aria-expanded={customerOpen}
-                  className="w-full justify-between"
+                  className={cn(
+                    'w-full justify-between',
+                    errors.customerId && 'border-destructive',
+                  )}
                 >
                   <span className="truncate">
                     {customerId
@@ -393,6 +415,7 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
                           value={`${c.name} ${c.document}`}
                           onSelect={() => {
                             setCustomerId(c.id)
+                            setErrors((prev) => ({ ...prev, customerId: undefined }))
                             setTimeout(() => setCustomerOpen(false), 0)
                           }}
                         >
@@ -412,6 +435,9 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
                 </Command>
               </PopoverContent>
             </Popover>
+            {errors.customerId && (
+              <span className="text-sm text-destructive">{errors.customerId}</span>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -433,11 +459,17 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
             </div>
 
             <div className="grid gap-2">
-              <Label>
-                Forma de Pagamento <span className="text-red-500">*</span>
+              <Label className={cn(errors.paymentMethod && 'text-destructive')}>
+                Forma de Pagamento <span className="text-destructive">*</span>
               </Label>
-              <Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value)}>
-                <SelectTrigger>
+              <Select
+                value={paymentMethod}
+                onValueChange={(value) => {
+                  setPaymentMethod(value)
+                  if (value) setErrors((prev) => ({ ...prev, paymentMethod: undefined }))
+                }}
+              >
+                <SelectTrigger className={cn(errors.paymentMethod && 'border-destructive')}>
                   <SelectValue placeholder="Selecione a forma de pagamento" />
                 </SelectTrigger>
                 <SelectContent>
@@ -447,6 +479,9 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
                   <SelectItem value="Dinheiro">Dinheiro</SelectItem>
                 </SelectContent>
               </Select>
+              {errors.paymentMethod && (
+                <span className="text-sm text-destructive">{errors.paymentMethod}</span>
+              )}
             </div>
           </div>
 
@@ -589,7 +624,7 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
                             />
                           </td>
                           <td className="p-2 font-medium text-right">
-                            {ri.totalPrice?.toFixed(2)}
+                            {ri.totalPrice?.toFixed(2).replace('.', ',')}
                           </td>
                           <td className="p-2 text-center">
                             <Button
@@ -628,12 +663,14 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
             </div>
             <div className="text-right">
               <span className="text-sm text-muted-foreground mr-4">Total Arredondado:</span>
-              <span className="text-2xl font-bold">R$ {finalTotal.toFixed(2)}</span>
+              <span className="text-2xl font-bold">
+                R$ {finalTotal.toFixed(2).replace('.', ',')}
+              </span>
             </div>
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit">Gerar Contrato</Button>
