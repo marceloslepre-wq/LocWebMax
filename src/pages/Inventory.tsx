@@ -156,11 +156,24 @@ export default function Inventory() {
       toast({ title: 'Excluído', description: 'O item foi removido permanentemente.' })
     } catch (err: any) {
       const status = err?.status ?? err?.response?.status ?? err?.originalError?.status ?? 0
-      if (status === 400) {
+      const apiMessage = err?.response?.message || err?.message || ''
+      if (
+        status === 400 &&
+        (err?.code === 'REFERENTIAL_INTEGRITY' ||
+          apiMessage.includes(
+            'Failed to delete record. Make sure that the record is not part of a required relation reference.',
+          ))
+      ) {
         toast({
           title: 'Não foi possível excluir',
           description:
-            'Não foi possível excluir o registro. Certifique-se de que o item não possui vínculos com locações, patrimônios ou movimentações de estoque.',
+            'Não foi possível excluir o item. O registro está vinculado a outros dados (como patrimônios, estoque ou locações) e não pode ser removido.',
+          variant: 'destructive',
+        })
+      } else if (status === 400) {
+        toast({
+          title: 'Não foi possível excluir',
+          description: getErrorMessage(err),
           variant: 'destructive',
         })
       } else {

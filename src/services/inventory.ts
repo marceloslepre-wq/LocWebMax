@@ -21,11 +21,18 @@ export const inventoryService = {
       await pb.collection('inventory').delete(id)
     } catch (error: any) {
       const status = error?.status ?? error?.response?.status ?? 0
-      if (status === 400) {
+      const apiMessage = error?.response?.message || error?.message || ''
+      if (
+        status === 400 &&
+        apiMessage.includes(
+          'Failed to delete record. Make sure that the record is not part of a required relation reference.',
+        )
+      ) {
         throw {
           status: 400,
+          code: 'REFERENTIAL_INTEGRITY',
           message:
-            'Não foi possível excluir o registro. Certifique-se de que o item não possui vínculos com locações, patrimônios ou movimentações de estoque.',
+            'Não foi possível excluir o item. O registro está vinculado a outros dados (como patrimônios, estoque ou locações) e não pode ser removido.',
         }
       }
       throw error
