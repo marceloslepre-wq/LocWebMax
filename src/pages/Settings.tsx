@@ -858,7 +858,7 @@ export default function Settings() {
                                         toast({
                                           title: 'Erro ao excluir',
                                           description:
-                                            'Este registro não pode ser removido pois está vinculado a outros dados no sistema (como locações ou estoque).',
+                                            'Não foi possível excluir o local. O registro está vinculado a outros dados (como estoque ou locações) e não pode ser removido.',
                                           variant: 'destructive',
                                         })
                                       } else {
