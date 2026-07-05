@@ -12,7 +12,11 @@ export const usersService = {
     return pb.collection('users').create(data)
   },
   update(id: string, data: any) {
-    return pb.collection('users').update(id, data)
+    return pb.send(`/backend/v1/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+      headers: { 'Content-Type': 'application/json' },
+    })
   },
   delete(id: string) {
     return pb.collection('users').delete(id)

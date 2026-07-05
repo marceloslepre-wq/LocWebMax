@@ -44,6 +44,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useToast } from '@/hooks/use-toast'
 import { CheckCircle, FileText, Plus, Trash2, Upload, Edit, Save } from 'lucide-react'
 import { PermissionKey, usePermissions } from '@/hooks/use-permissions'
+import { useAuth } from '@/hooks/use-auth'
 import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
 import pb from '@/lib/pocketbase/client'
 import { refreshLocations } from '@/hooks/use-locations'
@@ -62,6 +63,7 @@ export default function Settings() {
   const { settings, users, updateSettings, addUser, updateUser, deleteUser } = useMainStore()
   const { toast } = useToast()
   const { can } = usePermissions()
+  const { user: currentUser } = useAuth()
 
   const [userDialogOpen, setUserDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
@@ -272,6 +274,8 @@ export default function Settings() {
       }
 
       if (editingUser) {
+        const isSelfEdit = currentUser?.id === editingUser.id
+
         const updateData: any = {
           name: userForm.name,
           email: userForm.email,
@@ -284,14 +288,27 @@ export default function Settings() {
 
         if (userForm.password) {
           updateData.password = userForm.password
-          updateData.passwordConfirm = userForm.password
         }
 
-        await pb.collection('users').update(editingUser.id, updateData)
+        await pb.send(`/backend/v1/users/${editingUser.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(updateData),
+          headers: { 'Content-Type': 'application/json' },
+        })
 
-        updateUser(editingUser.id, updateData)
+        updateUser(editingUser.id, {
+          name: updateData.name,
+          email: updateData.email,
+          role: updateData.role,
+          permissions: updateData.permissions,
+        })
 
-        toast({ title: 'Usuário Atualizado', description: 'Dados salvos com sucesso.' })
+        toast({
+          title: 'Usuário Atualizado',
+          description: isSelfEdit
+            ? 'Seu próprio perfil foi atualizado.'
+            : 'Dados salvos com sucesso.',
+        })
       } else {
         const createdUser = await pb.collection('users').create({
           email: userForm.email,
@@ -638,7 +655,11 @@ export default function Settings() {
                           variant="outline"
                           size="sm"
                           onClick={async () => {
-                            await pb.collection('users').update(u.id, { active: !u.active })
+                            await pb.send(`/backend/v1/users/${u.id}`, {
+                              method: 'PUT',
+                              body: JSON.stringify({ active: !u.active }),
+                              headers: { 'Content-Type': 'application/json' },
+                            })
                             updateUser(u.id, { active: !u.active })
                           }}
                         >
