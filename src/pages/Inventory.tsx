@@ -42,6 +42,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { CreateItemDialog } from '@/components/inventory/CreateItemDialog'
+import { ImportInventoryDialog } from '@/components/inventory/ImportInventoryDialog'
 import { EditItemDialog } from '@/components/inventory/EditItemDialog'
 import { TransferInventoryDialog } from '@/components/inventory/TransferInventoryDialog'
 import { ShareTransferLinkDialog } from '@/components/inventory/ShareTransferLinkDialog'
@@ -237,6 +238,7 @@ export default function Inventory() {
             </DropdownMenuContent>
           </DropdownMenu>
           <TransferInventoryDialog onSuccess={fetchLocations} />
+          <ImportInventoryDialog onSuccess={fetchLocations} />
           <CreateItemDialog />
         </div>
       </div>
