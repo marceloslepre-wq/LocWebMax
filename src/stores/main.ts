@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react'
-import { supabase } from '@/lib/supabase/client'
+import pb from '@/lib/pocketbase/client'
 import { PermissionKey } from '@/hooks/use-permissions'
 import { useAuth } from '@/hooks/use-auth'
 import { customerService, Customer } from '@/services/customers'
+import { useRealtime } from '@/hooks/use-realtime'
 
 export type Asset = {
   id: string
@@ -122,6 +123,55 @@ interface MainStore {
   loadItemAssets: (id: string) => Promise<Asset[]>
 }
 
+function mapInventoryRow(row: any): InventoryItem {
+  return {
+    id: row.id,
+    code: row.code || '',
+    name: row.name || '',
+    category: row.category || '',
+    description: row.description,
+    totalQty: row.total_qty || 0,
+    availableQty: row.available_qty || 0,
+    rentedQty: row.rented_qty || 0,
+    conditionStatus: row.condition_status as InventoryItem['conditionStatus'],
+    image: row.image,
+    assets: row.assets || [],
+    monthlyPrice: Number(row.monthly_price) || 0,
+    dailyPrice: Number(row.daily_price) || 0,
+    salePrice: Number(row.sale_price) || 0,
+  }
+}
+
+function mapRentalRow(row: any): Rental {
+  return {
+    id: row.id,
+    customerId: row.customer_id || '',
+    startDate: row.start_date || '',
+    expectedReturnDate: row.expected_return_date || '',
+    actualReturnDate: row.actual_return_date,
+    status: row.status as Rental['status'],
+    total: Number(row.total) || 0,
+    customContractText: row.custom_contract_text,
+    customContractHtml: row.custom_contract_html,
+    userId: row.user_id,
+    pickupLocationId: row.pickup_location_id,
+    items: row.items || [],
+    contractNumber: row.contract_number,
+  }
+}
+
+function mapUserRow(row: any): User {
+  return {
+    id: row.id,
+    auth_user_id: undefined,
+    name: row.name || '',
+    email: row.email || '',
+    role: row.role || '',
+    active: row.active ?? true,
+    permissions: row.permissions || [],
+  }
+}
+
 const StoreContext = createContext<MainStore | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -151,12 +201,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     customerService.getCustomers().then(setCustomers).catch(console.error)
   }
 
+  const refreshInventory = async () => {
+    try {
+      const data = await pb.collection('inventory').getFullList({ sort: '-created' })
+      setInventory(data.map(mapInventoryRow))
+    } catch (err) {
+      console.error('Error refreshing inventory:', err)
+    }
+  }
+
+  const refreshRentals = async () => {
+    try {
+      const data = await pb.collection('rentals').getFullList({ sort: '-created' })
+      setRentals(data.map(mapRentalRow))
+    } catch (err) {
+      console.error('Error refreshing rentals:', err)
+    }
+  }
+
+  useRealtime('customers', () => refreshCustomers(), !!user)
+  useRealtime('inventory', () => refreshInventory(), !!user)
+  useRealtime('rentals', () => refreshRentals(), !!user)
+
   const loadItemAssets = async (id: string): Promise<Asset[]> => {
     try {
-      const { data, error } = await supabase.from('patrimonio').select('*').eq('inventory_id', id)
-
-      if (error) throw error
-
+      const data = await pb.collection('patrimonio').getFullList({
+        filter: `inventory_id = "${id}"`,
+      })
       const fetchedAssets: Asset[] = (data || []).map((p: any) => ({
         id: p.id,
         assetNumber: p.numero_patrimonio,
@@ -167,9 +238,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               ? 'Manutenção'
               : 'Indisponível',
       }))
-
       setInventory((prev) => prev.map((i) => (i.id === id ? { ...i, assets: fetchedAssets } : i)))
-
       return fetchedAssets
     } catch (err) {
       console.error('Error fetching assets:', err)
@@ -189,103 +258,62 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const loadData = async () => {
       try {
-        const [
-          { data: invData, error: invError },
-          { data: setData, error: setError },
-          { data: profData, error: profError },
-          { data: rentData, error: rentError },
-        ] = await Promise.all([
-          supabase
-            .from('inventory')
-            .select(
-              'id, code, name, category, description, total_qty, available_qty, rented_qty, condition_status, image, monthly_price, daily_price, sale_price',
-            )
-            .order('created_at', { ascending: false }),
-          supabase.from('settings').select('*').limit(1).maybeSingle(),
-          supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-          supabase.from('rentals').select('*').order('created_at', { ascending: false }),
+        const [invData, settingsList, rentData] = await Promise.all([
+          pb.collection('inventory').getFullList({ sort: '-created' }),
+          pb.collection('settings').getFullList(),
+          pb.collection('rentals').getFullList({ sort: '-created' }),
         ])
 
-        if (invError) console.error('Error fetching inventory:', invError)
-        if (invData) {
-          setInventory(
-            invData.map((row: any) => ({
-              id: row.id,
-              code: row.code,
-              name: row.name,
-              category: row.category,
-              description: row.description,
-              totalQty: row.total_qty,
-              availableQty: row.available_qty,
-              rentedQty: row.rented_qty,
-              conditionStatus: row.condition_status as any,
-              image: row.image,
-              assets: row.assets || [],
-              monthlyPrice: Number(row.monthly_price) || 0,
-              dailyPrice: Number(row.daily_price) || 0,
-              salePrice: Number(row.sale_price) || 0,
-            })),
-          )
-        }
+        if (invData) setInventory(invData.map(mapInventoryRow))
 
-        if (setError) console.error('Error fetching settings:', setError)
+        const setData = settingsList?.[0]
         if (setData) {
           setSettingsId(setData.id)
           setSettings({
-            primaryColor: setData.primary_color || '#1e40af',
-            logoUrl: setData.logo_url,
-            contractFileName: setData.contract_file_name,
-            contractTemplateHtml: setData.contract_template_html,
-            lateFeeType: (setData.late_fee_type as any) || 'daily',
-            lateFeeValue: Number(setData.late_fee_value) || 2,
-            companyName: setData.company_name || '',
-            companyDocument: setData.company_document || '',
-            companyAddress: setData.company_address || '',
-            categories: setData.categories || [
+            primaryColor: (setData as any).primary_color || '#1e40af',
+            logoUrl: (setData as any).logo_url,
+            contractFileName: (setData as any).contract_file_name,
+            contractTemplateHtml: (setData as any).contract_template_html,
+            lateFeeType: ((setData as any).late_fee_type as Settings['lateFeeType']) || 'daily',
+            lateFeeValue: Number((setData as any).late_fee_value) || 2,
+            companyName: (setData as any).company_name || '',
+            companyDocument: (setData as any).company_document || '',
+            companyAddress: (setData as any).company_address || '',
+            categories: (setData as any).categories || [
               'Ferramentas',
               'Equipamentos Pesados',
               'Acessórios',
               'Geral',
             ],
-            locations: setData.locations || [],
+            locations: (setData as any).locations || [],
           })
         }
 
-        if (profError) console.error('Error fetching profiles:', profError)
-        if (profData) {
-          const mappedUsers = profData.map((row: any) => ({
-            id: row.id,
-            auth_user_id: row.auth_user_id,
-            name: row.name,
-            email: row.email,
-            role: row.role,
-            active: row.active,
-            permissions: row.permissions || [],
-          }))
-          setUsers(mappedUsers)
-          const myProfile = mappedUsers.find((u) => u.email === user.email)
-          if (myProfile) setCurrentUser(myProfile)
+        if (rentData) setRentals(rentData.map(mapRentalRow))
+
+        let mappedUsers: User[] = []
+        try {
+          const usersData = await pb.send('/backend/v1/users', { method: 'GET' })
+          if (Array.isArray(usersData)) {
+            mappedUsers = usersData.map(mapUserRow)
+            setUsers(mappedUsers)
+          }
+        } catch (err) {
+          console.error('Error fetching users:', err)
         }
 
-        if (rentError) console.error('Error fetching rentals:', rentError)
-        if (rentData) {
-          setRentals(
-            rentData.map((row: any) => ({
-              id: row.id,
-              customerId: row.customer_id,
-              startDate: row.start_date,
-              expectedReturnDate: row.expected_return_date,
-              actualReturnDate: row.actual_return_date,
-              status: row.status as any,
-              total: Number(row.total),
-              customContractText: row.custom_contract_text,
-              customContractHtml: row.custom_contract_html,
-              userId: row.user_id,
-              pickupLocationId: row.pickup_location_id,
-              items: row.items || [],
-              contractNumber: row.contract_number,
-            })),
-          )
+        const myProfile = mappedUsers.find((u) => u.email === (user as any).email)
+        if (myProfile) {
+          setCurrentUser(myProfile)
+        } else {
+          setCurrentUser({
+            id: (user as any).id,
+            name: (user as any).name || '',
+            email: (user as any).email || '',
+            role: (user as any).role || '',
+            active: (user as any).active ?? true,
+            permissions: (user as any).permissions || [],
+          })
         }
 
         refreshCustomers()
@@ -295,17 +323,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     loadData()
-
-    const customersSubscription = supabase
-      .channel('public:customers')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
-        refreshCustomers()
-      })
-      .subscribe()
-
-    return () => {
-      customersSubscription.unsubscribe()
-    }
   }, [user?.id])
 
   const addRental = async (rental: Rental): Promise<Rental | null> => {
@@ -331,38 +348,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ? rental.pickupLocationId
         : null
 
-    const { data: rpcData, error: rpcError } = await supabase.rpc('create_rental_atomic', {
-      p_customer_id: rental.customerId,
-      p_local_retirada_id: localRetiradaId,
-      p_start_date: rental.startDate,
-      p_expected_return_date: rental.expectedReturnDate,
-      p_items: rental.items,
-      p_payment_method: rental.paymentMethod || 'PIX',
-      p_total: rental.total,
-      p_custom_contract_html: rental.customContractHtml || null,
-      p_contract_number: null,
-    })
+    try {
+      const result = await pb.send('/backend/v1/rentals/create', {
+        method: 'POST',
+        body: JSON.stringify({
+          customer_id: rental.customerId,
+          local_retirada_id: localRetiradaId,
+          start_date: rental.startDate,
+          expected_return_date: rental.expectedReturnDate,
+          items: rental.items,
+          payment_method: rental.paymentMethod || 'PIX',
+          total: rental.total,
+          custom_contract_html: rental.customContractHtml || null,
+          contract_number: null,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      })
 
-    let newRental = rental
-    if (rpcData && !rpcError) {
-      const { data: rentData } = await supabase
-        .from('rentals')
-        .select('*')
-        .eq('id', rpcData)
-        .single()
-
-      if (rentData) {
-        newRental = {
-          ...rental,
-          id: rentData.id,
-          contractNumber: rentData.contract_number,
+      let newRental = rental
+      const rentalId = typeof result === 'string' ? result : result?.id
+      if (rentalId) {
+        try {
+          const rentData = await pb.collection('rentals').getOne(rentalId)
+          newRental = {
+            ...rental,
+            id: rentData.id,
+            contractNumber: (rentData as any).contract_number,
+          }
+          setRentals((prev) =>
+            prev.map((r) => (r.id === tempId || r.id === rental.id ? newRental : r)),
+          )
+        } catch {
+          /* keep optimistic state */
         }
-        setRentals((prev) =>
-          prev.map((r) => (r.id === tempId || r.id === rental.id ? newRental : r)),
-        )
       }
-    } else if (rpcError) {
-      console.error('Error creating rental via RPC:', rpcError)
+      return newRental
+    } catch (err) {
+      console.error('Error creating rental:', err)
       setRentals((prev) => prev.filter((r) => r.id !== tempId && r.id !== rental.id))
       setInventory((prev) =>
         prev.map((item) => {
@@ -379,8 +401,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       )
       return null
     }
-
-    return newRental
   }
 
   const returnRental = async (rentalId: string, actualDate: string) => {
@@ -399,29 +419,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return {
             ...item,
             availableQty: item.availableQty + rented.qty,
-            rentedQty: item.rentedQty - rented.qty,
+            rentedQty: Math.max(0, item.rentedQty - rented.qty),
           }
         }
         return item
       }),
     )
 
-    await supabase
-      .from('rentals')
-      .update({ status: 'Devolvido', actual_return_date: actualDate })
-      .eq('id', rentalId)
-
-    for (const rentItem of rental.items) {
-      const inv = inventory.find((i) => i.id === rentItem.itemId)
-      if (inv) {
-        await supabase
-          .from('inventory')
-          .update({
-            available_qty: inv.availableQty + rentItem.qty,
-            rented_qty: inv.rentedQty - rentItem.qty,
-          })
-          .eq('id', inv.id)
-      }
+    try {
+      await pb.send(`/backend/v1/rentals/${rentalId}/return`, {
+        method: 'POST',
+        body: JSON.stringify({ actual_return_date: actualDate }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+    } catch (err) {
+      console.error('Error returning rental:', err)
     }
   }
 
@@ -439,7 +451,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             return {
               ...item,
               availableQty: item.availableQty + rented.qty,
-              rentedQty: item.rentedQty - rented.qty,
+              rentedQty: Math.max(0, item.rentedQty - rented.qty),
             }
           }
           return item
@@ -447,21 +459,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       )
     }
 
-    await supabase.from('rentals').delete().eq('id', id)
-
-    if (rental.status !== 'Devolvido') {
-      for (const rentItem of rental.items) {
-        const inv = inventory.find((i) => i.id === rentItem.itemId)
-        if (inv) {
-          await supabase
-            .from('inventory')
-            .update({
-              available_qty: inv.availableQty + rentItem.qty,
-              rented_qty: inv.rentedQty - rentItem.qty,
-            })
-            .eq('id', inv.id)
-        }
-      }
+    try {
+      await pb.collection('rentals').delete(id)
+    } catch (err) {
+      console.error('Error deleting rental:', err)
     }
   }
 
@@ -474,16 +475,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (updateData.expectedReturnDate) dbUpdate.expected_return_date = updateData.expectedReturnDate
     if (updateData.startDate) dbUpdate.start_date = updateData.startDate
 
-    await supabase.from('rentals').update(dbUpdate).eq('id', id)
+    try {
+      await pb.collection('rentals').update(id, dbUpdate)
+    } catch (err) {
+      console.error('Error updating rental:', err)
+    }
   }
 
   const addInventoryItem = async (item: InventoryItem) => {
     const tempId = item.id || Math.random().toString()
     setInventory((prev) => [{ ...item, id: tempId }, ...prev])
 
-    const { data } = await supabase
-      .from('inventory')
-      .insert({
+    try {
+      const data = await pb.collection('inventory').create({
         code: item.code,
         name: item.name,
         category: item.category,
@@ -498,13 +502,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         daily_price: item.dailyPrice,
         sale_price: item.salePrice,
       })
-      .select()
-      .single()
-
-    if (data) {
-      setInventory((prev) =>
-        prev.map((i) => (i.id === tempId || i.id === item.id ? { ...i, id: data.id } : i)),
-      )
+      if (data) {
+        setInventory((prev) =>
+          prev.map((i) => (i.id === tempId || i.id === item.id ? { ...i, id: data.id } : i)),
+        )
+      }
+    } catch (err) {
+      console.error('Error creating inventory item:', err)
     }
   }
 
@@ -526,12 +530,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (data.dailyPrice !== undefined) dbUpdate.daily_price = data.dailyPrice
     if (data.salePrice !== undefined) dbUpdate.sale_price = data.salePrice
 
-    await supabase.from('inventory').update(dbUpdate).eq('id', id)
+    try {
+      await pb.collection('inventory').update(id, dbUpdate)
+    } catch (err) {
+      console.error('Error updating inventory item:', err)
+    }
   }
 
   const deleteInventoryItem = async (id: string) => {
     setInventory((prev) => prev.filter((i) => i.id !== id))
-    await supabase.from('inventory').delete().eq('id', id)
+    try {
+      await pb.collection('inventory').delete(id)
+    } catch (err) {
+      console.error('Error deleting inventory item:', err)
+    }
   }
 
   const addCustomer = async (c: Customer) => {
@@ -569,15 +581,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if ('categories' in data) updateData.categories = data.categories
     if ('locations' in data) updateData.locations = data.locations
 
-    if (settingsId) {
-      await supabase.from('settings').update(updateData).eq('id', settingsId)
-    } else {
-      const { data: inserted } = await supabase
-        .from('settings')
-        .insert(updateData)
-        .select()
-        .single()
-      if (inserted) setSettingsId(inserted.id)
+    try {
+      if (settingsId) {
+        await pb.collection('settings').update(settingsId, updateData)
+      } else {
+        const inserted = await pb.collection('settings').create(updateData)
+        if (inserted) setSettingsId(inserted.id)
+      }
+    } catch (err) {
+      console.error('Error updating settings:', err)
     }
   }
 
@@ -585,42 +597,47 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const tempId = newUser.id || Math.random().toString()
     setUsers((prev) => [...prev, { ...newUser, id: tempId }])
 
-    const { data } = await supabase
-      .from('profiles')
-      .insert({
-        name: newUser.name,
+    try {
+      const data = await pb.collection('users').create({
         email: newUser.email,
+        password: 'Skip@Pass',
+        passwordConfirm: 'Skip@Pass',
+        name: newUser.name,
         role: newUser.role,
         active: newUser.active,
         permissions: newUser.permissions,
       })
-      .select()
-      .single()
-
-    if (data) {
-      setUsers((prev) =>
-        prev.map((u) => (u.id === tempId || u.id === newUser.id ? { ...u, id: data.id } : u)),
-      )
+      if (data) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === tempId || u.id === newUser.id ? { ...u, id: data.id } : u)),
+        )
+      }
+    } catch (err) {
+      console.error('Error creating user:', err)
     }
   }
 
   const updateUser = async (id: string, data: Partial<User>) => {
     setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...data } : u)))
-    await supabase
-      .from('profiles')
-      .update({
+    try {
+      await pb.collection('users').update(id, {
         name: data.name,
-        email: data.email,
         role: data.role,
         active: data.active,
         permissions: data.permissions,
       })
-      .eq('id', id)
+    } catch (err) {
+      console.error('Error updating user:', err)
+    }
   }
 
   const deleteUser = async (id: string) => {
     setUsers((prev) => prev.filter((u) => u.id !== id))
-    await supabase.from('profiles').delete().eq('id', id)
+    try {
+      await pb.collection('users').delete(id)
+    } catch (err) {
+      console.error('Error deleting user:', err)
+    }
   }
 
   return React.createElement(

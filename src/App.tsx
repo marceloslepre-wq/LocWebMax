@@ -23,13 +23,13 @@ import PublicTransfer from './pages/PublicTransfer'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import { useEffect } from 'react'
-import { supabase } from '@/lib/supabase/client'
+import pb from '@/lib/pocketbase/client'
 
 const OverdueChecker = () => {
   useEffect(() => {
     const checkOverdue = async () => {
       try {
-        await supabase.rpc('update_overdue_rentals')
+        await pb.send('/backend/v1/rentals/update-overdue', { method: 'POST' })
       } catch (error) {
         console.error('Erro ao atualizar locações atrasadas:', error)
       }
