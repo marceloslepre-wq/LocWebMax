@@ -174,8 +174,8 @@ export default function Customers() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <ImportCustomersDialog onSuccess={fetchCustomers} />
           <ShareCustomerLinkDialog />
+          <ImportCustomersDialog onSuccess={fetchCustomers} />
           <CustomerFormDialog onSuccess={fetchCustomers} />
         </div>
       </div>

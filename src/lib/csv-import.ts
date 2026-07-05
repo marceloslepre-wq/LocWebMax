@@ -12,6 +12,7 @@ export interface ParsedCustomerRow {
 export interface ImportResult {
   imported: number
   skipped: number
+  failed: number
   errors: string[]
 }
 
@@ -34,8 +35,8 @@ const COLUMN_MAP: Record<string, string> = {
   'e-mail': 'email',
   email: 'email',
   rua: 'street',
-  endereco: 'street',
-  endereço: 'street',
+  endereco: 'raw_address',
+  endereço: 'raw_address',
   numero: 'number',
   número: 'number',
   bairro: 'neighborhood',
@@ -49,6 +50,43 @@ const COLUMN_MAP: Record<string, string> = {
 
 function normalizeHeader(header: string): string {
   return header.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function cleanValue(val: string): string {
+  const v = val.trim()
+  return v === '-' ? '' : v
+}
+
+function parseAddressString(addr: string): Record<string, string> {
+  const parts = addr
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+  const result: Record<string, string> = { street: '', number: '', city: '', state: '' }
+  if (parts.length <= 1) {
+    if (parts[0]) result.street = parts[0]
+    return result
+  }
+  let endIdx = parts.length
+  if (/^[a-z]{2}$/i.test(parts[endIdx - 1])) {
+    result.state = parts[endIdx - 1].toUpperCase()
+    endIdx--
+  }
+  if (endIdx > 0 && result.state) {
+    result.city = parts[endIdx - 1]
+    endIdx--
+  }
+  if (endIdx > 0) {
+    const candidate = parts[endIdx - 1]
+    if (/^\d+/.test(candidate) || /^s\/n/i.test(candidate)) {
+      result.number = candidate
+      endIdx--
+    }
+  }
+  if (endIdx > 0) {
+    result.street = parts.slice(0, endIdx).join(', ')
+  }
+  return result
 }
 
 export function parseCSV(text: string): ParsedCustomerRow[] {
@@ -68,13 +106,17 @@ export function parseCSV(text: string): ParsedCustomerRow[] {
     headers.forEach((header, idx) => {
       const fieldName = COLUMN_MAP[header]
       if (fieldName && values[idx] !== undefined && !record[fieldName]) {
-        record[fieldName] = values[idx].trim()
+        record[fieldName] = cleanValue(values[idx])
       }
     })
 
     if (!record.name && !record.document) continue
 
     const address: Record<string, string> = {}
+    if (record.raw_address) {
+      Object.assign(address, parseAddressString(record.raw_address))
+      delete record.raw_address
+    }
     const addressFields = [
       'street',
       'number',

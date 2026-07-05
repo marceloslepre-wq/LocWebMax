@@ -8,9 +8,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Upload, Loader2, FileText, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Upload, Loader2, FileText, CheckCircle2, AlertCircle, XCircle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { customerService } from '@/services/customers'
 import { parseCSV, type ImportResult } from '@/lib/csv-import'
 import pb from '@/lib/pocketbase/client'
 
@@ -69,21 +68,28 @@ export function ImportCustomersDialog({ onSuccess }: { onSuccess?: () => void })
 
       let imported = 0
       let skipped = 0
+      let failed = 0
       const errors: string[] = []
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i]
-        const cleanDoc = row.document.replace(/\D/g, '')
+        const rowNum = i + 2
 
         if (!row.name?.trim()) {
-          errors.push(`Linha ${i + 2}: Nome não informado`)
-          skipped++
+          errors.push(`Linha ${rowNum}: Nome não informado`)
+          failed++
           continue
         }
 
-        if (!row.document?.trim()) {
-          errors.push(`Linha ${i + 2}: Documento não informado`)
-          skipped++
+        const cleanDoc = row.document.replace(/\D/g, '')
+        if (!cleanDoc) {
+          errors.push(`Linha ${rowNum}: Documento não informado`)
+          failed++
+          continue
+        }
+        if (cleanDoc.length !== 11 && cleanDoc.length !== 14) {
+          errors.push(`Linha ${rowNum}: Documento inválido (${row.document})`)
+          failed++
           continue
         }
 
@@ -92,31 +98,36 @@ export function ImportCustomersDialog({ onSuccess }: { onSuccess?: () => void })
           continue
         }
 
+        let matricula = row.matricula?.trim() || ''
+        if (matricula === '-' || !matricula) {
+          matricula = 'AUTO'
+        }
+
         try {
           const payload: Record<string, any> = {
-            matricula: row.matricula || 'AUTO',
-            name: row.name,
-            document: row.document,
-            phone_res: row.phone_res,
-            phone_cell: row.phone_cell,
-            phone_com: row.phone_com,
-            email: row.email,
+            matricula,
+            name: row.name.trim(),
+            document: cleanDoc,
+            phone_res: row.phone_res || '',
+            phone_cell: row.phone_cell || '',
+            phone_com: row.phone_com || '',
+            email: row.email || '',
             address: row.address,
           }
           await pb.collection('customers').create(payload)
           existingDocs.add(cleanDoc)
           imported++
         } catch (err: any) {
-          errors.push(`Linha ${i + 2}: ${err?.message || 'Erro ao criar registro'}`)
-          skipped++
+          errors.push(`Linha ${rowNum}: ${err?.message || 'Erro ao criar registro'}`)
+          failed++
         }
       }
 
-      setResult({ imported, skipped, errors })
+      setResult({ imported, skipped, failed, errors })
       if (onSuccess) onSuccess()
       toast({
         title: 'Importação concluída',
-        description: `${imported} cliente(s) importado(s), ${skipped} registro(s) ignorado(s).`,
+        description: `${imported} clientes importados com sucesso, ${skipped} registros ignorados (duplicados), ${failed} falhas detectadas.`,
       })
     } catch (err: any) {
       toast({
@@ -150,8 +161,8 @@ export function ImportCustomersDialog({ onSuccess }: { onSuccess?: () => void })
             <div>
               <p className="text-sm font-medium">Selecione um arquivo CSV</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Colunas esperadas: Matrícula, Nome, Documento, Telefone Residencial, Telefone
-                Celular, Telefone Comercial, E-mail, Rua, Número, Bairro, Cidade, Estado, CEP
+                Colunas esperadas: Matrícula, Nome, Documento, Email, Telefone Celular, Telefone
+                Comercial, Telefone Residencial, Endereço
               </p>
             </div>
             <input
@@ -199,11 +210,15 @@ export function ImportCustomersDialog({ onSuccess }: { onSuccess?: () => void })
                 </div>
                 <div className="flex items-center gap-2 text-sm font-medium text-orange-600">
                   <AlertCircle className="w-4 h-4" />
-                  {result.skipped} registro(s) ignorado(s) (duplicados ou inválidos)
+                  {result.skipped} registro(s) ignorado(s) (duplicados)
+                </div>
+                <div className="flex items-center gap-2 text-sm font-medium text-destructive">
+                  <XCircle className="w-4 h-4" />
+                  {result.failed} falha(s) detectada(s)
                 </div>
                 <p className="text-sm text-muted-foreground pt-1">
-                  Importação concluída: {result.imported} clientes importados com sucesso,{' '}
-                  {result.skipped} registros ignorados (duplicados).
+                  {result.imported} clientes importados com sucesso, {result.skipped} registros
+                  ignorados (duplicados), {result.failed} falhas detectadas.
                 </p>
               </div>
               {result.errors.length > 0 && (
