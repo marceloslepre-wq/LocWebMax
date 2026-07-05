@@ -134,7 +134,7 @@ function mapInventoryRow(row: any): InventoryItem {
     availableQty: row.available_qty || 0,
     rentedQty: row.rented_qty || 0,
     conditionStatus: row.condition_status as InventoryItem['conditionStatus'],
-    image: row.image,
+    image: row.image || undefined,
     assets: row.assets || [],
     monthlyPrice: Number(row.monthly_price) || 0,
     dailyPrice: Number(row.daily_price) || 0,
