@@ -1,0 +1,930 @@
+{
+  "generatedAt": "2026-07-05T17:31:09.693Z",
+  "collections": [
+    {
+      "name": "users",
+      "type": "auth",
+      "apiRules": {
+        "list": "id = @request.auth.id",
+        "view": "id = @request.auth.id",
+        "create": "",
+        "update": "id = @request.auth.id",
+        "delete": "id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "avatar",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "role",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "active",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "permissions",
+          "type": "json",
+          "required": false,
+          "system": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX `idx_tokenKey__pb_users_auth_` ON `users` (`tokenKey`)",
+        "CREATE UNIQUE INDEX `idx_email__pb_users_auth_` ON `users` (`email`) WHERE `email` != ''"
+      ]
+    },
+    {
+      "name": "locais",
+      "type": "base",
+      "apiRules": {
+        "list": "",
+        "view": "",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "endereco",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ativo",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_locais_nome ON locais (nome)"]
+    },
+    {
+      "name": "inventory",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "code",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "category",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total_qty",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "available_qty",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "rented_qty",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "condition_status",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "image",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "assets",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "monthly_price",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "daily_price",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "sale_price",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_inventory_code ON inventory (code)",
+        "CREATE INDEX idx_inventory_category ON inventory (category)"
+      ]
+    },
+    {
+      "name": "customers",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "",
+        "update": "",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "matricula",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "document",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "phone_res",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "phone_cell",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "phone_com",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "address",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "has_different_delivery_address",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "delivery_address",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observations",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "documento_url",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "doc_identificacao_url",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "comprovante_endereco_url",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "attachment",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_customers_document ON customers (document)",
+        "CREATE INDEX idx_customers_matricula ON customers (matricula)"
+      ]
+    },
+    {
+      "name": "customer_documents",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "customer_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "customers"
+        },
+        {
+          "name": "file",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "doc_type",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "rentals",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "contract_number",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "customer_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "customers"
+        },
+        {
+          "name": "items",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "start_date",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "expected_return_date",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "actual_return_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "custom_contract_text",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "custom_contract_html",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "pickup_location_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "local_retirada_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "locais"
+        },
+        {
+          "name": "local_devolucao_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "locais"
+        },
+        {
+          "name": "payment_method",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_rentals_status ON rentals (status)",
+        "CREATE INDEX idx_rentals_customer ON rentals (customer_id)",
+        "CREATE INDEX idx_rentals_created ON rentals (created DESC)"
+      ]
+    },
+    {
+      "name": "payments",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "rental_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "rentals"
+        },
+        {
+          "name": "amount",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "payment_method",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_payments_rental ON payments (rental_id)"]
+    },
+    {
+      "name": "patrimonio",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "inventory_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "inventory"
+        },
+        {
+          "name": "numero_patrimonio",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "data_aquisicao",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "estado",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "localizacao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "observacoes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "fornecedor",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "valor_compra",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "foto_url",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_patrimonio_inventory ON patrimonio (inventory_id)"]
+    },
+    {
+      "name": "estoque_por_local",
+      "type": "base",
+      "apiRules": {
+        "list": "",
+        "view": "",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "inventory_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "inventory"
+        },
+        {
+          "name": "local_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "locais"
+        },
+        {
+          "name": "quantidade_total",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "quantidade_locada",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_estoque_inv_local ON estoque_por_local (inventory_id, local_id)"
+      ]
+    },
+    {
+      "name": "inventory_transfers",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "inventory_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "inventory"
+        },
+        {
+          "name": "origin_location_id",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "destination_location_id",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "quantity",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_transfers_created ON inventory_transfers (created DESC)"]
+    },
+    {
+      "name": "settings",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "categories",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "company_address",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "company_document",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "company_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contract_file_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contract_template_html",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "late_fee_type",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "late_fee_value",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "locations",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "logo_url",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "primary_color",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "exchange_history",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "rental_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "rentals"
+        },
+        {
+          "name": "old_inventory_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "inventory"
+        },
+        {
+          "name": "new_inventory_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "inventory"
+        },
+        {
+          "name": "days_used",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "days_remaining",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "available_credit",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "new_cost",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "extra_days",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "difference_to_pay",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "exchange_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        }
+      ],
+      "indexes": []
+    }
+  ]
+}
