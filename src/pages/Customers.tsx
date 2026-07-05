@@ -174,7 +174,7 @@ export default function Customers() {
             </DropdownMenuContent>
           </DropdownMenu>
           <ShareCustomerLinkDialog />
-          {can('customers:write') && <CustomerFormDialog onSuccess={fetchCustomers} />}
+          <CustomerFormDialog onSuccess={fetchCustomers} />
         </div>
       </div>
 
