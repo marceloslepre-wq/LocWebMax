@@ -16,6 +16,21 @@ export const inventoryService = {
   delete(id: string) {
     return pb.collection('inventory').delete(id)
   },
+  async safeDelete(id: string): Promise<void> {
+    try {
+      await pb.collection('inventory').delete(id)
+    } catch (error: any) {
+      const status = error?.status ?? error?.response?.status ?? 0
+      if (status === 400) {
+        throw {
+          status: 400,
+          message:
+            'Não foi possível excluir o registro. Certifique-se de que o item não possui vínculos com locações, patrimônios ou movimentações de estoque.',
+        }
+      }
+      throw error
+    }
+  },
   async getStockByLocation(inventoryId: string) {
     return pb.collection('estoque_por_local').getFullList({
       filter: `inventory_id = "${inventoryId}"`,

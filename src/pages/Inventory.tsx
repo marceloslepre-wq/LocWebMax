@@ -14,7 +14,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Search, Download, ExternalLink, Trash2, Share2 } from 'lucide-react'
+import { Search, Download, ExternalLink, Trash2 } from 'lucide-react'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { inventoryService } from '@/services/inventory'
 import {
   Select,
   SelectContent,
@@ -149,21 +151,22 @@ export default function Inventory() {
 
   const handleDelete = async (id: string) => {
     try {
+      await inventoryService.safeDelete(id)
       await deleteInventoryItem(id)
       toast({ title: 'Excluído', description: 'O item foi removido permanentemente.' })
     } catch (err: any) {
-      const status = err?.status ?? err?.response?.status ?? 0
+      const status = err?.status ?? err?.response?.status ?? err?.originalError?.status ?? 0
       if (status === 400) {
         toast({
           title: 'Não foi possível excluir',
           description:
-            'Não é possível excluir este item pois existem registros vinculados a ele (como Patrimônios, Estoque ou Histórico de Trocas). Por favor, remova os vínculos antes de tentar excluir novamente.',
+            'Não foi possível excluir o registro. Certifique-se de que o item não possui vínculos com locações, patrimônios ou movimentações de estoque.',
           variant: 'destructive',
         })
       } else {
         toast({
           title: 'Erro ao excluir',
-          description: 'Ocorreu um erro inesperado. Tente novamente.',
+          description: getErrorMessage(err),
           variant: 'destructive',
         })
       }
