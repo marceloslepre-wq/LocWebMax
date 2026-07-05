@@ -67,12 +67,8 @@ export function parseCSV(text: string): ParsedCustomerRow[] {
 
     headers.forEach((header, idx) => {
       const fieldName = COLUMN_MAP[header]
-      if (fieldName && values[idx] !== undefined) {
-        if (record[fieldName]) {
-          record[fieldName] = record[fieldName]
-        } else {
-          record[fieldName] = values[idx].trim()
-        }
+      if (fieldName && values[idx] !== undefined && !record[fieldName]) {
+        record[fieldName] = values[idx].trim()
       }
     })
 
