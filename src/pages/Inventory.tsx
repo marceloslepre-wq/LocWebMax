@@ -147,9 +147,27 @@ export default function Inventory() {
     return { headers, data }
   }
 
-  const handleDelete = (id: string) => {
-    deleteInventoryItem(id)
-    toast({ title: 'Excluído', description: 'O item foi removido permanentemente.' })
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteInventoryItem(id)
+      toast({ title: 'Excluído', description: 'O item foi removido permanentemente.' })
+    } catch (err: any) {
+      const status = err?.status ?? err?.response?.status ?? 0
+      if (status === 400) {
+        toast({
+          title: 'Não foi possível excluir',
+          description:
+            'Não é possível excluir este item pois existem registros vinculados a ele (como Patrimônios, Estoque ou Histórico de Trocas). Por favor, remova os vínculos antes de tentar excluir novamente.',
+          variant: 'destructive',
+        })
+      } else {
+        toast({
+          title: 'Erro ao excluir',
+          description: 'Ocorreu um erro inesperado. Tente novamente.',
+          variant: 'destructive',
+        })
+      }
+    }
   }
 
   return (

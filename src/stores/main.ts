@@ -538,11 +538,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
 
   const deleteInventoryItem = async (id: string) => {
-    setInventory((prev) => prev.filter((i) => i.id !== id))
+    let cachedItem: InventoryItem | undefined
+    setInventory((prev) => {
+      cachedItem = prev.find((i) => i.id === id)
+      return prev.filter((i) => i.id !== id)
+    })
     try {
       await pb.collection('inventory').delete(id)
     } catch (err) {
-      console.error('Error deleting inventory item:', err)
+      if (cachedItem) {
+        setInventory((prev) =>
+          prev.some((i) => i.id === cachedItem!.id) ? prev : [...prev, cachedItem!],
+        )
+      }
+      throw err
     }
   }
 
