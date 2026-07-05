@@ -695,9 +695,33 @@ export default function Settings() {
                               <AlertDialogCancel>Cancelar</AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={async () => {
-                                  await pb.collection('users').delete(u.id)
-                                  deleteUser(u.id)
-                                  toast({ title: 'Excluído' })
+                                  try {
+                                    await pb.collection('users').delete(u.id)
+                                    deleteUser(u.id)
+                                    toast({ title: 'Excluído' })
+                                  } catch (err: any) {
+                                    const isRelationError =
+                                      err?.message?.includes(
+                                        'Failed to delete record. Make sure that the record is not part of a required relation reference.',
+                                      ) ||
+                                      err?.response?.message?.includes(
+                                        'Failed to delete record. Make sure that the record is not part of a required relation reference.',
+                                      )
+                                    if (isRelationError) {
+                                      toast({
+                                        title: 'Erro ao excluir',
+                                        description:
+                                          'Este registro não pode ser removido pois está vinculado a outros dados no sistema (como locações ou estoque).',
+                                        variant: 'destructive',
+                                      })
+                                    } else {
+                                      toast({
+                                        title: 'Erro ao excluir',
+                                        description: err?.message || 'Ocorreu um erro inesperado.',
+                                        variant: 'destructive',
+                                      })
+                                    }
+                                  }
                                 }}
                                 className="bg-destructive text-white"
                               >
@@ -817,10 +841,35 @@ export default function Settings() {
                                 <AlertDialogCancel>Cancelar</AlertDialogCancel>
                                 <AlertDialogAction
                                   onClick={async () => {
-                                    await pb.collection('locais').delete(loc.id)
-                                    refreshLocations()
-                                    fetchLocais()
-                                    toast({ title: 'Local Excluído' })
+                                    try {
+                                      await pb.collection('locais').delete(loc.id)
+                                      refreshLocations()
+                                      fetchLocais()
+                                      toast({ title: 'Local Excluído' })
+                                    } catch (err: any) {
+                                      const isRelationError =
+                                        err?.message?.includes(
+                                          'Failed to delete record. Make sure that the record is not part of a required relation reference.',
+                                        ) ||
+                                        err?.response?.message?.includes(
+                                          'Failed to delete record. Make sure that the record is not part of a required relation reference.',
+                                        )
+                                      if (isRelationError) {
+                                        toast({
+                                          title: 'Erro ao excluir',
+                                          description:
+                                            'Este registro não pode ser removido pois está vinculado a outros dados no sistema (como locações ou estoque).',
+                                          variant: 'destructive',
+                                        })
+                                      } else {
+                                        toast({
+                                          title: 'Erro ao excluir',
+                                          description:
+                                            err?.message || 'Ocorreu um erro inesperado.',
+                                          variant: 'destructive',
+                                        })
+                                      }
+                                    }
                                   }}
                                   className="bg-destructive text-white"
                                 >
