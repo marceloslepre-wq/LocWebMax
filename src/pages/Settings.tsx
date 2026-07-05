@@ -45,7 +45,7 @@ import { useToast } from '@/hooks/use-toast'
 import { CheckCircle, FileText, Plus, Trash2, Upload, Edit, Save } from 'lucide-react'
 import { PermissionKey, usePermissions } from '@/hooks/use-permissions'
 import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
-import { supabase } from '@/lib/supabase/client'
+import pb from '@/lib/pocketbase/client'
 import { refreshLocations } from '@/hooks/use-locations'
 
 const PERMISSIONS_LIST: { id: PermissionKey; label: string }[] = [
@@ -80,8 +80,12 @@ export default function Settings() {
   const [locationsList, setLocationsList] = useState<any[]>([])
 
   const fetchLocais = async () => {
-    const { data } = await supabase.from('locais').select('*').order('nome')
-    if (data) setLocationsList(data)
+    try {
+      const data = await pb.collection('locais').getFullList({ sort: 'nome' })
+      setLocationsList(data)
+    } catch (error) {
+      console.error('Error fetching locais:', error)
+    }
   }
 
   useEffect(() => {
@@ -106,14 +110,16 @@ export default function Settings() {
     if (!editLocName) return
 
     if (editingLocId) {
-      await supabase
-        .from('locais')
-        .update({ nome: editLocName, endereco: editLocAddress })
-        .eq('id', editingLocId)
+      await pb.collection('locais').update(editingLocId, {
+        nome: editLocName,
+        endereco: editLocAddress,
+      })
     } else {
-      await supabase
-        .from('locais')
-        .insert({ nome: editLocName, ativo: true, endereco: editLocAddress })
+      await pb.collection('locais').create({
+        nome: editLocName,
+        ativo: true,
+        endereco: editLocAddress,
+      })
     }
     refreshLocations()
     fetchLocais()
@@ -273,41 +279,27 @@ export default function Settings() {
           permissions: userForm.role === 'Administrador' ? [] : userForm.permissions,
         })
 
-        let hasPasswordError = false
-
         if (userForm.password) {
-          const res = await supabase.functions.invoke('manage-users', {
-            body: {
-              action: 'update',
-              user: {
-                auth_user_id: editingUser.auth_user_id || editingUser.id,
-                password: userForm.password,
-              },
-            },
+          await pb.collection('users').update(editingUser.id, {
+            password: userForm.password,
+            passwordConfirm: userForm.password,
           })
-
-          if (res.error) {
-            hasPasswordError = true
-            throw new Error(res.error.message || 'Erro ao atualizar a senha do usuário')
-          }
-          if (res.data?.error) {
-            hasPasswordError = true
-            throw new Error(res.data.error)
-          }
         }
 
-        if (!hasPasswordError) {
-          toast({ title: 'Usuário Atualizado', description: 'Dados salvos com sucesso.' })
-        }
+        toast({ title: 'Usuário Atualizado', description: 'Dados salvos com sucesso.' })
       } else {
-        const res = await supabase.functions.invoke('manage-users', {
-          body: { action: 'create', user: userForm },
+        const createdUser = await pb.collection('users').create({
+          email: userForm.email,
+          password: userForm.password,
+          passwordConfirm: userForm.password,
+          name: userForm.name,
+          role: userForm.role,
+          active: true,
+          permissions: userForm.role === 'Administrador' ? [] : userForm.permissions,
         })
 
-        if (res.error) throw new Error(res.error.message || 'Erro ao criar usuário')
-
         addUser({
-          id: res.data?.user?.id || Math.random().toString(),
+          id: createdUser.id,
           name: userForm.name,
           email: userForm.email,
           role: userForm.role,
@@ -789,7 +781,7 @@ export default function Settings() {
                                 <AlertDialogCancel>Cancelar</AlertDialogCancel>
                                 <AlertDialogAction
                                   onClick={async () => {
-                                    await supabase.from('locais').delete().eq('id', loc.id)
+                                    await pb.collection('locais').delete(loc.id)
                                     refreshLocations()
                                     fetchLocais()
                                     toast({ title: 'Local Excluído' })
