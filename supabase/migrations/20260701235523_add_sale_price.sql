@@ -1,0 +1,1 @@
+ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS sale_price DECIMAL(10,2) DEFAULT 0;

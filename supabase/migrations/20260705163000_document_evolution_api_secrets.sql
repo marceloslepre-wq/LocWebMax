@@ -1,0 +1,29 @@
+-- ============================================================================
+-- Evolution API Secret Configuration Documentation
+-- ============================================================================
+-- This migration documents the required backend secrets for Evolution API
+-- integration. These secrets are NOT stored in the database — they must be
+-- configured via Supabase Dashboard > Project Settings > Edge Functions > Secrets
+-- or via the Supabase CLI:
+--
+--   supabase secrets set EVOLUTION_API_URL=https://your-evolution-api-url.com
+--   supabase secrets set EVOLUTION_API_KEY=your-api-key
+--   supabase secrets set EVOLUTION_INSTANCE=your-instance-name
+--   supabase secrets set EVOLUTION_NUMBER_SEND=5511999999999
+--
+-- Required Secrets:
+--   EVOLUTION_API_URL    - Base URL of the Evolution API endpoint
+--   EVOLUTION_API_KEY    - Access key for authenticating with the API
+--   EVOLUTION_INSTANCE   - Specific instance name in Evolution API
+--   EVOLUTION_NUMBER_SEND - WhatsApp number assigned for sending messages
+--
+-- Security Notes:
+--   - These secrets must NEVER be exposed in frontend code or environment variables
+--   - They are only accessible via Edge Functions or backend processes
+--   - The frontend invokes the 'whatsapp-send' Edge Function which securely
+--     accesses these secrets server-side
+-- ============================================================================
+
+-- This file is documentation-only; no database changes are needed.
+-- The secrets are managed externally by Supabase Secrets management.
+SELECT 1;
