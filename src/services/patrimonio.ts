@@ -10,6 +10,12 @@ export const patrimonioService = {
   getAll() {
     return pb.collection('patrimonio').getFullList({ sort: '-created' })
   },
+  getAllWithInventory() {
+    return pb.collection('patrimonio').getFullList({
+      sort: '-created',
+      expand: 'inventory_id',
+    })
+  },
   create(data: any) {
     return pb.collection('patrimonio').create(data)
   },

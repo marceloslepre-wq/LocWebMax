@@ -38,7 +38,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { supabase } from '@/lib/supabase/client'
+import { patrimonioService } from '@/services/patrimonio'
 import { useToast } from '@/hooks/use-toast'
 
 export type Patrimonio = {
@@ -50,6 +50,7 @@ export type Patrimonio = {
   localizacao: string | null
   observacoes: string | null
   fornecedor?: string | null
+  valor_compra?: number | null
 }
 
 export default function Assets() {
@@ -75,11 +76,17 @@ export default function Assets() {
     fetchedAllRef.current = true
 
     const fetchAll = async () => {
-      const { data } = await supabase
-        .from('patrimonio')
-        .select('id, inventory_id, numero_patrimonio')
-      if (data) {
-        setAllPatrimonios(data)
+      try {
+        const data = await patrimonioService.getAll()
+        setAllPatrimonios(
+          data.map((p: any) => ({
+            id: p.id,
+            inventory_id: p.inventory_id,
+            numero_patrimonio: p.numero_patrimonio,
+          })),
+        )
+      } catch (error) {
+        console.error('Error fetching all patrimonios:', error)
       }
     }
     fetchAll()
@@ -113,14 +120,12 @@ export default function Assets() {
       setIsAdding(false)
 
       const fetchPatrimonios = async () => {
-        const { data, error } = await supabase
-          .from('patrimonio')
-          .select('*')
-          .eq('inventory_id', selectedItem.id)
-          .order('created_at', { ascending: true })
-
-        if (!error && data) {
+        try {
+          const data = await patrimonioService.getByInventory(selectedItem.id)
           setPatrimonios(data as Patrimonio[])
+        } catch (error) {
+          console.error('Error fetching patrimonios:', error)
+          setPatrimonios([])
         }
         setLoadingAssets(false)
       }
@@ -155,31 +160,25 @@ export default function Assets() {
       return
     }
 
-    const { data, error } = await supabase
-      .from('patrimonio')
-      .insert({
+    try {
+      const data = await patrimonioService.create({
         inventory_id: selectedItem.id,
         numero_patrimonio: newAsset.numero_patrimonio.trim(),
         estado: newAsset.estado,
         data_aquisicao: newAsset.data_aquisicao,
         localizacao: newAsset.localizacao || null,
         fornecedor: newAsset.fornecedor || null,
-      } as any)
-      .select()
-      .single()
-
-    if (error) {
-      toast({
-        title: 'Erro',
-        description: 'Nº do patrimônio já existe ou ocorreu um erro.',
-        variant: 'destructive',
       })
-    } else if (data) {
       toast({ title: 'Sucesso', description: 'Patrimônio adicionado com sucesso.' })
-      setPatrimonios([...patrimonios, data as Patrimonio])
+      const newRecord = data as Patrimonio
+      setPatrimonios([...patrimonios, newRecord])
       setAllPatrimonios([
         ...allPatrimonios,
-        { id: data.id, inventory_id: data.inventory_id, numero_patrimonio: data.numero_patrimonio },
+        {
+          id: newRecord.id,
+          inventory_id: newRecord.inventory_id,
+          numero_patrimonio: newRecord.numero_patrimonio,
+        },
       ])
       setIsAdding(false)
 
@@ -195,14 +194,19 @@ export default function Assets() {
         totalQty: newTotal,
         availableQty: newAvail,
       })
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: 'Nº do patrimônio já existe ou ocorreu um erro.',
+        variant: 'destructive',
+      })
     }
   }
 
   const removeAsset = async (id: string) => {
     if (!selectedItem) return
-    const { error } = await supabase.from('patrimonio').delete().eq('id', id)
-
-    if (!error) {
+    try {
+      await patrimonioService.delete(id)
       setPatrimonios(patrimonios.filter((p) => p.id !== id))
       setAllPatrimonios(allPatrimonios.filter((p) => p.id !== id))
 
@@ -219,7 +223,7 @@ export default function Assets() {
         availableQty: newAvail,
       })
       toast({ title: 'Sucesso', description: 'Patrimônio removido.' })
-    } else {
+    } catch (error) {
       toast({ title: 'Erro', description: 'Erro ao remover.', variant: 'destructive' })
     }
   }
@@ -231,14 +235,14 @@ export default function Assets() {
     }
     const previous = patrimonios.find((p) => p.id === id)?.estado
     setPatrimonios(patrimonios.map((p) => (p.id === id ? { ...p, estado: status } : p)))
-    const { error } = await supabase.from('patrimonio').update({ estado: status }).eq('id', id)
-    if (error) {
+    try {
+      await patrimonioService.update(id, { estado: status })
+      toast({ title: 'Sucesso', description: 'Estado atualizado.' })
+    } catch (error) {
       toast({ title: 'Erro', description: 'Erro ao atualizar estado.', variant: 'destructive' })
       setPatrimonios(
         patrimonios.map((p) => (p.id === id ? { ...p, estado: previous || 'novo' } : p)),
       )
-    } else {
-      toast({ title: 'Sucesso', description: 'Estado atualizado.' })
     }
   }
 
@@ -262,11 +266,13 @@ export default function Assets() {
     }
     if (number === original) return
 
-    const { error } = await supabase
-      .from('patrimonio')
-      .update({ numero_patrimonio: number })
-      .eq('id', id)
-    if (error) {
+    try {
+      await patrimonioService.update(id, { numero_patrimonio: number })
+      setAllPatrimonios(
+        allPatrimonios.map((p) => (p.id === id ? { ...p, numero_patrimonio: number } : p)),
+      )
+      toast({ title: 'Sucesso', description: 'Nº atualizado com sucesso.' })
+    } catch (error) {
       toast({
         title: 'Erro',
         description: 'Erro ao atualizar Nº. Pode já estar em uso.',
@@ -276,11 +282,6 @@ export default function Assets() {
         setPatrimonios(
           patrimonios.map((p) => (p.id === id ? { ...p, numero_patrimonio: original } : p)),
         )
-    } else {
-      setAllPatrimonios(
-        allPatrimonios.map((p) => (p.id === id ? { ...p, numero_patrimonio: number } : p)),
-      )
-      toast({ title: 'Sucesso', description: 'Nº atualizado com sucesso.' })
     }
   }
 
@@ -296,22 +297,20 @@ export default function Assets() {
     const previous = patrimonios.find((p) => p.id === id)?.data_aquisicao
     if (date === previous) return
 
-    const { error } = await supabase
-      .from('patrimonio')
-      .update({ data_aquisicao: date })
-      .eq('id', id)
-    if (error) {
-      toast({ title: 'Erro', description: 'Erro ao atualizar data.', variant: 'destructive' })
-    } else {
+    try {
+      await patrimonioService.update(id, { data_aquisicao: date })
       setPatrimonios(patrimonios.map((p) => (p.id === id ? { ...p, data_aquisicao: date } : p)))
       toast({ title: 'Sucesso', description: 'Data atualizada.' })
+    } catch (error) {
+      toast({ title: 'Erro', description: 'Erro ao atualizar data.', variant: 'destructive' })
     }
   }
 
   const handleLocationChangeAndSave = async (id: string, loc: string) => {
     setPatrimonios(patrimonios.map((p) => (p.id === id ? { ...p, localizacao: loc } : p)))
-    const { error } = await supabase.from('patrimonio').update({ localizacao: loc }).eq('id', id)
-    if (error) {
+    try {
+      await patrimonioService.update(id, { localizacao: loc })
+    } catch (error) {
       toast({
         title: 'Erro',
         description: 'Erro ao atualizar localização.',
@@ -325,11 +324,9 @@ export default function Assets() {
   }
 
   const handleFornecedorBlur = async (id: string, fornecedor: string) => {
-    const { error } = await supabase
-      .from('patrimonio')
-      .update({ fornecedor } as any)
-      .eq('id', id)
-    if (error) {
+    try {
+      await patrimonioService.update(id, { fornecedor })
+    } catch (error) {
       toast({
         title: 'Erro',
         description: 'Erro ao atualizar fornecedor.',
@@ -354,43 +351,46 @@ export default function Assets() {
   })
 
   const handleExportAssets = async (format: 'csv' | 'excel' | 'pdf') => {
-    const { data, error } = await supabase
-      .from('patrimonio')
-      .select('*, inventory:inventory_id(name)')
-      .order('created_at', { ascending: false })
+    try {
+      const data = await patrimonioService.getAllWithInventory()
 
-    if (error || !data) {
+      const headers = [
+        'Nº Patrimônio',
+        'Produto',
+        'Data de Aquisição',
+        'Valor de Compra',
+        'Fornecedor',
+        'Estado',
+        'Localização',
+        'Observações',
+      ]
+
+      const exportRows = data.map((p: any) => [
+        p.numero_patrimonio || '-',
+        (p as any).expand?.inventory_id?.name || '-',
+        p.data_aquisicao ? new Date(p.data_aquisicao).toLocaleDateString('pt-BR') : '-',
+        p.valor_compra ? `R$ ${Number(p.valor_compra).toFixed(2)}` : '-',
+        p.fornecedor || '-',
+        p.estado || '-',
+        p.localizacao || '-',
+        p.observacoes || '-',
+      ])
+
+      handleExport(
+        format,
+        'patrimonios',
+        headers,
+        exportRows,
+        settings.companyName,
+        settings.logoUrl,
+      )
+    } catch (error) {
       toast({
         title: 'Erro',
         description: 'Não foi possível buscar os dados para exportação.',
         variant: 'destructive',
       })
-      return
     }
-
-    const headers = [
-      'Nº Patrimônio',
-      'Produto',
-      'Data de Aquisição',
-      'Valor de Compra',
-      'Fornecedor',
-      'Estado',
-      'Localização',
-      'Observações',
-    ]
-
-    const exportRows = data.map((p: any) => [
-      p.numero_patrimonio || '-',
-      p.inventory?.name || '-',
-      p.data_aquisicao ? new Date(p.data_aquisicao).toLocaleDateString('pt-BR') : '-',
-      p.valor_compra ? `R$ ${Number(p.valor_compra).toFixed(2)}` : '-',
-      p.fornecedor || '-',
-      p.estado || '-',
-      p.localizacao || '-',
-      p.observacoes || '-',
-    ])
-
-    handleExport(format, 'patrimonios', headers, exportRows, settings.companyName, settings.logoUrl)
   }
 
   if (loading) {
