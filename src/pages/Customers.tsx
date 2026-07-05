@@ -11,7 +11,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
-import { Search, User, Trash2, Download } from 'lucide-react'
+import { Search, User, Trash2, Download, Upload } from 'lucide-react'
+import { ImportCustomersDialog } from '@/components/customers/ImportCustomersDialog'
 import { CustomerFormDialog } from '@/components/customers/CustomerFormDialog'
 import { ShareCustomerLinkDialog } from '@/components/customers/ShareCustomerLinkDialog'
 import { CustomerDocumentsCell } from '@/components/customers/CustomerDocumentsCell'
@@ -173,6 +174,7 @@ export default function Customers() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <ImportCustomersDialog onSuccess={fetchCustomers} />
           <ShareCustomerLinkDialog />
           <CustomerFormDialog onSuccess={fetchCustomers} />
         </div>
