@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '@/lib/supabase/client'
+import pb from '@/lib/pocketbase/client'
 import useMainStore from '@/stores/main'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -60,14 +60,18 @@ export default function Inventory() {
   const [locationFilter, setLocationFilter] = useState('TODOS')
   const [locationsStock, setLocationsStock] = useState<any[]>([])
 
-  const fetchLocations = async () => {
-    const { data } = await supabase.from('estoque_por_local').select('*')
-    if (data) setLocationsStock(data)
-  }
+  const fetchLocations = useCallback(async () => {
+    try {
+      const data = await pb.collection('estoque_por_local').getFullList()
+      setLocationsStock(data)
+    } catch (error) {
+      console.error('Error fetching stock by location:', error)
+    }
+  }, [])
 
   useEffect(() => {
     fetchLocations()
-  }, [])
+  }, [fetchLocations])
 
   const categories = Array.from(new Set(inventory.map((i) => i.category)))
 
