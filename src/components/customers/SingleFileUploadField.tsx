@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { CloudUpload, Trash2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { supabase } from '@/lib/supabase/client'
 
 interface SingleFileUploadFieldProps {
   label: string
@@ -56,17 +55,19 @@ export function SingleFileUploadField({
     e.target.value = ''
   }
 
-  const getPublicUrl = (path: string) =>
-    supabase.storage.from('documentos_clientes').getPublicUrl(path).data.publicUrl
-
-  const hasFile = pendingFile || existingPath
-  const fileName = pendingFile?.name || (existingPath ? existingPath.split('/').pop() : '')
-  const fileUrl = existingPath ? getPublicUrl(existingPath) : null
+  const isUrl = existingPath ? existingPath.startsWith('http') : false
+  const fileUrl = isUrl ? existingPath : null
+  const hasFile = !!(pendingFile || (existingPath && existingPath.trim() !== ''))
+  const fileName =
+    pendingFile?.name ||
+    (fileUrl ? fileUrl.split('/').pop() : existingPath ? existingPath.split('/').pop() : '') ||
+    'Documento'
   const isImage =
     pendingFile?.type.startsWith('image/') ||
     (fileUrl ? /\.(jpeg|jpg|png|gif)$/i.test(fileUrl) : false)
   const previewUrl =
     pendingFile && pendingFile.type.startsWith('image/') ? URL.createObjectURL(pendingFile) : null
+  const imgSrc = previewUrl || fileUrl || undefined
 
   return (
     <div className="grid gap-2">
@@ -80,19 +81,19 @@ export function SingleFileUploadField({
       />
       {!hasFile ? (
         <div
-          className="border-2 border-dashed border-[#007BFF] bg-[#f8f9fa] rounded-lg p-4 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-blue-50 transition-colors"
+          className="border-2 border-dashed border-primary bg-muted/20 rounded-lg p-4 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-muted/40 transition-colors"
           onClick={() => !disabled && fileInputRef.current?.click()}
         >
-          <CloudUpload className="w-8 h-8 text-[#007BFF] mb-1" />
+          <CloudUpload className="w-8 h-8 text-primary mb-1" />
           <p className="text-sm text-muted-foreground">{description}</p>
           <p className="text-xs text-muted-foreground mt-1">PDF, JPG, PNG (máx. 10MB)</p>
         </div>
       ) : (
         <div className="flex items-center justify-between bg-muted p-2 rounded text-sm border">
           <div className="flex items-center gap-2 truncate">
-            {isImage && (previewUrl || fileUrl) ? (
+            {isImage && imgSrc ? (
               <img
-                src={previewUrl || fileUrl!}
+                src={imgSrc}
                 alt={fileName}
                 className="w-8 h-8 object-cover rounded border bg-white"
               />
@@ -104,7 +105,7 @@ export function SingleFileUploadField({
             <div className="truncate max-w-[150px] sm:max-w-[250px]" title={fileName}>
               {pendingFile ? (
                 <span>
-                  {fileName} <span className="text-xs text-blue-500 ml-1">(Pendente)</span>
+                  {fileName} <span className="text-xs text-primary ml-1">(Pendente)</span>
                 </span>
               ) : fileUrl ? (
                 <a
@@ -116,7 +117,7 @@ export function SingleFileUploadField({
                   {fileName}
                 </a>
               ) : (
-                fileName
+                <span className="text-muted-foreground">{fileName}</span>
               )}
             </div>
           </div>

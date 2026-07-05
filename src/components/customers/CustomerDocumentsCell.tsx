@@ -1,5 +1,4 @@
 import { FileText, Download, Home, IdCard, Paperclip } from 'lucide-react'
-import { supabase } from '@/lib/supabase/client'
 import { Customer, CustomerDocument } from '@/services/customers'
 
 interface DocItem {
@@ -9,47 +8,39 @@ interface DocItem {
   icon: typeof FileText
 }
 
-function getStoragePublicUrl(path: string): string {
-  return supabase.storage.from('documentos_clientes').getPublicUrl(path).data.publicUrl
-}
-
-function isStoragePath(val: string): boolean {
-  return val.startsWith('clientes/') || val.startsWith('documentos_clientes/')
-}
-
 function getFileName(urlOrPath: string): string {
   const parts = urlOrPath.split('/')
   return parts[parts.length - 1] || urlOrPath
 }
 
+function isValidUrl(val: string): boolean {
+  return val.startsWith('http://') || val.startsWith('https://')
+}
+
 function buildDocList(customer: Customer): DocItem[] {
   const docs: DocItem[] = []
 
-  if (customer.docIdentificacaoPath) {
-    const path = customer.docIdentificacaoPath
-    const url = isStoragePath(path) ? getStoragePublicUrl(path) : path
+  if (customer.docIdentificacaoPath && isValidUrl(customer.docIdentificacaoPath)) {
     docs.push({
       label: 'Doc. Identificação',
-      url,
-      fileName: getFileName(path),
+      url: customer.docIdentificacaoPath,
+      fileName: getFileName(customer.docIdentificacaoPath),
       icon: IdCard,
     })
   }
 
-  if (customer.comprovanteEnderecoPath) {
-    const path = customer.comprovanteEnderecoPath
-    const url = isStoragePath(path) ? getStoragePublicUrl(path) : path
+  if (customer.comprovanteEnderecoPath && isValidUrl(customer.comprovanteEnderecoPath)) {
     docs.push({
       label: 'Comprovante Endereço',
-      url,
-      fileName: getFileName(path),
+      url: customer.comprovanteEnderecoPath,
+      fileName: getFileName(customer.comprovanteEnderecoPath),
       icon: Home,
     })
   }
 
   if (customer.documento_url && Array.isArray(customer.documento_url)) {
     customer.documento_url.forEach((doc: CustomerDocument) => {
-      if (doc && doc.url) {
+      if (doc && doc.url && isValidUrl(doc.url)) {
         docs.push({
           label: 'Documento',
           url: doc.url,
@@ -60,13 +51,11 @@ function buildDocList(customer: Customer): DocItem[] {
     })
   }
 
-  if (customer.attachment) {
-    const att = customer.attachment
-    const url = isStoragePath(att) ? getStoragePublicUrl(att) : att
+  if (customer.attachment && isValidUrl(customer.attachment)) {
     docs.push({
       label: 'Anexo',
-      url,
-      fileName: getFileName(att),
+      url: customer.attachment,
+      fileName: getFileName(customer.attachment),
       icon: Paperclip,
     })
   }

@@ -141,13 +141,16 @@ export const customerService = {
       name: file.name,
       url: fileUrl,
       date: new Date().toISOString(),
-      path: record.id,
+      path: fileUrl,
     }
   },
 
-  async deleteDocument(path: string) {
+  async deleteDocument(pathOrUrl: string) {
     try {
-      await pb.collection('customer_documents').delete(path)
+      let recordId = pathOrUrl
+      const match = pathOrUrl.match(/\/api\/files\/customer_documents\/([^/]+)/)
+      if (match) recordId = match[1]
+      await pb.collection('customer_documents').delete(recordId)
     } catch {
       /* intentionally ignored */
     }

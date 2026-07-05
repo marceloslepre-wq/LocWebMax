@@ -48,15 +48,75 @@ import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
 import pb from '@/lib/pocketbase/client'
 import { refreshLocations } from '@/hooks/use-locations'
 
-const PERMISSIONS_LIST: { id: PermissionKey; label: string }[] = [
-  { id: 'items:write', label: 'Cadastrar/Editar Itens' },
-  { id: 'items:delete', label: 'Excluir Itens' },
-  { id: 'customers:write', label: 'Cadastrar/Editar Clientes' },
-  { id: 'customers:delete', label: 'Excluir Clientes' },
-  { id: 'rentals:manage', label: 'Gerenciar Locações' },
-  { id: 'users:manage', label: 'Gerenciar Usuários' },
-  { id: 'reports:view', label: 'Visualizar Relatórios' },
+const PERMISSION_MODULES: {
+  module: string
+  label: string
+  actions: { id: string; label: string }[]
+}[] = [
+  {
+    module: 'customers',
+    label: 'Clientes',
+    actions: [
+      { id: 'customers:view', label: 'Visualizar' },
+      { id: 'customers:create', label: 'Criar' },
+      { id: 'customers:edit', label: 'Editar' },
+      { id: 'customers:delete', label: 'Excluir' },
+    ],
+  },
+  {
+    module: 'items',
+    label: 'Estoque',
+    actions: [
+      { id: 'items:view', label: 'Visualizar' },
+      { id: 'items:create', label: 'Criar' },
+      { id: 'items:edit', label: 'Editar' },
+      { id: 'items:delete', label: 'Excluir' },
+    ],
+  },
+  {
+    module: 'rentals',
+    label: 'Locações',
+    actions: [
+      { id: 'rentals:view', label: 'Visualizar' },
+      { id: 'rentals:create', label: 'Criar' },
+      { id: 'rentals:edit', label: 'Editar' },
+      { id: 'rentals:delete', label: 'Excluir' },
+    ],
+  },
+  {
+    module: 'assets',
+    label: 'Patrimônio',
+    actions: [
+      { id: 'assets:view', label: 'Visualizar' },
+      { id: 'assets:create', label: 'Criar' },
+      { id: 'assets:edit', label: 'Editar' },
+      { id: 'assets:delete', label: 'Excluir' },
+    ],
+  },
+  {
+    module: 'users',
+    label: 'Equipe',
+    actions: [
+      { id: 'users:view', label: 'Visualizar' },
+      { id: 'users:create', label: 'Criar' },
+      { id: 'users:edit', label: 'Editar' },
+      { id: 'users:delete', label: 'Excluir' },
+    ],
+  },
+  {
+    module: 'reports',
+    label: 'Relatórios',
+    actions: [{ id: 'reports:view', label: 'Visualizar' }],
+  },
 ]
+
+const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete'] as const
+const PERMISSION_ACTION_LABELS: Record<string, string> = {
+  view: 'Visualizar',
+  create: 'Criar',
+  edit: 'Editar',
+  delete: 'Excluir',
+}
 
 export default function Settings() {
   const { settings, users, updateSettings, addUser, updateUser, deleteUser } = useMainStore()
@@ -319,11 +379,11 @@ export default function Settings() {
     }
   }
 
-  const handlePermToggle = (perm: PermissionKey, checked: boolean) => {
+  const handlePermToggle = (perm: string, checked: boolean) => {
     setUserForm((prev) => ({
       ...prev,
       permissions: checked
-        ? [...prev.permissions, perm]
+        ? [...prev.permissions, perm as PermissionKey]
         : prev.permissions.filter((p) => p !== perm),
     }))
   }
@@ -345,10 +405,10 @@ export default function Settings() {
           <TabsTrigger
             value="equipe"
             className="text-base h-full flex-1"
-            disabled={!can('users:manage')}
+            disabled={!can('users:view')}
           >
             Equipe
-          </TabsTrigger>
+          </TabsTrigger>{' '}
           <TabsTrigger value="aparencia" className="text-base h-full flex-1">
             Aparência
           </TabsTrigger>
@@ -567,19 +627,51 @@ export default function Settings() {
                   {userForm.role !== 'Administrador' && (
                     <div className="pt-2 border-t mt-4">
                       <Label className="text-base mb-3 block">Permissões de Acesso</Label>
-                      <div className="grid grid-cols-1 gap-3">
-                        {PERMISSIONS_LIST.map((p) => (
-                          <div key={p.id} className="flex items-center space-x-2">
-                            <Checkbox
-                              id={p.id}
-                              checked={userForm.permissions.includes(p.id)}
-                              onCheckedChange={(c) => handlePermToggle(p.id, !!c)}
-                            />
-                            <Label htmlFor={p.id} className="font-normal cursor-pointer">
-                              {p.label}
-                            </Label>
-                          </div>
-                        ))}
+                      <div className="border rounded-md overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-muted/50 border-b">
+                              <th className="text-left p-2 font-medium">Módulo</th>
+                              {PERMISSION_ACTIONS.map((action) => (
+                                <th key={action} className="text-center p-2 font-medium">
+                                  {PERMISSION_ACTION_LABELS[action]}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {PERMISSION_MODULES.map((mod) => (
+                              <tr key={mod.module} className="border-b last:border-0">
+                                <td className="p-2 font-medium">{mod.label}</td>
+                                {PERMISSION_ACTIONS.map((action) => {
+                                  const permId = `${mod.module}:${action}`
+                                  const actionDef = mod.actions.find((a) => a.id === permId)
+                                  if (!actionDef) {
+                                    return (
+                                      <td
+                                        key={action}
+                                        className="p-2 text-center text-muted-foreground"
+                                      >
+                                        —
+                                      </td>
+                                    )
+                                  }
+                                  return (
+                                    <td key={action} className="p-2 text-center">
+                                      <Checkbox
+                                        id={permId}
+                                        checked={userForm.permissions.includes(permId)}
+                                        onCheckedChange={(c) =>
+                                          handlePermToggle(permId as PermissionKey, !!c)
+                                        }
+                                      />
+                                    </td>
+                                  )
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   )}
