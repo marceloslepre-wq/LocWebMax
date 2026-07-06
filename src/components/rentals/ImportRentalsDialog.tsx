@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import { parseRentalCSV, type RentalImportResult } from '@/lib/rental-csv-import'
 import pb from '@/lib/pocketbase/client'
-import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { getErrorMessage, extractFieldErrors } from '@/lib/pocketbase/errors'
 
 export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
   const { toast } = useToast()
@@ -127,12 +127,33 @@ export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
           let customer: any = null
           if (row.customer_id) customer = customerById.get(row.customer_id)
           if (!customer && row.customer_document) {
-            customer = customerByDoc.get(row.customer_document.replace(/\D/g, ''))
+            customer = customerByDoc.get(row.customer_document)
+          }
+          if (!customer && row.customer_document) {
+            try {
+              const newCustomer = await pb.collection('customers').create({
+                matricula: 'AUTO',
+                name: row.customer_name || row.customer_document,
+                document: row.customer_document,
+                phone_cell: row.customer_phone || '',
+              })
+              customer = newCustomer
+              customerByDoc.set(row.customer_document, newCustomer)
+              customerById.set(newCustomer.id, newCustomer)
+            } catch (err: any) {
+              const fieldErrors = extractFieldErrors(err)
+              const fieldDetail = Object.entries(fieldErrors)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join(', ')
+              errors.push(
+                `Linha ${rowNum}: Erro ao criar cliente (${row.customer_document}): ${fieldDetail || err?.message || ''}`,
+              )
+              failed++
+              continue
+            }
           }
           if (!customer) {
-            errors.push(
-              `Linha ${rowNum}: Cliente não encontrado (${row.customer_document || row.customer_id})`,
-            )
+            errors.push(`Linha ${rowNum}: Cliente não encontrado e sem documento para criação`)
             failed++
             continue
           }
@@ -174,7 +195,11 @@ export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
 
           const computedTotal =
             row.total ?? itemsData.reduce((acc, i) => acc + (i.totalPrice || 0), 0)
-          const resolvedLocalId = resolveLocationId(row.local_retirada_id) || galpaoId || null
+          const resolvedLocalId =
+            resolveLocationId(row.local_retirada_id) ||
+            galpaoId ||
+            (allLocais[0] as any)?.id ||
+            null
           const rentalData: any = {
             customer_id: customer.id,
             items: itemsData,
@@ -193,7 +218,11 @@ export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
           const created = await pb.collection('rentals').create(rentalData)
           imported++
         } catch (err: any) {
-          errors.push(`Linha ${rowNum}: ${err?.message || 'Erro ao criar registro'}`)
+          const fieldErrors = extractFieldErrors(err)
+          const fieldDetail = Object.entries(fieldErrors)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(', ')
+          errors.push(`Linha ${rowNum}: ${fieldDetail || err?.message || 'Erro ao criar registro'}`)
           failed++
         }
       }
