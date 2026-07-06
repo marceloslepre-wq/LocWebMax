@@ -21,6 +21,9 @@ export const inventoryService = {
       await pb.collection('inventory').delete(id)
     } catch (error: any) {
       const status = error?.status ?? error?.response?.status ?? 0
+      if (status === 404) {
+        return
+      }
       const apiMessage = error?.response?.message || error?.message || ''
       if (
         status === 400 &&
@@ -38,6 +41,7 @@ export const inventoryService = {
       throw error
     }
   },
+
   async getStockByLocation(inventoryId: string) {
     return pb.collection('estoque_por_local').getFullList({
       filter: `inventory_id = "${inventoryId}"`,
