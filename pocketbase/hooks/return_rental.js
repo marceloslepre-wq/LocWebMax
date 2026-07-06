@@ -8,7 +8,15 @@ routerAdd(
     const rental = $app.findRecordById('rentals', rentalId)
     const items = rental.get('items') || []
     const itemsToReturn = body.items_to_return || []
-    const returnLocationId = body.local_devolucao_id || rental.getString('local_retirada_id') || ''
+
+    var returnLocationId = body.local_devolucao_id || rental.getString('local_retirada_id') || ''
+    if (!returnLocationId) {
+      try {
+        var galpao = $app.findFirstRecordByData('locais', 'nome', 'Galpão')
+        returnLocationId = galpao.id
+      } catch (_) {}
+    }
+
     let allReturned = true
 
     for (let i = 0; i < items.length; i++) {
@@ -44,6 +52,14 @@ routerAdd(
                   Math.max(0, stocks[0].getInt('quantidade_locada') - returnEntry.qty),
                 )
                 $app.save(stocks[0])
+              } else {
+                var estCol = $app.findCollectionByNameOrId('estoque_por_local')
+                var est = new Record(estCol)
+                est.set('inventory_id', item.itemId)
+                est.set('local_id', returnLocationId)
+                est.set('quantidade_total', returnEntry.qty)
+                est.set('quantidade_locada', 0)
+                $app.save(est)
               }
             } catch (err) {
               $app
@@ -68,7 +84,7 @@ routerAdd(
         body.actual_return_date || new Date().toISOString().split('T')[0],
       )
     }
-    if (body.local_devolucao_id) rental.set('local_devolucao_id', body.local_devolucao_id)
+    if (returnLocationId) rental.set('local_devolucao_id', returnLocationId)
     $app.save(rental)
 
     if (allReturned) {

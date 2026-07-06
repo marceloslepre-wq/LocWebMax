@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast'
 import useMainStore, { Rental } from '@/stores/main'
 import { rentalsService } from '@/services/rentals'
 import { differenceInDays, parseISO, addDays, format, startOfDay } from 'date-fns'
+import { getErrorMessage, extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
 
 interface ExchangeDialogProps {
   rental: Rental | null
@@ -35,6 +36,7 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
   const [selectedOldItemIds, setSelectedOldItemIds] = useState<string[]>([])
   const [selectedNewItemId, setSelectedNewItemId] = useState<string>('')
   const [loading, setLoading] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
 
   useEffect(() => {
     if (open && rental) {
@@ -58,6 +60,7 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
         setSelectedOldItemIds([])
       }
       setSelectedNewItemId('')
+      setFieldErrors({})
     }
   }, [open, rental])
 
@@ -203,10 +206,12 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
       }
       onOpenChange(false)
     } catch (error: any) {
-      console.error(error)
+      const fieldErrs = extractFieldErrors(error)
+      setFieldErrors(fieldErrs)
+      const msg = getErrorMessage(error)
       toast({
         title: 'Erro na troca',
-        description: error.message,
+        description: Object.keys(fieldErrs).length > 0 ? msg : error.message || msg,
         variant: 'destructive',
       })
     } finally {

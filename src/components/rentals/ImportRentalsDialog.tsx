@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import { parseRentalCSV, type RentalImportResult } from '@/lib/rental-csv-import'
 import pb from '@/lib/pocketbase/client'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 
 export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
   const { toast } = useToast()
@@ -83,6 +84,20 @@ export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
           (l as any).nome?.toLowerCase() === 'galpao',
       )
       const galpaoId = (galpaoLocal as any)?.id || ''
+
+      const localByName = new Map<string, string>()
+      for (const l of allLocais) {
+        localByName.set((l as any).nome?.toLowerCase().trim(), l.id)
+      }
+
+      const resolveLocationId = (val: string): string => {
+        if (!val) return ''
+        const direct = allLocais.find((l: any) => l.id === val)
+        if (direct) return val
+        const byName = localByName.get(val.toLowerCase().trim())
+        if (byName) return byName
+        return ''
+      }
 
       const customerByDoc = new Map<string, any>()
       const customerById = new Map<string, any>()
@@ -159,6 +174,7 @@ export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
 
           const computedTotal =
             row.total ?? itemsData.reduce((acc, i) => acc + (i.totalPrice || 0), 0)
+          const resolvedLocalId = resolveLocationId(row.local_retirada_id) || galpaoId || null
           const rentalData: any = {
             customer_id: customer.id,
             items: itemsData,
@@ -169,24 +185,12 @@ export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
             payment_method: row.payment_method || 'PIX',
             user_id: user.id,
             contract_number: row.contract_number || '',
-            local_retirada_id: row.local_retirada_id || galpaoId || null,
+            local_retirada_id: resolvedLocalId,
+            is_imported: true,
           }
           if (row.status === 'Devolvido') rentalData.actual_return_date = row.expected_return_date
 
           const created = await pb.collection('rentals').create(rentalData)
-
-          if (isActive) {
-            try {
-              await pb.collection('payments').create({
-                rental_id: created.id,
-                amount: computedTotal,
-                payment_method: row.payment_method || 'PIX',
-                status: 'pending',
-              })
-            } catch {
-              /* ignore */
-            }
-          }
           imported++
         } catch (err: any) {
           errors.push(`Linha ${rowNum}: ${err?.message || 'Erro ao criar registro'}`)
@@ -203,7 +207,7 @@ export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
     } catch (err: any) {
       toast({
         title: 'Erro',
-        description: 'Falha ao processar o arquivo CSV.',
+        description: getErrorMessage(err) || 'Falha ao processar o arquivo CSV.',
         variant: 'destructive',
       })
     } finally {

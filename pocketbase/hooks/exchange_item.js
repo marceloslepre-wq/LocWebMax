@@ -10,7 +10,14 @@ routerAdd(
     const oldInvId = body.old_inventory_id
     const newInvId = body.new_inventory_id
     const quantity = body.quantity || 1
-    const localId = rental.getString('local_retirada_id') || ''
+
+    var localId = rental.getString('local_retirada_id') || ''
+    if (!localId) {
+      try {
+        var galpao = $app.findFirstRecordByData('locais', 'nome', 'Galpão')
+        localId = galpao.id
+      } catch (_) {}
+    }
 
     try {
       const oldInv = $app.findRecordById('inventory', oldInvId)

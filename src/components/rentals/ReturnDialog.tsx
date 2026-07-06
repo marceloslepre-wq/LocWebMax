@@ -24,6 +24,7 @@ import { rentalsService } from '@/services/rentals'
 import { useLocations } from '@/hooks/use-locations'
 import { differenceInDays } from 'date-fns'
 import { Loader2 } from 'lucide-react'
+import { getErrorMessage, extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
 
 export function ReturnDialog({
   rental,
@@ -44,6 +45,7 @@ export function ReturnDialog({
   const [returnLocationId, setReturnLocationId] = useState('')
   const [selectedItems, setSelectedItems] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
 
   useEffect(() => {
     if (open) {
@@ -51,6 +53,7 @@ export function ReturnDialog({
       setReturnLocationId('')
       setSelectedItems({})
       setLoading(false)
+      setFieldErrors({})
     }
   }, [open, today])
 
@@ -172,9 +175,12 @@ export function ReturnDialog({
         onReturned(updatedRental)
       }
     } catch (error: any) {
+      const fieldErrs = extractFieldErrors(error)
+      setFieldErrors(fieldErrs)
+      const msg = getErrorMessage(error) || 'Falha ao processar devolução.'
       toast({
         title: 'Erro na devolução',
-        description: error.message || 'Falha ao processar devolução.',
+        description: Object.keys(fieldErrs).length > 0 ? msg : error.message || msg,
         variant: 'destructive',
       })
     } finally {
