@@ -6,6 +6,45 @@ routerAdd(
     const userId = e.auth ? e.auth.id : ''
     if (!userId) return e.unauthorizedError('auth required')
 
+    const items = body.items || []
+    const localId = body.local_retirada_id || ''
+
+    for (let i = 0; i < items.length; i++) {
+      var item = items[i]
+      if (item.itemId === 'freight' || !item.itemId) continue
+      var qty = item.qty || 1
+
+      try {
+        var inv = $app.findRecordById('inventory', item.itemId)
+        if (inv.getInt('available_qty') < qty) {
+          return e.badRequestError('Estoque insuficiente para o item: ' + inv.getString('name'))
+        }
+      } catch (err) {
+        return e.badRequestError('Item nao encontrado: ' + item.itemId)
+      }
+
+      if (localId) {
+        try {
+          var stocks = $app.findRecordsByFilter(
+            'estoque_por_local',
+            'inventory_id = "' + item.itemId + '" && local_id = "' + localId + '"',
+            '',
+            1,
+            0,
+          )
+          if (stocks.length > 0) {
+            var locationAvailable =
+              stocks[0].getInt('quantidade_total') - stocks[0].getInt('quantidade_locada')
+            if (locationAvailable < qty) {
+              return e.badRequestError(
+                'Estoque insuficiente no local para o item: ' + inv.getString('name'),
+              )
+            }
+          }
+        } catch (err) {}
+      }
+    }
+
     const rentalsCol = $app.findCollectionByNameOrId('rentals')
     const rental = new Record(rentalsCol)
     rental.set('customer_id', body.customer_id || '')
@@ -26,7 +65,6 @@ routerAdd(
     rental.set('contract_number', contractNumber)
     $app.save(rental)
 
-    const items = body.items || []
     for (let i = 0; i < items.length; i++) {
       var item = items[i]
       if (item.itemId === 'freight' || !item.itemId) continue
@@ -35,6 +73,37 @@ routerAdd(
         inv.set('available_qty', Math.max(0, inv.getInt('available_qty') - (item.qty || 1)))
         inv.set('rented_qty', inv.getInt('rented_qty') + (item.qty || 1))
         $app.save(inv)
+
+        if (localId) {
+          try {
+            var stocks = $app.findRecordsByFilter(
+              'estoque_por_local',
+              'inventory_id = "' + item.itemId + '" && local_id = "' + localId + '"',
+              '',
+              1,
+              0,
+            )
+            if (stocks.length > 0) {
+              stocks[0].set(
+                'quantidade_locada',
+                Math.max(0, stocks[0].getInt('quantidade_locada') + (item.qty || 1)),
+              )
+              $app.save(stocks[0])
+            } else {
+              var estCol = $app.findCollectionByNameOrId('estoque_por_local')
+              var est = new Record(estCol)
+              est.set('inventory_id', item.itemId)
+              est.set('local_id', localId)
+              est.set('quantidade_total', 0)
+              est.set('quantidade_locada', item.qty || 1)
+              $app.save(est)
+            }
+          } catch (err) {
+            $app
+              .logger()
+              .error('estoque_por_local update failed', 'itemId', item.itemId, 'err', err.message)
+          }
+        }
       } catch (err) {
         $app.logger().error('inventory update failed', 'itemId', item.itemId, 'err', err.message)
       }

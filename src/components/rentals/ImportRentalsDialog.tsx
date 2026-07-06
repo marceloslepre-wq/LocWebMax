@@ -71,11 +71,18 @@ export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
         return
       }
 
-      const [allCustomers, allInventory, allEstoque] = await Promise.all([
+      const [allCustomers, allInventory, allLocais] = await Promise.all([
         pb.collection('customers').getFullList(),
         pb.collection('inventory').getFullList(),
-        pb.collection('estoque_por_local').getFullList(),
+        pb.collection('locais').getFullList(),
       ])
+
+      const galpaoLocal = allLocais.find(
+        (l: any) =>
+          (l as any).nome?.toLowerCase() === 'galpão' ||
+          (l as any).nome?.toLowerCase() === 'galpao',
+      )
+      const galpaoId = (galpaoLocal as any)?.id || ''
 
       const customerByDoc = new Map<string, any>()
       const customerById = new Map<string, any>()
@@ -149,27 +156,6 @@ export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
           }
 
           const isActive = row.status === 'Ativo' || row.status === 'Atrasado'
-          if (isActive && row.local_retirada_id) {
-            for (const item of itemsData) {
-              const stock = allEstoque.find(
-                (s: any) => s.inventory_id === item.itemId && s.local_id === row.local_retirada_id,
-              )
-              const available = stock
-                ? (stock as any).quantidade_total - (stock as any).quantidade_locada
-                : (invById.get(item.itemId) as any)?.available_qty || 0
-              if (available < item.qty) {
-                errors.push(
-                  `Linha ${rowNum}: Estoque insuficiente para item ${invById.get(item.itemId)?.name || item.itemId}`,
-                )
-                itemsValid = false
-                break
-              }
-            }
-            if (!itemsValid) {
-              failed++
-              continue
-            }
-          }
 
           const computedTotal =
             row.total ?? itemsData.reduce((acc, i) => acc + (i.totalPrice || 0), 0)
@@ -183,48 +169,13 @@ export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
             payment_method: row.payment_method || 'PIX',
             user_id: user.id,
             contract_number: row.contract_number || '',
-            local_retirada_id: row.local_retirada_id || null,
+            local_retirada_id: row.local_retirada_id || galpaoId || null,
           }
           if (row.status === 'Devolvido') rentalData.actual_return_date = row.expected_return_date
 
           const created = await pb.collection('rentals').create(rentalData)
 
           if (isActive) {
-            for (const item of itemsData) {
-              const invItem = invById.get(item.itemId)
-              if (invItem) {
-                await pb.collection('inventory').update(item.itemId, {
-                  available_qty: Math.max(0, (invItem as any).available_qty - item.qty),
-                  rented_qty: ((invItem as any).rented_qty || 0) + item.qty,
-                })
-                ;(invItem as any).available_qty = Math.max(
-                  0,
-                  (invItem as any).available_qty - item.qty,
-                )
-                ;(invItem as any).rented_qty = ((invItem as any).rented_qty || 0) + item.qty
-              }
-              if (row.local_retirada_id) {
-                const stock = allEstoque.find(
-                  (s: any) =>
-                    s.inventory_id === item.itemId && s.local_id === row.local_retirada_id,
-                )
-                if (stock) {
-                  await pb.collection('estoque_por_local').update(stock.id, {
-                    quantidade_locada: ((stock as any).quantidade_locada || 0) + item.qty,
-                  })
-                  ;(stock as any).quantidade_locada =
-                    ((stock as any).quantidade_locada || 0) + item.qty
-                } else {
-                  const ns = await pb.collection('estoque_por_local').create({
-                    inventory_id: item.itemId,
-                    local_id: row.local_retirada_id,
-                    quantidade_total: 0,
-                    quantidade_locada: item.qty,
-                  })
-                  allEstoque.push(ns)
-                }
-              }
-            }
             try {
               await pb.collection('payments').create({
                 rental_id: created.id,

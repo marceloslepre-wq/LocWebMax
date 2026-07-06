@@ -8,6 +8,7 @@ routerAdd(
     const rental = $app.findRecordById('rentals', rentalId)
     const items = rental.get('items') || []
     const itemsToReturn = body.items_to_return || []
+    const returnLocationId = body.local_devolucao_id || rental.getString('local_retirada_id') || ''
     let allReturned = true
 
     for (let i = 0; i < items.length; i++) {
@@ -27,6 +28,29 @@ routerAdd(
           inv.set('available_qty', inv.getInt('available_qty') + returnEntry.qty)
           inv.set('rented_qty', Math.max(0, inv.getInt('rented_qty') - returnEntry.qty))
           $app.save(inv)
+
+          if (returnLocationId) {
+            try {
+              var stocks = $app.findRecordsByFilter(
+                'estoque_por_local',
+                'inventory_id = "' + item.itemId + '" && local_id = "' + returnLocationId + '"',
+                '',
+                1,
+                0,
+              )
+              if (stocks.length > 0) {
+                stocks[0].set(
+                  'quantidade_locada',
+                  Math.max(0, stocks[0].getInt('quantidade_locada') - returnEntry.qty),
+                )
+                $app.save(stocks[0])
+              }
+            } catch (err) {
+              $app
+                .logger()
+                .error('estoque_por_local return failed', 'itemId', item.itemId, 'err', err.message)
+            }
+          }
         } catch (err) {
           $app.logger().error('inventory return failed', 'itemId', item.itemId)
         }
