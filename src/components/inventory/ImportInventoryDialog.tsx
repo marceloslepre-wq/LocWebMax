@@ -9,7 +9,6 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -17,7 +16,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Upload, Loader2, FileText, CheckCircle2, AlertCircle, XCircle } from 'lucide-react'
+import {
+  Upload,
+  Loader2,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+  XCircle,
+  RefreshCw,
+} from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { useLocations } from '@/hooks/use-locations'
 import { parseInventoryCSV, type InventoryImportResult } from '@/lib/inventory-csv-import'
@@ -29,16 +36,19 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
   const { toast } = useToast()
   const { locations } = useLocations()
   const { settings, addInventoryItem, refreshInventory } = useMainStore()
+  const updateInventoryItem = useMainStore((s: any) => s.updateInventoryItem)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<InventoryImportResult | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [defaultLocationId, setDefaultLocationId] = useState<string>('')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const reset = () => {
     setResult(null)
     setFileName(null)
+    setSelectedFile(null)
     setLoading(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
@@ -48,9 +58,34 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
     if (!newOpen) reset()
   }
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    if (!file.name.toLowerCase().endsWith('.csv') && file.type !== 'text/csv') {
+      toast({
+        title: 'Arquivo inválido',
+        description: 'Por favor, selecione um arquivo CSV válido.',
+        variant: 'destructive',
+      })
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+
+    setSelectedFile(file)
+    setFileName(file.name)
+    setResult(null)
+  }
+
+  const handleImport = async () => {
+    if (!selectedFile) {
+      toast({
+        title: 'Nenhum arquivo',
+        description: 'Selecione um arquivo CSV para importar.',
+        variant: 'destructive',
+      })
+      return
+    }
 
     if (!defaultLocationId) {
       toast({
@@ -58,16 +93,14 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
         description: 'Selecione um local padrão antes de importar.',
         variant: 'destructive',
       })
-      if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
 
-    setFileName(file.name)
-    setResult(null)
     setLoading(true)
+    setResult(null)
 
     try {
-      const text = await file.text()
+      const text = await selectedFile.text()
       const rows = parseInventoryCSV(text)
 
       if (rows.length === 0) {
@@ -84,18 +117,19 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
         ? settings.categories
         : []
 
-      const existingCodes = new Set<string>()
+      const existingItemsMap = new Map<string, { id: string; record: any }>()
       try {
         const allItems = await pb.collection('inventory').getFullList()
         for (const item of allItems) {
           const code = (item as any).code
-          if (code) existingCodes.add(code)
+          if (code) existingItemsMap.set(code.trim(), { id: item.id, record: item })
         }
       } catch {
         /* ignore */
       }
 
       let imported = 0
+      let updated = 0
       let skipped = 0
       let failed = 0
       const errors: string[] = []
@@ -103,6 +137,10 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i]
         const rowNum = i + 2
+
+        if (!row.name?.trim() && !row.code?.trim()) {
+          continue
+        }
 
         if (!row.name?.trim()) {
           errors.push(`Linha ${rowNum}: Nome (Modelo) não informado`)
@@ -146,48 +184,73 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
         const rentedQty = row.rented_qty ?? 0
         const availableQty = row.available_qty ?? totalQty - rentedQty
 
-        if (existingCodes.has(row.code.trim())) {
-          skipped++
-          continue
+        const trimmedCode = row.code.trim()
+        const existing = existingItemsMap.get(trimmedCode)
+
+        const payload: Record<string, any> = {
+          code: trimmedCode,
+          name: row.name.trim(),
+          category: row.category.trim(),
+          total_qty: totalQty,
+          available_qty: availableQty,
+          rented_qty: rentedQty,
+          condition_status: row.condition_status || 'Disponível',
+          monthly_price: existing?.record?.monthly_price ?? 0,
+          daily_price: existing?.record?.daily_price ?? 0,
+          sale_price: existing?.record?.sale_price ?? 0,
+        }
+        if (!existing) {
+          payload.image = `https://img.usecurling.com/p/200/200?q=${encodeURIComponent(row.category || 'tool')}`
         }
 
         try {
-          const payload: Record<string, any> = {
-            code: row.code.trim(),
-            name: row.name.trim(),
-            category: row.category.trim(),
-            total_qty: totalQty,
-            available_qty: availableQty,
-            rented_qty: rentedQty,
-            condition_status: row.condition_status || 'Disponível',
-            image: `https://img.usecurling.com/p/200/200?q=${encodeURIComponent(row.category || 'tool')}`,
-            monthly_price: 0,
-            daily_price: 0,
-            sale_price: 0,
+          if (existing) {
+            await pb.collection('inventory').update(existing.id, payload)
+            existingItemsMap.set(trimmedCode, {
+              id: existing.id,
+              record: { ...existing.record, ...payload },
+            })
+
+            if (updateInventoryItem) {
+              await updateInventoryItem(existing.id, {
+                name: row.name.trim(),
+                code: trimmedCode,
+                category: row.category.trim(),
+                totalQty: totalQty,
+                availableQty: availableQty,
+                rentedQty: rentedQty,
+                conditionStatus: row.condition_status || 'Disponível',
+              })
+            }
+            updated++
+          } else {
+            const created = await pb.collection('inventory').create(payload)
+            existingItemsMap.set(trimmedCode, { id: created.id, record: created })
+
+            await addInventoryItem({
+              id: created.id,
+              name: row.name.trim(),
+              code: trimmedCode,
+              category: row.category.trim(),
+              description: '',
+              totalQty: totalQty,
+              availableQty: availableQty,
+              rentedQty: rentedQty,
+              conditionStatus: row.condition_status || 'Disponível',
+              image: payload.image,
+              monthlyPrice: 0,
+              dailyPrice: 0,
+              salePrice: 0,
+            })
+            imported++
           }
 
-          const created = await pb.collection('inventory').create(payload)
-          existingCodes.add(row.code.trim())
-
-          await inventoryService.upsertStock(created.id, defaultLocationId, totalQty, rentedQty)
-
-          await addInventoryItem({
-            id: created.id,
-            name: row.name.trim(),
-            code: row.code.trim(),
-            category: row.category.trim(),
-            description: '',
-            totalQty: totalQty,
-            availableQty: availableQty,
-            rentedQty: rentedQty,
-            conditionStatus: row.condition_status || 'Disponível',
-            image: payload.image,
-            monthlyPrice: 0,
-            dailyPrice: 0,
-            salePrice: 0,
-          })
-
-          imported++
+          await inventoryService.upsertStock(
+            existing?.id || existingItemsMap.get(trimmedCode)!.id,
+            defaultLocationId,
+            totalQty,
+            rentedQty,
+          )
         } catch (err: any) {
           errors.push(`Linha ${rowNum}: ${err?.message || 'Erro ao criar registro'}`)
           failed++
@@ -202,11 +265,17 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
         }
       }
 
-      setResult({ imported, skipped, failed, errors })
+      setResult({ imported, updated, skipped, failed, errors })
       if (onSuccess) onSuccess()
+
+      const summaryParts = [`${imported} importados`]
+      if (updated > 0) summaryParts.push(`${updated} atualizados`)
+      if (skipped > 0) summaryParts.push(`${skipped} ignorados`)
+      if (failed > 0) summaryParts.push(`${failed} falhas`)
+
       toast({
         title: 'Importação concluída',
-        description: `${imported} itens importados com sucesso, ${skipped} registros ignorados (duplicados), ${failed} falhas detectadas.`,
+        description: summaryParts.join(', ') + '.',
       })
     } catch (err: any) {
       toast({
@@ -273,12 +342,12 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
             <Button
               variant="outline"
               onClick={() => fileInputRef.current?.click()}
-              disabled={loading || !defaultLocationId}
+              disabled={loading}
             >
-              {loading ? (
+              {selectedFile ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Processando...
+                  <CheckCircle2 className="w-4 h-4 mr-2 text-green-600" />
+                  {fileName}
                 </>
               ) : (
                 <>
@@ -287,9 +356,6 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
                 </>
               )}
             </Button>
-            {fileName && !loading && (
-              <p className="text-xs text-muted-foreground">Arquivo: {fileName}</p>
-            )}
           </div>
 
           {loading && (
@@ -306,18 +372,22 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
                   <CheckCircle2 className="w-4 h-4" />
                   {result.imported} item(s) importado(s) com sucesso
                 </div>
-                <div className="flex items-center gap-2 text-sm font-medium text-orange-600">
-                  <AlertCircle className="w-4 h-4" />
-                  {result.skipped} registro(s) ignorado(s) (duplicados)
-                </div>
+                {result.updated > 0 && (
+                  <div className="flex items-center gap-2 text-sm font-medium text-blue-600">
+                    <RefreshCw className="w-4 h-4" />
+                    {result.updated} item(s) atualizado(s) (código já existente)
+                  </div>
+                )}
+                {result.skipped > 0 && (
+                  <div className="flex items-center gap-2 text-sm font-medium text-orange-600">
+                    <AlertCircle className="w-4 h-4" />
+                    {result.skipped} registro(s) ignorado(s)
+                  </div>
+                )}
                 <div className="flex items-center gap-2 text-sm font-medium text-destructive">
                   <XCircle className="w-4 h-4" />
                   {result.failed} falha(s) detectada(s)
                 </div>
-                <p className="text-sm text-muted-foreground pt-1">
-                  {result.imported} itens importados com sucesso, {result.skipped} registros
-                  ignorados (duplicados), {result.failed} falhas detectadas.
-                </p>
               </div>
               {result.errors.length > 0 && (
                 <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 max-h-32 overflow-y-auto">
@@ -337,8 +407,21 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>
-            Fechar
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={loading}>
+            Cancelar
+          </Button>
+          <Button onClick={handleImport} disabled={loading || !selectedFile || !defaultLocationId}>
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Processando...
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4 mr-2" />
+                Importar
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

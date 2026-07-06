@@ -10,6 +10,7 @@ export interface ParsedInventoryRow {
 
 export interface InventoryImportResult {
   imported: number
+  updated: number
   skipped: number
   failed: number
   errors: string[]
