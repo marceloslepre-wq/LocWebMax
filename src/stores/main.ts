@@ -545,7 +545,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })
     try {
       await pb.collection('inventory').delete(id)
-    } catch (err) {
+    } catch (err: any) {
+      const status = err?.status ?? err?.response?.status ?? 0
+      if (status === 404) {
+        return
+      }
       if (cachedItem) {
         setInventory((prev) =>
           prev.some((i) => i.id === cachedItem!.id) ? prev : [...prev, cachedItem!],

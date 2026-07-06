@@ -158,7 +158,12 @@ export default function Inventory() {
     } catch (err: any) {
       const status = err?.status ?? err?.response?.status ?? err?.originalError?.status ?? 0
       const apiMessage = err?.response?.message || err?.message || ''
-      if (
+      if (status === 404) {
+        toast({
+          title: 'Item já removido',
+          description: 'O item não foi encontrado no servidor e foi removido da lista local.',
+        })
+      } else if (
         status === 400 &&
         (err?.code === 'REFERENTIAL_INTEGRITY' ||
           apiMessage.includes(
