@@ -43,7 +43,8 @@ import { RentalsReportDialog } from '@/components/rentals/RentalsReportDialog'
 import { RenewDialog } from '@/components/rentals/RenewDialog'
 import { ReceiptDialog } from '@/components/rentals/ReceiptDialog'
 import { ExchangeDialog } from '@/components/rentals/ExchangeDialog'
-import { supabase } from '@/lib/supabase/client'
+import { rentalsService } from '@/services/rentals'
+import { ImportRentalsDialog } from '@/components/rentals/ImportRentalsDialog'
 
 export default function Rentals() {
   const { rentals, customers, globalSearch, settings, deleteRental, updateRental } = useMainStore()
@@ -83,10 +84,10 @@ export default function Rentals() {
     })
 
     if (hasOverdueLocal) {
-      supabase
-        .rpc('update_overdue_rentals')
-        .then(({ error }) => {
-          if (!error && updateRental) {
+      rentalsService
+        .updateOverdue()
+        .then(() => {
+          if (updateRental) {
             overdueIds.forEach((id) => {
               updateRental(id, { status: 'Atrasado' })
             })
@@ -207,6 +208,7 @@ export default function Rentals() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <ImportRentalsDialog />
           <RentalsReportDialog />
           <CreateRentalDialog
             onCreated={(rental) => {

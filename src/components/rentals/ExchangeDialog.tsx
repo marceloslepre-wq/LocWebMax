@@ -19,7 +19,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { useToast } from '@/hooks/use-toast'
 import useMainStore, { Rental } from '@/stores/main'
-import { supabase } from '@/lib/supabase/client'
+import { rentalsService } from '@/services/rentals'
 import { differenceInDays, parseISO, addDays, format, startOfDay } from 'date-fns'
 
 interface ExchangeDialogProps {
@@ -29,7 +29,7 @@ interface ExchangeDialogProps {
 }
 
 export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogProps) {
-  const { inventory } = useMainStore()
+  const { inventory, updateRental } = useMainStore()
   const { toast } = useToast()
 
   const [selectedOldItemIds, setSelectedOldItemIds] = useState<string[]>([])
@@ -163,25 +163,19 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
 
     setLoading(true)
     try {
-      const exchangeData = {
+      await rentalsService.exchange(rental.id, {
+        old_inventory_id: selectedOldItemIds[0],
+        new_inventory_id: selectedNewItemId,
+        quantity: oldItemInfo.quantity,
+        new_expected_return_date: format(calculation.newReturnDate, 'yyyy-MM-dd'),
+        difference_to_pay: calculation.differenceToPay,
+        new_daily_price: calculation.newDailyPrice,
         days_used: calculation.daysUsed,
         days_remaining: calculation.daysRemaining,
         available_credit: calculation.availableCredit,
         new_cost: calculation.newCost,
         extra_days: calculation.extraDays,
-      }
-
-      const { error } = await supabase.rpc('exchange_rental_item', {
-        p_rental_id: rental.id,
-        p_old_inventory_id: selectedOldItemIds[0],
-        p_new_inventory_id: selectedNewItemId,
-        p_quantity: oldItemInfo.quantity,
-        p_new_expected_return_date: format(calculation.newReturnDate, 'yyyy-MM-dd'),
-        p_difference_to_pay: calculation.differenceToPay,
-        p_exchange_history_data: exchangeData,
       })
-
-      if (error) throw error
 
       let successMsg = `✅ Troca realizada: ${oldItemInfo.name || 'Produto'} ➔ ${newItemInfo.name}. `
       if (calculation.differenceToPay > 0) {
@@ -197,8 +191,17 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
         description: successMsg,
       })
 
+      if (updateRental) {
+        updateRental(rental.id, {
+          items: rental.items.map((i: any) =>
+            i.itemId === selectedOldItemIds[0]
+              ? { ...i, itemId: selectedNewItemId, dailyPrice: calculation.newDailyPrice }
+              : i,
+          ),
+          expectedReturnDate: format(calculation.newReturnDate, 'yyyy-MM-dd'),
+        })
+      }
       onOpenChange(false)
-      window.location.reload() // Refresh application state
     } catch (error: any) {
       console.error(error)
       toast({

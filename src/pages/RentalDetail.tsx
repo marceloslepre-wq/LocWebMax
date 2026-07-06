@@ -11,7 +11,8 @@ import { useToast } from '@/hooks/use-toast'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useLocations } from '@/hooks/use-locations'
 import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
-import { supabase } from '@/lib/supabase/client'
+import pb from '@/lib/pocketbase/client'
+import { rentalsService } from '@/services/rentals'
 
 export default function RentalDetail() {
   const { id } = useParams()
@@ -35,10 +36,10 @@ export default function RentalDetail() {
       const dateStr = rental.expectedReturnDate.split('T')[0]
       const returnDate = new Date(dateStr + 'T00:00:00')
       if (returnDate < today) {
-        supabase
-          .rpc('update_overdue_rentals')
-          .then(({ error }) => {
-            if (!error && updateRental) {
+        rentalsService
+          .updateOverdue()
+          .then(() => {
+            if (updateRental) {
               updateRental(rental.id, { status: 'Atrasado' })
             }
           })
@@ -207,12 +208,16 @@ export default function RentalDetail() {
 
   const fetchAudits = async () => {
     if (!rental) return
-    const { data } = await supabase
-      .from('auditoria_contratos')
-      .select('*, profiles(name)')
-      .eq('rental_id', rental.id)
-      .order('created_at', { ascending: false })
-    if (data) setAudits(data)
+    try {
+      const data = await pb.collection('auditoria_contratos').getFullList({
+        filter: `rental_id = "${rental.id}"`,
+        sort: '-created',
+        expand: 'usuario_id',
+      })
+      setAudits(data as any[])
+    } catch {
+      /* ignore */
+    }
   }
 
   useEffect(() => {
@@ -592,29 +597,38 @@ export default function RentalDetail() {
       return
     }
 
-    const { error: rpcError } = await (supabase.rpc as any)('update_rental_secure', {
-      p_rental_id: rental.id,
-      p_start_date: editStartDate,
-      p_expected_return_date: editReturnDate,
-      p_custom_text: contractText,
-      p_user_id: currentUser.id,
-      p_justificativa: justification.trim() || null,
-    })
-
-    if (rpcError) {
-      if (rpcError.message.includes('Rate limit exceeded')) {
-        toast({
-          title: 'Acesso Negado',
-          description: 'Muitas edições recentes (max 5/min). Aguarde um momento.',
-          variant: 'destructive',
-        })
-      } else {
-        toast({
-          title: 'Erro',
-          description: 'Falha ao salvar: ' + rpcError.message,
-          variant: 'destructive',
-        })
+    try {
+      const oldRecord = await pb.collection('rentals').getOne(rental.id)
+      const oldValues = {
+        start_date: (oldRecord as any).start_date,
+        expected_return_date: (oldRecord as any).expected_return_date,
+        custom_contract_text: (oldRecord as any).custom_contract_text || '',
       }
+
+      await pb.collection('rentals').update(rental.id, {
+        start_date: editStartDate,
+        expected_return_date: editReturnDate,
+        custom_contract_text: contractText,
+      })
+
+      await pb.collection('auditoria_contratos').create({
+        acao: 'update',
+        campos_antigos: oldValues,
+        campos_novos: {
+          start_date: editStartDate,
+          expected_return_date: editReturnDate,
+          custom_contract_text: contractText,
+          justificativa: justification.trim() || null,
+        },
+        rental_id: rental.id,
+        usuario_id: currentUser.id,
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Erro',
+        description: 'Falha ao salvar: ' + (err?.message || 'Erro desconhecido'),
+        variant: 'destructive',
+      })
       return
     }
 
@@ -785,10 +799,13 @@ export default function RentalDetail() {
                     <div className="flex items-center justify-between mb-3 border-b pb-3">
                       <div>
                         <p className="font-semibold text-sm">
-                          Usuário: {audit.profiles?.name || audit.usuario_id || 'Sistema'}
+                          Usuário:{' '}
+                          {(audit as any)?.expand?.usuario_id?.name ||
+                            audit.usuario_id ||
+                            'Sistema'}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(audit.created_at).toLocaleString('pt-BR')}
+                          {new Date((audit as any).created).toLocaleString('pt-BR')}
                         </p>
                       </div>
                       <Badge variant="outline">{audit.acao}</Badge>

@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/select'
 import useMainStore, { Rental } from '@/stores/main'
 import { useToast } from '@/hooks/use-toast'
-import { supabase } from '@/lib/supabase/client'
+import { rentalsService } from '@/services/rentals'
 import { useLocations } from '@/hooks/use-locations'
 import { differenceInDays } from 'date-fns'
 import { Loader2 } from 'lucide-react'
@@ -132,16 +132,12 @@ export function ReturnDialog({
         qty,
       }))
 
-      const { data, error } = await supabase.rpc('return_items_partial', {
-        p_rental_id: rental.id,
-        p_local_devolucao_id: returnLocationId || null,
-        p_actual_return_date: returnDate,
-        p_items_to_return: itemsToReturn,
-      })
+      const result = (await rentalsService.returnItems(rental.id, {
+        items_to_return: itemsToReturn,
+        local_devolucao_id: returnLocationId || null,
+        actual_return_date: returnDate,
+      })) as any
 
-      if (error) throw error
-
-      const result = data as any
       if (!result) throw new Error('Resposta inválida do servidor')
 
       const allReturned = result.allReturned as boolean
