@@ -327,6 +327,7 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
         customerId,
         customer_id: customerId,
         pickupLocationId,
+        pickup_location_id: pickupLocationId,
         local_retirada_id: isDelivery ? null : pickupLocationId,
         items: payloadItems,
         startDate: startDates[0],

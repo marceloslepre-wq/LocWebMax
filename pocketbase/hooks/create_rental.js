@@ -66,7 +66,7 @@ routerAdd(
     rental.set('payment_method', body.payment_method || 'PIX')
     rental.set('user_id', userId)
     rental.set('custom_contract_html', body.custom_contract_html || '')
-    rental.set('pickup_location_id', body.pickup_location_id || '')
+    rental.set('pickup_location_id', body.pickup_location_id || body.pickupLocationId || '')
     rental.set('is_imported', isImported)
     if (defaultLocalId) rental.set('local_retirada_id', defaultLocalId)
     $app.save(rental)

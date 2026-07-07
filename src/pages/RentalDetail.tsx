@@ -104,11 +104,14 @@ export default function RentalDetail() {
       dAddrStr = `${dAddr.street || ''}, ${dAddr.number || 'S/N'}${dAddr.complement ? ' - ' + dAddr.complement : ''}, Bairro: ${dAddr.neighborhood || ''}, Cidade: ${dAddr.city || ''}, Estado: ${dAddr.state || ''}, CEP: ${dAddr.zipCode || ''}`
     }
 
-    const localRetiradaId = (rental as any).localRetiradaId || (rental as any).local_retirada_id
-    const pickupLoc = locaisList.find((l) => l.id === (localRetiradaId || rental.pickupLocationId))
+    const localRetiradaId =
+      (rental as any).local_retirada_id || (rental as any).localRetiradaId || ''
+    const pickupLocationIdRaw =
+      (rental as any).pickup_location_id || (rental as any).pickupLocationId || ''
+    const pickupLoc = locaisList.find((l) => l.id === localRetiradaId)
     let pAddress = pickupLoc?.endereco || ''
     let pickupText =
-      rental.pickupLocationId === 'delivery'
+      pickupLocationIdRaw === 'delivery'
         ? 'Entrega no Endereço do Cliente'
         : pickupLoc?.nome
           ? `${pickupLoc.nome}${pAddress ? ` - ${pAddress}` : ''}`
@@ -247,10 +250,13 @@ export default function RentalDetail() {
       dAddrStr = `${dAddr.street || ''}, ${dAddr.number || 'S/N'}${dAddr.complement ? ' - ' + dAddr.complement : ''}, Bairro: ${dAddr.neighborhood || ''}, Cidade: ${dAddr.city || ''}, Estado: ${dAddr.state || ''}, CEP: ${dAddr.zipCode || ''}`
     }
 
-    const localRetiradaId = (rental as any).localRetiradaId || (rental as any).local_retirada_id
-    const pickupLoc = locaisList.find((l) => l.id === (localRetiradaId || rental.pickupLocationId))
+    const localRetiradaId =
+      (rental as any).local_retirada_id || (rental as any).localRetiradaId || ''
+    const pickupLocationIdRaw =
+      (rental as any).pickup_location_id || (rental as any).pickupLocationId || ''
+    const pickupLoc = locaisList.find((l) => l.id === localRetiradaId)
     let pickupText =
-      rental.pickupLocationId === 'delivery'
+      pickupLocationIdRaw === 'delivery'
         ? 'Entrega no Endereço do Cliente'
         : pickupLoc?.nome
           ? `${pickupLoc.nome} - ${pickupLoc.endereco || ''}`

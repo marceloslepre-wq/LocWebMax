@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
+import { useRealtime } from '@/hooks/use-realtime'
+import { useStoreRealtime } from '@/hooks/use-store-realtime'
 import useMainStore from '@/stores/main'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -75,6 +77,14 @@ export default function Inventory() {
   useEffect(() => {
     fetchLocations()
   }, [fetchLocations])
+
+  useStoreRealtime()
+  useRealtime('estoque_por_local', () => {
+    fetchLocations()
+  })
+  useRealtime('inventory', () => {
+    fetchLocations()
+  })
 
   const categories = Array.from(new Set(inventory.map((i) => i.category)))
 

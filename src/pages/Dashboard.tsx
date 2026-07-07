@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import useMainStore from '@/stores/main'
 import { useAuth } from '@/hooks/use-auth'
+import { useStoreRealtime } from '@/hooks/use-store-realtime'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Package, Clock, AlertTriangle, CheckCircle, ArrowRight, Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -13,6 +14,8 @@ export default function Dashboard() {
   const rentals = store?.rentals || []
   const customers = store?.customers || []
   const globalSearch = store?.globalSearch || ''
+
+  useStoreRealtime()
 
   const stats = useMemo(() => {
     const totalItems = inventory.reduce((acc, curr) => acc + (curr?.totalQty || 0), 0)
