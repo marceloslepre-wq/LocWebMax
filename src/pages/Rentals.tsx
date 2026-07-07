@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import useMainStore, { Rental } from '@/stores/main'
+import { formatDatePtBR } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Table,
@@ -98,11 +99,7 @@ export default function Rentals() {
   }, [rentals.length, updateRental])
 
   const formatDateStr = (dateStr?: string) => {
-    if (!dateStr) return '-'
-    const parts = dateStr.split('T')[0].split('-')
-    if (parts.length !== 3) return dateStr
-    const [y, m, d] = parts
-    return `${d}/${m}/${y}`
+    return formatDatePtBR(dateStr)
   }
 
   const filtered = rentals.filter((r) => {

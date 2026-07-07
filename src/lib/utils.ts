@@ -1,5 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { format } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 
 export function compressImage(file: File, maxSizeMB: number = 5): Promise<File> {
   if (!file.type.startsWith('image/')) return Promise.resolve(file)
@@ -62,6 +64,20 @@ export function compressImage(file: File, maxSizeMB: number = 5): Promise<File> 
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
+}
+
+export function formatDatePtBR(dateStr?: string): string {
+  if (!dateStr) return '-'
+  const parts = dateStr.split('T')[0].split('-')
+  if (parts.length !== 3) return '-'
+  const date = new Date(dateStr.split('T')[0] + 'T00:00:00')
+  if (isNaN(date.getTime())) return '-'
+  const dayOfWeek = format(date, 'EEE', { locale: ptBR })
+  const day = format(date, 'dd', { locale: ptBR })
+  const month = format(date, 'MMM', { locale: ptBR })
+  const year = format(date, 'yyyy', { locale: ptBR })
+  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+  return `${capitalize(dayOfWeek)}, ${day} de ${capitalize(month)} de ${year}`
 }
 
 export function hexToHSL(H: string) {
