@@ -18,12 +18,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Edit } from 'lucide-react'
+import { Edit, Loader2 } from 'lucide-react'
 import useMainStore, { InventoryItem } from '@/stores/main'
 import { useToast } from '@/hooks/use-toast'
 import { useLocations } from '@/hooks/use-locations'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { inventoryService } from '@/services/inventory'
+import { refreshStoreInventory } from '@/lib/inventory-refresh'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 
 interface StockLoc {
   local_id: string
@@ -32,11 +34,12 @@ interface StockLoc {
 }
 
 export function EditItemDialog({ item }: { item: InventoryItem }) {
-  const { updateInventoryItem, settings } = useMainStore()
+  const { settings } = useMainStore()
   const { toast } = useToast()
   const { locations } = useLocations()
   const [open, setOpen] = useState(false)
-  const [formData, setFormData] = useState({
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({
     name: item.name,
     code: item.code,
     category: item.category,
@@ -48,6 +51,7 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
     salePrice: item.salePrice?.toString() || '',
   })
   const [locs, setLocs] = useState<StockLoc[]>([])
+  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
 
   useEffect(() => {
     if (open) {
@@ -69,9 +73,7 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
     const file = e.target.files?.[0]
     if (file) {
       const reader = new FileReader()
-      reader.onloadend = () => {
-        setFormData((f) => ({ ...f, image: reader.result as string }))
-      }
+      reader.onloadend = () => set('image', reader.result as string)
       reader.readAsDataURL(file)
     }
   }
@@ -84,7 +86,7 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
+    if (saving) return
     const totalSum = locs.reduce((acc, curr) => acc + curr.quantidade_total, 0)
     if (totalSum <= 0) {
       toast({
@@ -94,47 +96,48 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
       })
       return
     }
-
     const totalRented = locs.reduce((acc, curr) => acc + curr.quantidade_locada, 0)
     const newAvailable = Math.max(0, totalSum - totalRented)
-
-    updateInventoryItem(item.id, {
-      name: formData.name,
-      code: formData.code,
-      category: formData.category || 'Geral',
-      description: formData.description,
-      totalQty: totalSum,
-      availableQty: newAvailable,
-      rentedQty: totalRented,
-      image: formData.image || item.image,
-      conditionStatus: formData.conditionStatus,
-      monthlyPrice: parseFloat(formData.monthlyPrice) || 0,
-      dailyPrice: parseFloat(formData.dailyPrice) || 0,
-      salePrice: parseFloat(formData.salePrice) || 0,
-    })
-
-    const toUpsert = locs.map((l) => ({
-      inventory_id: item.id,
-      local_id: l.local_id,
-      quantidade_total: l.quantidade_total,
-      quantidade_locada: l.quantidade_locada,
-    }))
-
-    if (toUpsert.length > 0) {
-      await Promise.all(
-        toUpsert.map((l) =>
-          inventoryService.upsertStock(
-            item.id,
-            l.local_id,
-            l.quantidade_total,
-            l.quantidade_locada,
+    setSaving(true)
+    try {
+      await inventoryService.updateItem(item.id, {
+        name: form.name,
+        code: form.code,
+        category: form.category || 'Geral',
+        description: form.description,
+        totalQty: totalSum,
+        availableQty: newAvailable,
+        rentedQty: totalRented,
+        image: form.image || item.image,
+        conditionStatus: form.conditionStatus,
+        monthlyPrice: parseFloat(form.monthlyPrice) || 0,
+        dailyPrice: parseFloat(form.dailyPrice) || 0,
+        salePrice: parseFloat(form.salePrice) || 0,
+      })
+      if (locs.length > 0) {
+        await Promise.all(
+          locs.map((l) =>
+            inventoryService.upsertStock(
+              item.id,
+              l.local_id,
+              l.quantidade_total,
+              l.quantidade_locada,
+            ),
           ),
-        ),
-      )
+        )
+      }
+      await refreshStoreInventory()
+      toast({ title: 'Item Atualizado', description: `${form.name} modificado com sucesso.` })
+      setOpen(false)
+    } catch (err) {
+      toast({
+        title: 'Erro ao atualizar',
+        description: getErrorMessage(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setSaving(false)
     }
-
-    toast({ title: 'Item Atualizado', description: `${formData.name} modificado com sucesso.` })
-    setOpen(false)
   }
 
   return (
@@ -148,37 +151,25 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
         <DialogHeader>
           <DialogTitle>Editar Item: {item.name}</DialogTitle>
         </DialogHeader>
-
         <ScrollArea className="h-[450px] mt-4 pr-4">
           <form id="edit-item-form" onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-2">
               <Label>Nome do Modelo</Label>
-              <Input
-                value={formData.name}
-                onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
-                required
-              />
+              <Input value={form.name} onChange={(e) => set('name', e.target.value)} required />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Código (SKU)</Label>
-                <Input
-                  value={formData.code}
-                  onChange={(e) => setFormData((f) => ({ ...f, code: e.target.value }))}
-                  required
-                />
+                <Input value={form.code} onChange={(e) => set('code', e.target.value)} required />
               </div>
               <div className="grid gap-2">
                 <Label>Categoria</Label>
-                <Select
-                  value={formData.category}
-                  onValueChange={(v) => setFormData((f) => ({ ...f, category: v }))}
-                >
+                <Select value={form.category} onValueChange={(v) => set('category', v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {settings.categories?.map((cat) => (
+                    {settings.categories?.map((cat: string) => (
                       <SelectItem key={cat} value={cat}>
                         {cat}
                       </SelectItem>
@@ -193,8 +184,8 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
                 <Input
                   type="number"
                   step="0.01"
-                  value={formData.monthlyPrice}
-                  onChange={(e) => setFormData((f) => ({ ...f, monthlyPrice: e.target.value }))}
+                  value={form.monthlyPrice}
+                  onChange={(e) => set('monthlyPrice', e.target.value)}
                   placeholder="0.00"
                 />
               </div>
@@ -203,8 +194,8 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
                 <Input
                   type="number"
                   step="0.01"
-                  value={formData.dailyPrice}
-                  onChange={(e) => setFormData((f) => ({ ...f, dailyPrice: e.target.value }))}
+                  value={form.dailyPrice}
+                  onChange={(e) => set('dailyPrice', e.target.value)}
                   placeholder="0.00"
                 />
               </div>
@@ -212,8 +203,8 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
             <div className="grid gap-2">
               <Label>Descrição</Label>
               <Textarea
-                value={formData.description}
-                onChange={(e) => setFormData((f) => ({ ...f, description: e.target.value }))}
+                value={form.description}
+                onChange={(e) => set('description', e.target.value)}
                 className="resize-none h-20"
               />
             </div>
@@ -221,8 +212,8 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
               <div className="grid gap-2">
                 <Label>Status Geral</Label>
                 <Select
-                  value={formData.conditionStatus}
-                  onValueChange={(v) => setFormData((f) => ({ ...f, conditionStatus: v as any }))}
+                  value={form.conditionStatus}
+                  onValueChange={(v) => set('conditionStatus', v)}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -235,7 +226,6 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="grid gap-2 p-3 bg-muted/30 rounded-md border">
                 <Label className="text-base font-semibold">Distribuição de Estoque</Label>
                 {locs.map((l, idx) => {
@@ -296,10 +286,10 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
                 onChange={handleImageUpload}
               />
             </div>
-            {formData.image && (
+            {form.image && (
               <div className="flex justify-center mt-2">
                 <img
-                  src={formData.image}
+                  src={form.image}
                   alt="Preview"
                   className="h-24 w-24 object-cover rounded shadow-sm border"
                 />
@@ -307,13 +297,18 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
             )}
           </form>
         </ScrollArea>
-
         <DialogFooter className="pt-4 border-t mt-4">
-          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>
             Cancelar
           </Button>
-          <Button type="submit" form="edit-item-form">
-            Salvar Alterações
+          <Button type="submit" form="edit-item-form" disabled={saving}>
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Salvando...
+              </>
+            ) : (
+              'Salvar Alterações'
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

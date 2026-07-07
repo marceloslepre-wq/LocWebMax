@@ -18,107 +18,102 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus } from 'lucide-react'
+import { Plus, Loader2 } from 'lucide-react'
 import useMainStore, { InventoryItem } from '@/stores/main'
 import { useToast } from '@/hooks/use-toast'
 import { useLocations } from '@/hooks/use-locations'
 import { inventoryService } from '@/services/inventory'
+import { refreshStoreInventory } from '@/lib/inventory-refresh'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
+
+const EMPTY_FORM = {
+  name: '',
+  code: '',
+  category: '',
+  qty: '',
+  description: '',
+  image: '',
+  conditionStatus: 'Disponível' as InventoryItem['conditionStatus'],
+  monthlyPrice: '',
+  dailyPrice: '',
+  salePrice: '',
+  locationId: '',
+}
 
 export function CreateItemDialog() {
-  const { addInventoryItem, settings } = useMainStore()
+  const { settings } = useMainStore()
   const { toast } = useToast()
   const { locations } = useLocations()
   const [open, setOpen] = useState(false)
-  const [formData, setFormData] = useState({
-    name: '',
-    code: '',
-    category: '',
-    qty: '',
-    description: '',
-    image: '',
-    conditionStatus: 'Disponível' as InventoryItem['conditionStatus'],
-    monthlyPrice: '',
-    dailyPrice: '',
-    salePrice: '',
-    locationId: '',
-  })
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({ ...EMPTY_FORM })
+  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
       const reader = new FileReader()
-      reader.onloadend = () => {
-        setFormData((f) => ({ ...f, image: reader.result as string }))
-      }
+      reader.onloadend = () => set('image', reader.result as string)
       reader.readAsDataURL(file)
     }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const qty = parseInt(formData.qty, 10)
-    if (!formData.name || !formData.code || isNaN(qty)) return
-
-    const generateId = () => {
-      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
-      let id = ''
-      for (let i = 0; i < 15; i++) {
-        id += chars.charAt(Math.floor(Math.random() * chars.length))
+    if (saving) return
+    const qty = parseInt(form.qty, 10)
+    if (!form.name || !form.code || isNaN(qty) || qty < 1) {
+      toast({
+        title: 'Dados inválidos',
+        description: 'Preencha nome, código e quantidade válidos.',
+        variant: 'destructive',
+      })
+      return
+    }
+    setSaving(true)
+    try {
+      const created = await inventoryService.createItem({
+        code: form.code,
+        name: form.name,
+        category: form.category || 'Geral',
+        description: form.description,
+        totalQty: qty,
+        availableQty: qty,
+        rentedQty: 0,
+        conditionStatus: form.conditionStatus,
+        image:
+          form.image ||
+          `https://img.usecurling.com/p/200/200?q=${encodeURIComponent(form.category || 'tool')}`,
+        monthlyPrice: parseFloat(form.monthlyPrice) || 0,
+        dailyPrice: parseFloat(form.dailyPrice) || 0,
+        salePrice: parseFloat(form.salePrice) || 0,
+      })
+      const newId = (created as any).id
+      const selLoc = form.locationId || locations[0]?.id || ''
+      const locName = locations.find((l) => l.id === selLoc)?.nome || 'estoque'
+      if (locations.length > 0) {
+        await Promise.all(
+          locations.map((loc) =>
+            inventoryService.upsertStock(newId, loc.id, loc.id === selLoc ? qty : 0, 0),
+          ),
+        )
       }
-      return id
+      await refreshStoreInventory()
+      toast({
+        title: 'Item Cadastrado',
+        description: `${form.name} adicionado ao estoque do ${locName}.`,
+      })
+      setOpen(false)
+      setForm({ ...EMPTY_FORM })
+    } catch (err) {
+      toast({
+        title: 'Erro ao cadastrar',
+        description: getErrorMessage(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setSaving(false)
     }
-    const newItemId = generateId()
-
-    await addInventoryItem({
-      id: newItemId,
-      name: formData.name,
-      code: formData.code,
-      category: formData.category || 'Geral',
-      description: formData.description,
-      totalQty: qty,
-      availableQty: qty,
-      rentedQty: 0,
-      conditionStatus: formData.conditionStatus,
-      image:
-        formData.image ||
-        `https://img.usecurling.com/p/200/200?q=${encodeURIComponent(formData.category || 'tool')}`,
-      monthlyPrice: parseFloat(formData.monthlyPrice) || 0,
-      dailyPrice: parseFloat(formData.dailyPrice) || 0,
-      salePrice: parseFloat(formData.salePrice) || 0,
-    })
-
-    // Aguarda a inserção no banco de dados para evitar erro de Foreign Key
-    await new Promise((resolve) => setTimeout(resolve, 500))
-
-    const locationId = formData.locationId || locations[0]?.id || ''
-    const locationName = locations.find((l) => l.id === locationId)?.nome || 'estoque'
-
-    if (locations.length > 0) {
-      await Promise.all(
-        locations.map((loc) =>
-          inventoryService.upsertStock(newItemId, loc.id, loc.id === locationId ? qty : 0, 0),
-        ),
-      )
-    }
-
-    toast({
-      title: 'Item Cadastrado',
-      description: `${formData.name} adicionado ao estoque do ${locationName}.`,
-    })
-    setOpen(false)
-    setFormData({
-      name: '',
-      code: '',
-      category: '',
-      qty: '',
-      description: '',
-      image: '',
-      conditionStatus: 'Disponível',
-      monthlyPrice: '',
-      dailyPrice: '',
-      salePrice: '',
-      locationId: '',
-    })
   }
 
   return (
@@ -136,8 +131,8 @@ export function CreateItemDialog() {
           <div className="grid gap-2">
             <Label>Nome do Modelo</Label>
             <Input
-              value={formData.name}
-              onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
+              value={form.name}
+              onChange={(e) => set('name', e.target.value)}
               required
               placeholder="Ex: Furadeira Makita"
             />
@@ -146,23 +141,20 @@ export function CreateItemDialog() {
             <div className="grid gap-2">
               <Label>Código (SKU)</Label>
               <Input
-                value={formData.code}
-                onChange={(e) => setFormData((f) => ({ ...f, code: e.target.value }))}
+                value={form.code}
+                onChange={(e) => set('code', e.target.value)}
                 required
                 placeholder="FUR-002"
               />
             </div>
             <div className="grid gap-2">
               <Label>Categoria</Label>
-              <Select
-                value={formData.category}
-                onValueChange={(v) => setFormData((f) => ({ ...f, category: v }))}
-              >
+              <Select value={form.category} onValueChange={(v) => set('category', v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {settings.categories?.map((cat) => (
+                  {settings.categories?.map((cat: string) => (
                     <SelectItem key={cat} value={cat}>
                       {cat}
                     </SelectItem>
@@ -177,8 +169,8 @@ export function CreateItemDialog() {
               <Input
                 type="number"
                 step="0.01"
-                value={formData.monthlyPrice}
-                onChange={(e) => setFormData((f) => ({ ...f, monthlyPrice: e.target.value }))}
+                value={form.monthlyPrice}
+                onChange={(e) => set('monthlyPrice', e.target.value)}
                 placeholder="0.00"
               />
             </div>
@@ -187,8 +179,8 @@ export function CreateItemDialog() {
               <Input
                 type="number"
                 step="0.01"
-                value={formData.dailyPrice}
-                onChange={(e) => setFormData((f) => ({ ...f, dailyPrice: e.target.value }))}
+                value={form.dailyPrice}
+                onChange={(e) => set('dailyPrice', e.target.value)}
                 placeholder="0.00"
               />
             </div>
@@ -196,8 +188,8 @@ export function CreateItemDialog() {
           <div className="grid gap-2">
             <Label>Descrição</Label>
             <Textarea
-              value={formData.description}
-              onChange={(e) => setFormData((f) => ({ ...f, description: e.target.value }))}
+              value={form.description}
+              onChange={(e) => set('description', e.target.value)}
               placeholder="Detalhes adicionais do equipamento..."
               className="resize-none h-20"
             />
@@ -207,8 +199,8 @@ export function CreateItemDialog() {
             <Input
               type="number"
               step="0.01"
-              value={formData.salePrice}
-              onChange={(e) => setFormData((f) => ({ ...f, salePrice: e.target.value }))}
+              value={form.salePrice}
+              onChange={(e) => set('salePrice', e.target.value)}
               placeholder="0.00"
             />
           </div>
@@ -218,17 +210,14 @@ export function CreateItemDialog() {
               <Input
                 type="number"
                 min="1"
-                value={formData.qty}
-                onChange={(e) => setFormData((f) => ({ ...f, qty: e.target.value }))}
+                value={form.qty}
+                onChange={(e) => set('qty', e.target.value)}
                 required
               />
             </div>
             <div className="grid gap-2">
               <Label>Status</Label>
-              <Select
-                value={formData.conditionStatus}
-                onValueChange={(v) => setFormData((f) => ({ ...f, conditionStatus: v as any }))}
-              >
+              <Select value={form.conditionStatus} onValueChange={(v) => set('conditionStatus', v)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -243,10 +232,7 @@ export function CreateItemDialog() {
           </div>
           <div className="grid gap-2">
             <Label>Local de Estoque Inicial</Label>
-            <Select
-              value={formData.locationId}
-              onValueChange={(v) => setFormData((f) => ({ ...f, locationId: v }))}
-            >
+            <Select value={form.locationId} onValueChange={(v) => set('locationId', v)}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecione o local..." />
               </SelectTrigger>
@@ -267,20 +253,33 @@ export function CreateItemDialog() {
               onChange={handleImageUpload}
             />
           </div>
-          {formData.image && formData.image.startsWith('data:') && (
+          {form.image && form.image.startsWith('data:') && (
             <div className="flex justify-center mt-2">
               <img
-                src={formData.image}
+                src={form.image}
                 alt="Preview"
                 className="h-24 w-24 object-cover rounded shadow-sm border"
               />
             </div>
           )}
           <DialogFooter className="pt-4">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={saving}
+            >
               Cancelar
             </Button>
-            <Button type="submit">Salvar</Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Salvando...
+                </>
+              ) : (
+                'Salvar'
+              )}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

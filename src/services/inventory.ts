@@ -1,5 +1,35 @@
 import pb from '@/lib/pocketbase/client'
 
+export interface InventoryCreateData {
+  code: string
+  name: string
+  category: string
+  description: string
+  totalQty: number
+  availableQty: number
+  rentedQty: number
+  conditionStatus: string
+  image: string
+  monthlyPrice: number
+  dailyPrice: number
+  salePrice: number
+}
+
+export interface InventoryUpdateData {
+  name: string
+  code: string
+  category: string
+  description: string
+  totalQty: number
+  availableQty: number
+  rentedQty: number
+  conditionStatus: string
+  image: string
+  monthlyPrice: number
+  dailyPrice: number
+  salePrice: number
+}
+
 export const inventoryService = {
   getAll() {
     return pb.collection('inventory').getFullList({ sort: '-created' })
@@ -10,8 +40,40 @@ export const inventoryService = {
   create(data: any) {
     return pb.collection('inventory').create(data)
   },
+  createItem(data: InventoryCreateData) {
+    return pb.collection('inventory').create({
+      code: data.code,
+      name: data.name,
+      category: data.category,
+      description: data.description,
+      total_qty: data.totalQty,
+      available_qty: data.availableQty,
+      rented_qty: data.rentedQty,
+      condition_status: data.conditionStatus,
+      image: data.image,
+      monthly_price: data.monthlyPrice,
+      daily_price: data.dailyPrice,
+      sale_price: data.salePrice,
+    })
+  },
   update(id: string, data: any) {
     return pb.collection('inventory').update(id, data)
+  },
+  updateItem(id: string, data: InventoryUpdateData) {
+    return pb.collection('inventory').update(id, {
+      name: data.name,
+      code: data.code,
+      category: data.category,
+      description: data.description,
+      total_qty: data.totalQty,
+      available_qty: data.availableQty,
+      rented_qty: data.rentedQty,
+      condition_status: data.conditionStatus,
+      image: data.image,
+      monthly_price: data.monthlyPrice,
+      daily_price: data.dailyPrice,
+      sale_price: data.salePrice,
+    })
   },
   delete(id: string) {
     return pb.collection('inventory').delete(id)
