@@ -1,25 +1,10 @@
 onRecordAfterCreateSuccess((e) => {
-  const record = e.record
-  const isImported = record.getBool('is_imported')
-  if (isImported) return e.next()
+  const rental = e.record
 
-  var rawItems = record.get('items') || []
-  if (typeof rawItems === 'string') {
-    try {
-      rawItems = JSON.parse(rawItems)
-    } catch (_) {
-      rawItems = []
-    }
-  }
-  var items = rawItems
+  if (rental.getBool('is_imported')) return e.next()
 
-  var localId = record.getString('local_retirada_id') || ''
-  if (!localId) {
-    try {
-      var galpao = $app.findFirstRecordByData('locais', 'nome', 'Galpão')
-      localId = galpao.id
-    } catch (_) {}
-  }
+  const items = rental.get('items') || []
+  const localId = rental.getString('local_retirada_id') || ''
 
   for (let i = 0; i < items.length; i++) {
     var item = items[i]
@@ -28,11 +13,13 @@ onRecordAfterCreateSuccess((e) => {
 
     try {
       var inv = $app.findRecordById('inventory', item.itemId)
-      inv.set('available_qty', Math.max(0, inv.getInt('available_qty') - qty))
+      inv.set('available_qty', inv.getInt('available_qty') - qty)
       inv.set('rented_qty', inv.getInt('rented_qty') + qty)
       $app.save(inv)
     } catch (err) {
-      $app.logger().error('inventory outflow failed', 'itemId', item.itemId, 'err', err.message)
+      $app
+        .logger()
+        .error('inventory update failed on create', 'err', err.message, 'itemId', item.itemId)
     }
 
     if (localId) {
@@ -45,22 +32,12 @@ onRecordAfterCreateSuccess((e) => {
           0,
         )
         if (stocks.length > 0) {
-          stocks[0].set(
-            'quantidade_locada',
-            Math.max(0, stocks[0].getInt('quantidade_locada') + qty),
-          )
-          $app.save(stocks[0])
-        } else {
-          var estCol = $app.findCollectionByNameOrId('estoque_por_local')
-          var est = new Record(estCol)
-          est.set('inventory_id', item.itemId)
-          est.set('local_id', localId)
-          est.set('quantidade_total', 0)
-          est.set('quantidade_locada', qty)
-          $app.save(est)
+          var stock = stocks[0]
+          stock.set('quantidade_locada', stock.getInt('quantidade_locada') + qty)
+          $app.save(stock)
         }
       } catch (err) {
-        $app.logger().error('estoque outflow failed', 'itemId', item.itemId, 'err', err.message)
+        $app.logger().error('estoque_por_local update failed on create', 'err', err.message)
       }
     }
   }

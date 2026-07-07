@@ -79,7 +79,9 @@ export default function Rentals() {
 
     rentals.forEach((r) => {
       if (r.status === 'Ativo' && !rentalField(r, 'actualReturnDate', 'actual_return_date')) {
-        const dateStr = rentalField(r, 'expectedReturnDate', 'expected_return_date').split('T')[0]
+        const dateStr = rentalField(r, 'expectedReturnDate', 'expected_return_date')
+          .replace(' ', 'T')
+          .split('T')[0]
         const returnDate = new Date(dateStr + 'T00:00:00')
         if (returnDate < today) {
           hasOverdueLocal = true
@@ -121,7 +123,9 @@ export default function Rentals() {
 
     let matchesReturnDate = true
     if (returnDateStart || returnDateEnd) {
-      const rDate = rentalField(r, 'expectedReturnDate', 'expected_return_date').split('T')[0]
+      const rDate = rentalField(r, 'expectedReturnDate', 'expected_return_date')
+        .replace(' ', 'T')
+        .split('T')[0]
       if (returnDateStart && rDate < returnDateStart) matchesReturnDate = false
       if (returnDateEnd && rDate > returnDateEnd) matchesReturnDate = false
     }

@@ -66,11 +66,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export function normalizeDate(dateStr?: string): string {
+  if (!dateStr) return ''
+  return dateStr.trim().replace(' ', 'T').split('T')[0]
+}
+
 export function formatDatePtBR(dateStr?: string): string {
   if (!dateStr) return '-'
-  const parts = dateStr.split('T')[0].split('-')
+  const datePart = normalizeDate(dateStr)
+  if (!datePart) return '-'
+  const parts = datePart.split('-')
   if (parts.length !== 3) return '-'
-  const date = new Date(dateStr.split('T')[0] + 'T00:00:00')
+  const date = new Date(datePart + 'T00:00:00')
   if (isNaN(date.getTime())) return '-'
   const dayOfWeek = format(date, 'EEE', { locale: ptBR })
   const day = format(date, 'dd', { locale: ptBR })
