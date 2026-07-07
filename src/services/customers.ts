@@ -88,12 +88,22 @@ export const customerService = {
 
   async getCustomers() {
     const data = await pb.collection('customers').getFullList({ sort: '-created' })
-    return data.map(mapFromDb)
+    const mapped = data.map(mapFromDb)
+    mapped.sort((a, b) => {
+      const numA = parseInt(a.matricula, 10)
+      const numB = parseInt(b.matricula, 10)
+      const valA = isNaN(numA) ? 0 : numA
+      const valB = isNaN(numB) ? 0 : numB
+      return valB - valA
+    })
+    return mapped
   },
 
   async createCustomer(customer: Omit<Customer, 'id'>) {
     const dbPayload = mapToDb(customer)
-    if (!dbPayload.matricula) dbPayload.matricula = 'AUTO'
+    if (!dbPayload.matricula || dbPayload.matricula === 'AUTO') {
+      dbPayload.matricula = await this.getNextMatricula()
+    }
     const data = await pb.collection('customers').create(dbPayload)
     return mapFromDb(data)
   },
@@ -109,11 +119,13 @@ export const customerService = {
 
   async getNextMatricula() {
     try {
-      const data = await pb.collection('customers').getFullList({ sort: '-matricula' })
-      if (data.length > 0 && data[0].matricula) {
-        const last = parseInt(data[0].matricula, 10)
-        if (!isNaN(last)) return String(last + 1).padStart(4, '0')
+      const data = await pb.collection('customers').getFullList()
+      let max = 0
+      for (const record of data) {
+        const num = parseInt(record.matricula, 10)
+        if (!isNaN(num) && num > max) max = num
       }
+      return String(max + 1).padStart(4, '0')
     } catch {
       /* intentionally ignored */
     }

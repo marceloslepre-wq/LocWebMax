@@ -56,11 +56,14 @@ export function ImportCustomersDialog({ onSuccess }: { onSuccess?: () => void })
       }
 
       const existingDocs = new Set<string>()
+      let maxMatricula = 0
       try {
         const allCustomers = await pb.collection('customers').getFullList()
         for (const c of allCustomers) {
           const doc = (c as any).document?.replace(/\D/g, '')
           if (doc) existingDocs.add(doc)
+          const matNum = parseInt((c as any).matricula, 10)
+          if (!isNaN(matNum) && matNum > maxMatricula) maxMatricula = matNum
         }
       } catch {
         /* ignore - proceed with empty set */
@@ -100,7 +103,8 @@ export function ImportCustomersDialog({ onSuccess }: { onSuccess?: () => void })
 
         let matricula = row.matricula?.trim() || ''
         if (matricula === '-' || !matricula) {
-          matricula = 'AUTO'
+          maxMatricula++
+          matricula = String(maxMatricula).padStart(4, '0')
         }
 
         try {

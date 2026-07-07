@@ -212,7 +212,8 @@ export default function PublicCustomerForm() {
       let targetCustomerId = createdCustomerId
 
       if (!targetCustomerId) {
-        const payload: any = { ...formData, matricula: 'AUTO' }
+        const nextMatricula = await customerService.getNextMatricula()
+        const payload: any = { ...formData, matricula: nextMatricula }
         delete payload.phone
         payload.phone_cell = formData.phoneCell
         payload.phone_res = formData.phoneRes
