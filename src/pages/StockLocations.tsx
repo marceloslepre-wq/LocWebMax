@@ -1,38 +1,41 @@
-import { useEffect, useState, useMemo } from 'react'
-import { supabase } from '@/lib/supabase/client'
+import { useEffect, useState, useMemo, useCallback } from 'react'
+import pb from '@/lib/pocketbase/client'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { TransferInventoryDialog } from '@/components/inventory/TransferInventoryDialog'
 import { Input } from '@/components/ui/input'
 import { Search } from 'lucide-react'
+import { useLocations } from '@/hooks/use-locations'
 
 export default function StockLocations() {
-  const [locais, setLocais] = useState<any[]>([])
+  const { locations: locais } = useLocations()
   const [inventory, setInventory] = useState<any[]>([])
   const [estoque, setEstoque] = useState<any[]>([])
   const [search, setSearch] = useState('')
 
-  const loadData = async () => {
-    const [lRes, iRes, eRes] = await Promise.all([
-      supabase.from('locais').select('*').eq('ativo', true).order('nome'),
-      supabase.from('inventory').select('id, name, code').order('name'),
-      supabase.from('estoque_por_local').select('*'),
-    ])
-    if (lRes.data) setLocais(lRes.data)
-    if (iRes.data) setInventory(iRes.data)
-    if (eRes.data) setEstoque(eRes.data)
-  }
+  const loadData = useCallback(async () => {
+    try {
+      const [invData, estData] = await Promise.all([
+        pb.collection('inventory').getFullList({ sort: 'name' }),
+        pb.collection('estoque_por_local').getFullList(),
+      ])
+      setInventory(invData as any[])
+      setEstoque(estData as any[])
+    } catch (error) {
+      console.error('Error fetching data:', error)
+    }
+  }, [])
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [loadData])
 
   const matrix = useMemo(() => {
     return inventory
       .map((inv) => {
         const row: any = { id: inv.id, name: inv.name, code: inv.code, total: 0 }
         locais.forEach((loc) => {
-          const est = estoque.find((e) => e.inventory_id === inv.id && e.local_id === loc.id)
-          const available = est ? est.quantidade_total - est.quantidade_locada : 0
+          const est = estoque.find((e: any) => e.inventory_id === inv.id && e.local_id === loc.id)
+          const available = est ? (est.quantidade_total || 0) - (est.quantidade_locada || 0) : 0
           row[loc.id] = available
           row.total += available
         })

@@ -104,7 +104,8 @@ export default function RentalDetail() {
       dAddrStr = `${dAddr.street || ''}, ${dAddr.number || 'S/N'}${dAddr.complement ? ' - ' + dAddr.complement : ''}, Bairro: ${dAddr.neighborhood || ''}, Cidade: ${dAddr.city || ''}, Estado: ${dAddr.state || ''}, CEP: ${dAddr.zipCode || ''}`
     }
 
-    const pickupLoc = locaisList.find((l) => l.id === rental.pickupLocationId)
+    const localRetiradaId = (rental as any).localRetiradaId || (rental as any).local_retirada_id
+    const pickupLoc = locaisList.find((l) => l.id === (localRetiradaId || rental.pickupLocationId))
     let pAddress = pickupLoc?.endereco || ''
     let pickupText =
       rental.pickupLocationId === 'delivery'
@@ -246,7 +247,8 @@ export default function RentalDetail() {
       dAddrStr = `${dAddr.street || ''}, ${dAddr.number || 'S/N'}${dAddr.complement ? ' - ' + dAddr.complement : ''}, Bairro: ${dAddr.neighborhood || ''}, Cidade: ${dAddr.city || ''}, Estado: ${dAddr.state || ''}, CEP: ${dAddr.zipCode || ''}`
     }
 
-    const pickupLoc = locaisList.find((l) => l.id === rental.pickupLocationId)
+    const localRetiradaId = (rental as any).localRetiradaId || (rental as any).local_retirada_id
+    const pickupLoc = locaisList.find((l) => l.id === (localRetiradaId || rental.pickupLocationId))
     let pickupText =
       rental.pickupLocationId === 'delivery'
         ? 'Entrega no Endereço do Cliente'

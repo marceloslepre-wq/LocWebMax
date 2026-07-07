@@ -11,6 +11,10 @@ onRecordAfterUpdateSuccess((e) => {
   }
   var newItems = rental.get('items') || []
 
+  var pickupLocalId = rental.getString('local_retirada_id') || ''
+  var returnLocalId = rental.getString('local_devolucao_id') || pickupLocalId || ''
+  var isCrossLocation = returnLocalId && pickupLocalId && returnLocalId !== pickupLocalId
+
   for (let i = 0; i < newItems.length; i++) {
     var newItem = newItems[i]
     if (newItem.itemId === 'freight' || !newItem.itemId) continue
@@ -40,24 +44,58 @@ onRecordAfterUpdateSuccess((e) => {
         .error('inventory update failed on return', 'err', err.message, 'itemId', newItem.itemId)
     }
 
-    var localId =
-      rental.getString('local_devolucao_id') || rental.getString('local_retirada_id') || ''
-    if (localId) {
+    if (pickupLocalId) {
       try {
-        var stocks = $app.findRecordsByFilter(
+        var pickupStocks = $app.findRecordsByFilter(
           'estoque_por_local',
-          'inventory_id = "' + newItem.itemId + '" && local_id = "' + localId + '"',
+          'inventory_id = "' + newItem.itemId + '" && local_id = "' + pickupLocalId + '"',
           '',
           1,
           0,
         )
-        if (stocks.length > 0) {
-          var stock = stocks[0]
-          stock.set('quantidade_locada', Math.max(0, stock.getInt('quantidade_locada') - delta))
-          $app.save(stock)
+        if (pickupStocks.length > 0) {
+          var pickupStock = pickupStocks[0]
+          pickupStock.set(
+            'quantidade_locada',
+            Math.max(0, pickupStock.getInt('quantidade_locada') - delta),
+          )
+          if (isCrossLocation) {
+            pickupStock.set(
+              'quantidade_total',
+              Math.max(0, pickupStock.getInt('quantidade_total') - delta),
+            )
+          }
+          $app.save(pickupStock)
         }
       } catch (err) {
-        $app.logger().error('estoque_por_local update failed on return', 'err', err.message)
+        $app.logger().error('estoque pickup update failed on return', 'err', err.message)
+      }
+    }
+
+    if (isCrossLocation && returnLocalId) {
+      try {
+        var returnStocks = $app.findRecordsByFilter(
+          'estoque_por_local',
+          'inventory_id = "' + newItem.itemId + '" && local_id = "' + returnLocalId + '"',
+          '',
+          1,
+          0,
+        )
+        if (returnStocks.length > 0) {
+          var rs = returnStocks[0]
+          rs.set('quantidade_total', rs.getInt('quantidade_total') + delta)
+          $app.save(rs)
+        } else {
+          var estCol = $app.findCollectionByNameOrId('estoque_por_local')
+          var newStock = new Record(estCol)
+          newStock.set('inventory_id', newItem.itemId)
+          newStock.set('local_id', returnLocalId)
+          newStock.set('quantidade_total', delta)
+          newStock.set('quantidade_locada', 0)
+          $app.save(newStock)
+        }
+      } catch (err) {
+        $app.logger().error('estoque return location update failed', 'err', err.message)
       }
     }
   }

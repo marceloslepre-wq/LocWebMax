@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase/client'
+import { useState, useEffect, useCallback } from 'react'
+import pb from '@/lib/pocketbase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,6 +13,7 @@ import {
 import { Plus, Trash2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { useLocations } from '@/hooks/use-locations'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 
 interface TransferItem {
   inventory_id: string
@@ -29,27 +30,22 @@ export function TransferInventoryForm({ onSuccess }: { onSuccess?: () => void })
   const [locationsStock, setLocationsStock] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    fetchData()
-  }, [])
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const { data: invData, error: invError } = await supabase
-        .from('inventory')
-        .select('id, name, code')
-      if (invError) console.error('Erro ao buscar produtos:', invError)
-      if (invData) setInventory(invData)
-
-      const { data: locData, error: locError } = await supabase
-        .from('estoque_por_local')
-        .select('inventory_id, local_id, quantidade_total, quantidade_locada')
-      if (locError) console.error('Erro ao buscar estoque:', locError)
-      if (locData) setLocationsStock(locData)
+      const [invData, locData] = await Promise.all([
+        pb.collection('inventory').getFullList({ sort: 'name' }),
+        pb.collection('estoque_por_local').getFullList(),
+      ])
+      setInventory(invData as any[])
+      setLocationsStock(locData as any[])
     } catch (e) {
       console.error('Falha na comunicação:', e)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
 
   const getAvailableQty = (inventoryId: string, locationId: string) => {
     const stock = locationsStock.find(
@@ -132,13 +128,15 @@ export function TransferInventoryForm({ onSuccess }: { onSuccess?: () => void })
 
     setLoading(true)
     try {
-      const { error } = await supabase.rpc('transfer_inventory_batch', {
-        p_origin_location_id: origin,
-        p_destination_location_id: destination,
-        p_items: items as any,
+      await pb.send('/backend/v1/inventory/transfer', {
+        method: 'POST',
+        body: JSON.stringify({
+          origin_location_id: origin,
+          destination_location_id: destination,
+          items: items,
+        }),
+        headers: { 'Content-Type': 'application/json' },
       })
-
-      if (error) throw error
 
       toast({
         title: 'Sucesso',
@@ -150,7 +148,7 @@ export function TransferInventoryForm({ onSuccess }: { onSuccess?: () => void })
       fetchData()
       if (onSuccess) onSuccess()
     } catch (err: any) {
-      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+      toast({ title: 'Erro', description: getErrorMessage(err), variant: 'destructive' })
     } finally {
       setLoading(false)
     }
