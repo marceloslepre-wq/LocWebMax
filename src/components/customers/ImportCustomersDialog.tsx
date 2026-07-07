@@ -8,10 +8,18 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Upload, Loader2, FileText, CheckCircle2, AlertCircle, XCircle } from 'lucide-react'
+import {
+  Upload,
+  Loader2,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+  XCircle,
+  RefreshCw,
+} from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { parseCSV, type ImportResult } from '@/lib/csv-import'
-import pb from '@/lib/pocketbase/client'
+import { importCustomers } from '@/services/customer-import'
 
 export function ImportCustomersDialog({ onSuccess }: { onSuccess?: () => void }) {
   const { toast } = useToast()
@@ -55,88 +63,17 @@ export function ImportCustomersDialog({ onSuccess }: { onSuccess?: () => void })
         return
       }
 
-      const existingDocs = new Set<string>()
-      let maxMatricula = 0
-      try {
-        const allCustomers = await pb.collection('customers').getFullList()
-        for (const c of allCustomers) {
-          const doc = (c as any).document?.replace(/\D/g, '')
-          if (doc) existingDocs.add(doc)
-          const matNum = parseInt((c as any).matricula, 10)
-          if (!isNaN(matNum) && matNum > maxMatricula) maxMatricula = matNum
-        }
-      } catch {
-        /* ignore - proceed with empty set */
-      }
-
-      let imported = 0
-      let skipped = 0
-      let failed = 0
-      const errors: string[] = []
-
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i]
-        const rowNum = i + 2
-
-        if (!row.name?.trim()) {
-          errors.push(`Linha ${rowNum}: Nome não informado`)
-          failed++
-          continue
-        }
-
-        const cleanDoc = row.document.replace(/\D/g, '')
-        if (!cleanDoc) {
-          errors.push(`Linha ${rowNum}: Documento não informado`)
-          failed++
-          continue
-        }
-        if (cleanDoc.length !== 11 && cleanDoc.length !== 14) {
-          errors.push(`Linha ${rowNum}: Documento inválido (${row.document})`)
-          failed++
-          continue
-        }
-
-        if (existingDocs.has(cleanDoc)) {
-          skipped++
-          continue
-        }
-
-        let matricula = row.matricula?.trim() || ''
-        if (matricula === '-' || !matricula) {
-          maxMatricula++
-          matricula = String(maxMatricula).padStart(4, '0')
-        }
-
-        try {
-          const payload: Record<string, any> = {
-            matricula,
-            name: row.name.trim(),
-            document: cleanDoc,
-            phone_res: row.phone_res || '',
-            phone_cell: row.phone_cell || '',
-            phone_com: row.phone_com || '',
-            email: row.email || '',
-            address: row.address,
-          }
-          await pb.collection('customers').create(payload)
-          existingDocs.add(cleanDoc)
-          imported++
-        } catch (err: any) {
-          errors.push(`Linha ${rowNum}: ${err?.message || 'Erro ao criar registro'}`)
-          failed++
-        }
-      }
-
-      setResult({ imported, skipped, failed, errors })
+      const res = await importCustomers(rows)
+      setResult(res)
       if (onSuccess) onSuccess()
       toast({
         title: 'Importação concluída',
-        description: `${imported} clientes importados com sucesso, ${skipped} registros ignorados (duplicados), ${failed} falhas detectadas.`,
+        description: `${res.imported} importados, ${res.updated} atualizados, ${res.failed} falhas.`,
       })
     } catch (err: any) {
       toast({
         title: 'Erro',
-        description: 'Falha ao processar o arquivo CSV.',
+        description: err?.message || 'Falha ao processar o arquivo CSV.',
         variant: 'destructive',
       })
     } finally {
@@ -165,8 +102,9 @@ export function ImportCustomersDialog({ onSuccess }: { onSuccess?: () => void })
             <div>
               <p className="text-sm font-medium">Selecione um arquivo CSV</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Colunas esperadas: Matrícula, Nome, Documento, Email, Telefone Celular, Telefone
-                Comercial, Telefone Residencial, Endereço
+                Colunas esperadas: Matricula, Nome, Documento, CEP, Endereco, Numero, Bairro,
+                Cidade, Estado, Telefone_Celular, Segunda_Opcao_Contato, Email, Observacoes,
+                Link_Doc_Identificacao, Link_Comprovante_Endereco
               </p>
             </div>
             <input
@@ -201,7 +139,7 @@ export function ImportCustomersDialog({ onSuccess }: { onSuccess?: () => void })
           {loading && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin" />
-              Importando registros...
+              Importando registros e migrando documentos... Isso pode levar alguns minutos.
             </div>
           )}
 
@@ -212,17 +150,25 @@ export function ImportCustomersDialog({ onSuccess }: { onSuccess?: () => void })
                   <CheckCircle2 className="w-4 h-4" />
                   {result.imported} cliente(s) importado(s) com sucesso
                 </div>
-                <div className="flex items-center gap-2 text-sm font-medium text-orange-600">
-                  <AlertCircle className="w-4 h-4" />
-                  {result.skipped} registro(s) ignorado(s) (duplicados)
-                </div>
+                {result.updated > 0 && (
+                  <div className="flex items-center gap-2 text-sm font-medium text-blue-600">
+                    <RefreshCw className="w-4 h-4" />
+                    {result.updated} cliente(s) atualizado(s)
+                  </div>
+                )}
+                {result.skipped > 0 && (
+                  <div className="flex items-center gap-2 text-sm font-medium text-orange-600">
+                    <AlertCircle className="w-4 h-4" />
+                    {result.skipped} registro(s) ignorado(s) (duplicados)
+                  </div>
+                )}
                 <div className="flex items-center gap-2 text-sm font-medium text-destructive">
                   <XCircle className="w-4 h-4" />
                   {result.failed} falha(s) detectada(s)
                 </div>
                 <p className="text-sm text-muted-foreground pt-1">
-                  {result.imported} clientes importados com sucesso, {result.skipped} registros
-                  ignorados (duplicados), {result.failed} falhas detectadas.
+                  {result.imported} importados, {result.updated} atualizados, {result.failed}{' '}
+                  falhas.
                 </p>
               </div>
               {result.errors.length > 0 && (

@@ -7,10 +7,14 @@ export interface ParsedCustomerRow {
   phone_com: string
   email: string
   address: Record<string, string>
+  observations: string
+  link_doc_identificacao: string
+  link_comprovante_endereco: string
 }
 
 export interface ImportResult {
   imported: number
+  updated: number
   skipped: number
   failed: number
   errors: string[]
@@ -25,72 +29,103 @@ const COLUMN_MAP: Record<string, string> = {
   'cpf/cnpj': 'document',
   cpf: 'document',
   cnpj: 'document',
-  'telefone residencial': 'phone_res',
-  phone_res: 'phone_res',
-  'telefone celular': 'phone_cell',
-  phone_cell: 'phone_cell',
-  celular: 'phone_cell',
-  'telefone comercial': 'phone_com',
-  phone_com: 'phone_com',
-  'e-mail': 'email',
-  email: 'email',
+  cep: 'zipCode',
+  endereco: 'street',
+  endereço: 'street',
   rua: 'street',
-  endereco: 'raw_address',
-  endereço: 'raw_address',
   numero: 'number',
   número: 'number',
   bairro: 'neighborhood',
   cidade: 'city',
   estado: 'state',
   uf: 'state',
-  cep: 'zipCode',
+  telefone_celular: 'phone_cell',
+  'telefone celular': 'phone_cell',
+  celular: 'phone_cell',
+  phone_cell: 'phone_cell',
+  segunda_opcao_contato: 'phone_com',
+  'segunda opção de contato': 'phone_com',
+  'telefone residencial': 'phone_res',
+  phone_res: 'phone_res',
+  'telefone comercial': 'phone_com',
+  phone_com: 'phone_com',
+  'e-mail': 'email',
+  email: 'email',
+  observacoes: 'observations',
+  observações: 'observations',
+  link_doc_identificacao: 'link_doc_identificacao',
+  link_comprovante_endereco: 'link_comprovante_endereco',
   complemento: 'complement',
   complement: 'complement',
 }
 
-function normalizeHeader(header: string): string {
-  return header.trim().toLowerCase().replace(/\s+/g, ' ')
+function normalizeHeader(h: string): string {
+  return h.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-function cleanValue(val: string): string {
-  const v = val.trim()
-  return v === '-' ? '' : v
+function cleanValue(v: string): string {
+  const val = v.trim()
+  return val === '-' ? '' : val
 }
 
-function parseAddressString(addr: string): Record<string, string> {
-  const parts = addr
-    .split(',')
-    .map((p) => p.trim())
-    .filter(Boolean)
-  const result: Record<string, string> = { street: '', number: '', city: '', state: '' }
-  if (parts.length <= 1) {
-    if (parts[0]) result.street = parts[0]
-    return result
-  }
-  let endIdx = parts.length
-  if (/^[a-z]{2}$/i.test(parts[endIdx - 1])) {
-    result.state = parts[endIdx - 1].toUpperCase()
-    endIdx--
-  }
-  if (endIdx > 0 && result.state) {
-    result.city = parts[endIdx - 1]
-    endIdx--
-  }
-  if (endIdx > 0) {
-    const candidate = parts[endIdx - 1]
-    if (/^\d+/.test(candidate) || /^s\/n/i.test(candidate)) {
-      result.number = candidate
-      endIdx--
+function sanitizeDigits(v: string): string {
+  return (v || '').replace(/\D/g, '')
+}
+
+function splitCSVLines(text: string): string[] {
+  const lines: string[] = []
+  let current = ''
+  let inQuotes = false
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    if (char === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        current += '"'
+        i++
+      } else {
+        inQuotes = !inQuotes
+        current += char
+      }
+    } else if (char === '\n' && !inQuotes) {
+      lines.push(current)
+      current = ''
+    } else if (char === '\r' && !inQuotes) {
+      continue
+    } else {
+      current += char
     }
   }
-  if (endIdx > 0) {
-    result.street = parts.slice(0, endIdx).join(', ')
+  if (current.trim()) lines.push(current)
+  return lines
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = []
+  let current = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"'
+        i++
+      } else {
+        inQuotes = !inQuotes
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current)
+      current = ''
+    } else {
+      current += char
+    }
   }
+  result.push(current)
   return result
 }
 
 export function parseCSV(text: string): ParsedCustomerRow[] {
-  const lines = splitCSVLines(text)
+  const cleanText = text.replace(/^\uFEFF/, '')
+  const lines = splitCSVLines(cleanText)
   if (lines.length < 2) return []
 
   const headers = parseCSVLine(lines[0]).map(normalizeHeader)
@@ -113,11 +148,7 @@ export function parseCSV(text: string): ParsedCustomerRow[] {
     if (!record.name && !record.document) continue
 
     const address: Record<string, string> = {}
-    if (record.raw_address) {
-      Object.assign(address, parseAddressString(record.raw_address))
-      delete record.raw_address
-    }
-    const addressFields = [
+    for (const field of [
       'street',
       'number',
       'neighborhood',
@@ -125,8 +156,7 @@ export function parseCSV(text: string): ParsedCustomerRow[] {
       'state',
       'zipCode',
       'complement',
-    ]
-    for (const field of addressFields) {
+    ]) {
       if (record[field]) {
         address[field] = record[field]
         delete record[field]
@@ -136,69 +166,17 @@ export function parseCSV(text: string): ParsedCustomerRow[] {
     rows.push({
       matricula: record.matricula || '',
       name: record.name || '',
-      document: record.document || '',
-      phone_res: record.phone_res || '',
-      phone_cell: record.phone_cell || '',
-      phone_com: record.phone_com || '',
+      document: sanitizeDigits(record.document || ''),
+      phone_res: sanitizeDigits(record.phone_res || ''),
+      phone_cell: sanitizeDigits(record.phone_cell || ''),
+      phone_com: sanitizeDigits(record.phone_com || ''),
       email: record.email || '',
       address,
+      observations: record.observations || '',
+      link_doc_identificacao: record.link_doc_identificacao || '',
+      link_comprovante_endereco: record.link_comprovante_endereco || '',
     })
   }
 
   return rows
-}
-
-function splitCSVLines(text: string): string[] {
-  const lines: string[] = []
-  let current = ''
-  let inQuotes = false
-
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]
-    if (char === '"') {
-      if (inQuotes && text[i + 1] === '"') {
-        current += '"'
-        i++
-      } else {
-        inQuotes = !inQuotes
-        current += char
-      }
-    } else if (char === '\n' && !inQuotes) {
-      lines.push(current)
-      current = ''
-    } else if (char === '\r' && !inQuotes) {
-      continue
-    } else {
-      current += char
-    }
-  }
-  if (current.trim()) lines.push(current)
-
-  return lines
-}
-
-function parseCSVLine(line: string): string[] {
-  const result: string[] = []
-  let current = ''
-  let inQuotes = false
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i]
-    if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"'
-        i++
-      } else {
-        inQuotes = !inQuotes
-      }
-    } else if (char === ',' && !inQuotes) {
-      result.push(current)
-      current = ''
-    } else {
-      current += char
-    }
-  }
-  result.push(current)
-
-  return result
 }
