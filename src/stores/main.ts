@@ -399,7 +399,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return item
         }),
       )
-      return null
+      throw err
     }
   }
 

@@ -34,6 +34,7 @@ import { usePermissions } from '@/hooks/use-permissions'
 import { cn } from '@/lib/utils'
 import { useLocations } from '@/hooks/use-locations'
 import { useAuth } from '@/hooks/use-auth'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 
 export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental) => void }) {
   const { customers, inventory, addRental, settings } = useMainStore()
@@ -320,41 +321,49 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
 
     const isDelivery = pickupLocationId === 'delivery'
 
-    const createdRental = await addRental({
-      id: newId,
-      customerId,
-      customer_id: customerId,
-      pickupLocationId,
-      local_retirada_id: isDelivery ? null : pickupLocationId,
-      items: payloadItems,
-      startDate: startDates[0],
-      start_date: startDates[0],
-      expectedReturnDate: endDates[endDates.length - 1],
-      expected_return_date: endDates[endDates.length - 1],
-      status: 'Ativo',
-      total: finalTotal,
-      customContractHtml: customHtml,
-      custom_contract_html: customHtml,
-      paymentMethod,
-      payment_method: paymentMethod,
-      userId: user?.id,
-      user_id: user?.id,
-    } as any)
+    try {
+      const createdRental = await addRental({
+        id: newId,
+        customerId,
+        customer_id: customerId,
+        pickupLocationId,
+        local_retirada_id: isDelivery ? null : pickupLocationId,
+        items: payloadItems,
+        startDate: startDates[0],
+        start_date: startDates[0],
+        expectedReturnDate: endDates[endDates.length - 1],
+        expected_return_date: endDates[endDates.length - 1],
+        status: 'Ativo',
+        total: finalTotal,
+        customContractHtml: customHtml,
+        custom_contract_html: customHtml,
+        paymentMethod,
+        payment_method: paymentMethod,
+        userId: user?.id,
+        user_id: user?.id,
+      } as any)
 
-    if (createdRental) {
-      toast({
-        title: 'Locação Criada',
-        description: `Contrato ${createdRental.contractNumber || newId} gerado com sucesso.`,
-      })
-      if (onCreated) {
-        onCreated(createdRental)
+      if (createdRental) {
+        toast({
+          title: 'Locação Criada',
+          description: `Contrato ${createdRental.contractNumber || newId} gerado com sucesso.`,
+        })
+        if (onCreated) {
+          onCreated(createdRental)
+        }
       }
-    }
 
-    setOpen(false)
-    setCustomerId('')
-    setItems([])
-    setErrors({})
+      setOpen(false)
+      setCustomerId('')
+      setItems([])
+      setErrors({})
+    } catch (err) {
+      toast({
+        title: 'Estoque Insuficiente',
+        description: getErrorMessage(err),
+        variant: 'destructive',
+      })
+    }
   }
 
   const handleOpenChange = (newOpen: boolean) => {
