@@ -64,6 +64,10 @@ export default function Rentals() {
   const [receiptType, setReceiptType] = useState<'new' | 'renewal'>('new')
   const [receiptRenewalInfo, setReceiptRenewalInfo] = useState<any>(null)
 
+  const rentalField = (r: any, camel: string, snake: string): string => {
+    return r[camel] ?? r[snake] ?? ''
+  }
+
   useEffect(() => {
     if (rentals.length === 0) return
 
@@ -74,8 +78,8 @@ export default function Rentals() {
     const overdueIds: string[] = []
 
     rentals.forEach((r) => {
-      if (r.status === 'Ativo' && !r.actualReturnDate) {
-        const dateStr = r.expectedReturnDate.split('T')[0]
+      if (r.status === 'Ativo' && !rentalField(r, 'actualReturnDate', 'actual_return_date')) {
+        const dateStr = rentalField(r, 'expectedReturnDate', 'expected_return_date').split('T')[0]
         const returnDate = new Date(dateStr + 'T00:00:00')
         if (returnDate < today) {
           hasOverdueLocal = true
@@ -103,11 +107,13 @@ export default function Rentals() {
   }
 
   const filtered = rentals.filter((r) => {
-    const c = customers.find((cust) => cust.id === r.customerId)
+    const c = customers.find((cust) => cust.id === rentalField(r, 'customerId', 'customer_id'))
     const term = search || globalSearch
     const matchesSearch =
       r.id.toLowerCase().includes(term.toLowerCase()) ||
-      r.contractNumber?.toLowerCase().includes(term.toLowerCase()) ||
+      rentalField(r, 'contractNumber', 'contract_number')
+        ?.toLowerCase()
+        .includes(term.toLowerCase()) ||
       (c &&
         (c.name.toLowerCase().includes(term.toLowerCase()) ||
           c.document.toLowerCase().includes(term.toLowerCase())))
@@ -115,7 +121,7 @@ export default function Rentals() {
 
     let matchesReturnDate = true
     if (returnDateStart || returnDateEnd) {
-      const rDate = r.expectedReturnDate.split('T')[0]
+      const rDate = rentalField(r, 'expectedReturnDate', 'expected_return_date').split('T')[0]
       if (returnDateStart && rDate < returnDateStart) matchesReturnDate = false
       if (returnDateEnd && rDate > returnDateEnd) matchesReturnDate = false
     }
@@ -126,7 +132,7 @@ export default function Rentals() {
   const exportData = () => {
     const headers = ['Contrato', 'Cliente', 'Telefone', 'Retirada', 'Previsão', 'Status', 'Total']
     const data = filtered.map((r) => {
-      const c = customers.find((cust) => cust.id === r.customerId)
+      const c = customers.find((cust) => cust.id === rentalField(r, 'customerId', 'customer_id'))
 
       let formattedPhone = ''
       if (c) {
@@ -143,11 +149,11 @@ export default function Rentals() {
       }
 
       return [
-        r.contractNumber || r.id.split('-')[0].toUpperCase(),
+        rentalField(r, 'contractNumber', 'contract_number') || r.id.split('-')[0].toUpperCase(),
         c?.name || '-',
         formattedPhone || '-',
-        formatDateStr(r.startDate),
-        formatDateStr(r.expectedReturnDate),
+        formatDateStr(rentalField(r, 'startDate', 'start_date')),
+        formatDateStr(rentalField(r, 'expectedReturnDate', 'expected_return_date')),
         r.status,
         `R$ ${r.total.toFixed(2)}`,
       ]
@@ -281,7 +287,9 @@ export default function Rentals() {
                 </TableRow>
               ) : (
                 filtered.map((rental) => {
-                  const customer = customers.find((c) => c.id === rental.customerId)
+                  const customer = customers.find(
+                    (c) => c.id === rentalField(rental, 'customerId', 'customer_id'),
+                  )
 
                   let formattedPhone = null
                   if (customer) {
@@ -305,7 +313,8 @@ export default function Rentals() {
                   return (
                     <TableRow key={rental.id} className="group hover:bg-muted/30">
                       <TableCell className="font-medium">
-                        {rental.contractNumber || rental.id.split('-')[0]}
+                        {rentalField(rental, 'contractNumber', 'contract_number') ||
+                          rental.id.split('-')[0]}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
@@ -316,10 +325,12 @@ export default function Rentals() {
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {formatDateStr(rental.startDate)}
+                        {formatDateStr(rentalField(rental, 'startDate', 'start_date'))}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {formatDateStr(rental.expectedReturnDate)}
+                        {formatDateStr(
+                          rentalField(rental, 'expectedReturnDate', 'expected_return_date'),
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge

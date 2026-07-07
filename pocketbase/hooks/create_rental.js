@@ -80,50 +80,6 @@ routerAdd(
     $app.save(rental)
 
     if (!isImported) {
-      for (let i = 0; i < items.length; i++) {
-        var item = items[i]
-        if (item.itemId === 'freight' || !item.itemId) continue
-        try {
-          const inv = $app.findRecordById('inventory', item.itemId)
-          inv.set('available_qty', Math.max(0, inv.getInt('available_qty') - (item.qty || 1)))
-          inv.set('rented_qty', inv.getInt('rented_qty') + (item.qty || 1))
-          $app.save(inv)
-
-          if (defaultLocalId) {
-            try {
-              var stocks = $app.findRecordsByFilter(
-                'estoque_por_local',
-                'inventory_id = "' + item.itemId + '" && local_id = "' + defaultLocalId + '"',
-                '',
-                1,
-                0,
-              )
-              if (stocks.length > 0) {
-                stocks[0].set(
-                  'quantidade_locada',
-                  Math.max(0, stocks[0].getInt('quantidade_locada') + (item.qty || 1)),
-                )
-                $app.save(stocks[0])
-              } else {
-                var estCol = $app.findCollectionByNameOrId('estoque_por_local')
-                var est = new Record(estCol)
-                est.set('inventory_id', item.itemId)
-                est.set('local_id', defaultLocalId)
-                est.set('quantidade_total', 0)
-                est.set('quantidade_locada', item.qty || 1)
-                $app.save(est)
-              }
-            } catch (err) {
-              $app
-                .logger()
-                .error('estoque_por_local update failed', 'itemId', item.itemId, 'err', err.message)
-            }
-          }
-        } catch (err) {
-          $app.logger().error('inventory update failed', 'itemId', item.itemId, 'err', err.message)
-        }
-      }
-
       try {
         const paymentsCol = $app.findCollectionByNameOrId('payments')
         const payment = new Record(paymentsCol)
