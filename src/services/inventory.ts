@@ -9,10 +9,10 @@ export interface InventoryCreateData {
   availableQty: number
   rentedQty: number
   conditionStatus: string
-  image: string
   monthlyPrice: number
   dailyPrice: number
   salePrice: number
+  imageFile?: File | null
 }
 
 export interface InventoryUpdateData {
@@ -24,10 +24,29 @@ export interface InventoryUpdateData {
   availableQty: number
   rentedQty: number
   conditionStatus: string
-  image: string
   monthlyPrice: number
   dailyPrice: number
   salePrice: number
+  imageFile?: File | null
+}
+
+function getFileUrl(recordId: string, filename: string): string {
+  const base = pb.baseUrl.replace(/\/$/, '')
+  return `${base}/api/files/inventory/${recordId}/${filename}`
+}
+
+export function getInventoryImageUrl(record: any): string {
+  if (record.image_file) {
+    return getFileUrl(record.id, record.image_file)
+  }
+  if (record.image) {
+    return record.image
+  }
+  return `https://img.usecurling.com/p/200/200?q=tool`
+}
+
+function buildPlaceholder(category: string): string {
+  return `https://img.usecurling.com/p/200/200?q=${encodeURIComponent(category || 'tool')}`
 }
 
 export const inventoryService = {
@@ -40,40 +59,66 @@ export const inventoryService = {
   create(data: any) {
     return pb.collection('inventory').create(data)
   },
-  createItem(data: InventoryCreateData) {
-    return pb.collection('inventory').create({
-      code: data.code,
-      name: data.name,
-      category: data.category,
-      description: data.description,
-      total_qty: data.totalQty,
-      available_qty: data.availableQty,
-      rented_qty: data.rentedQty,
-      condition_status: data.conditionStatus,
-      image: data.image,
-      monthly_price: data.monthlyPrice,
-      daily_price: data.dailyPrice,
-      sale_price: data.salePrice,
-    })
+  async createItem(data: InventoryCreateData) {
+    const formData = new FormData()
+    formData.append('code', data.code)
+    formData.append('name', data.name)
+    formData.append('category', data.category)
+    formData.append('description', data.description)
+    formData.append('total_qty', String(data.totalQty))
+    formData.append('available_qty', String(data.availableQty))
+    formData.append('rented_qty', String(data.rentedQty))
+    formData.append('condition_status', data.conditionStatus)
+    formData.append('monthly_price', String(data.monthlyPrice))
+    formData.append('daily_price', String(data.dailyPrice))
+    formData.append('sale_price', String(data.salePrice))
+    formData.append('image', buildPlaceholder(data.category))
+    if (data.imageFile) {
+      formData.append('image_file', data.imageFile)
+    }
+    const record = await pb.collection('inventory').create(formData)
+    if (data.imageFile && record.image_file) {
+      try {
+        await pb
+          .collection('inventory')
+          .update(record.id, { image: getFileUrl(record.id, record.image_file) })
+      } catch (err) {
+        console.error('Failed to update image URL:', err)
+      }
+    }
+    return record
   },
   update(id: string, data: any) {
     return pb.collection('inventory').update(id, data)
   },
-  updateItem(id: string, data: InventoryUpdateData) {
-    return pb.collection('inventory').update(id, {
-      name: data.name,
-      code: data.code,
-      category: data.category,
-      description: data.description,
-      total_qty: data.totalQty,
-      available_qty: data.availableQty,
-      rented_qty: data.rentedQty,
-      condition_status: data.conditionStatus,
-      image: data.image,
-      monthly_price: data.monthlyPrice,
-      daily_price: data.dailyPrice,
-      sale_price: data.salePrice,
-    })
+  async updateItem(id: string, data: InventoryUpdateData) {
+    const formData = new FormData()
+    formData.append('name', data.name)
+    formData.append('code', data.code)
+    formData.append('category', data.category)
+    formData.append('description', data.description)
+    formData.append('total_qty', String(data.totalQty))
+    formData.append('available_qty', String(data.availableQty))
+    formData.append('rented_qty', String(data.rentedQty))
+    formData.append('condition_status', data.conditionStatus)
+    formData.append('monthly_price', String(data.monthlyPrice))
+    formData.append('daily_price', String(data.dailyPrice))
+    formData.append('sale_price', String(data.salePrice))
+    if (data.imageFile) {
+      formData.append('image_file', data.imageFile)
+      formData.append('image', '')
+    }
+    const record = await pb.collection('inventory').update(id, formData)
+    if (data.imageFile && record.image_file) {
+      try {
+        await pb
+          .collection('inventory')
+          .update(record.id, { image: getFileUrl(record.id, record.image_file) })
+      } catch (err) {
+        console.error('Failed to update image URL:', err)
+      }
+    }
+    return record
   },
   delete(id: string) {
     return pb.collection('inventory').delete(id)
@@ -83,9 +128,7 @@ export const inventoryService = {
       await pb.collection('inventory').delete(id)
     } catch (error: any) {
       const status = error?.status ?? error?.response?.status ?? 0
-      if (status === 404) {
-        return
-      }
+      if (status === 404) return
       const apiMessage = error?.response?.message || error?.message || ''
       if (
         status === 400 &&
@@ -103,7 +146,6 @@ export const inventoryService = {
       throw error
     }
   },
-
   async getStockByLocation(inventoryId: string) {
     return pb.collection('estoque_por_local').getFullList({
       filter: `inventory_id = "${inventoryId}"`,

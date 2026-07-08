@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -24,7 +24,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useLocations } from '@/hooks/use-locations'
 import { inventoryService } from '@/services/inventory'
 import { refreshStoreInventory } from '@/lib/inventory-refresh'
-import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { getErrorMessage, extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
 
 const EMPTY_FORM = {
   name: '',
@@ -32,13 +32,15 @@ const EMPTY_FORM = {
   category: '',
   qty: '',
   description: '',
-  image: '',
   conditionStatus: 'Disponível' as InventoryItem['conditionStatus'],
   monthlyPrice: '',
   dailyPrice: '',
   salePrice: '',
   locationId: '',
 }
+
+const VALID_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const MAX_FILE_SIZE = 5 * 1024 * 1024
 
 export function CreateItemDialog() {
   const { settings } = useMainStore()
@@ -47,22 +49,59 @@ export function CreateItemDialog() {
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ ...EMPTY_FORM })
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const savingRef = useRef(false)
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => set('image', reader.result as string)
-      reader.readAsDataURL(file)
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+      setSelectedFile(null)
+      setPreviewUrl(null)
+      setFieldErrors({})
+      setForm({ ...EMPTY_FORM })
     }
+    setOpen(newOpen)
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!VALID_IMAGE_TYPES.includes(file.type)) {
+      setFieldErrors((p) => ({ ...p, image_file: 'Tipo inválido. Use JPG, PNG ou WebP.' }))
+      e.target.value = ''
+      return
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      setFieldErrors((p) => ({ ...p, image_file: 'Arquivo muito grande. Máximo 5MB.' }))
+      e.target.value = ''
+      return
+    }
+    setFieldErrors((p) => {
+      const n = { ...p }
+      delete n.image_file
+      return n
+    })
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setSelectedFile(file)
+    setPreviewUrl(URL.createObjectURL(file))
+    e.target.value = ''
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (saving) return
+    if (savingRef.current) return
+    savingRef.current = true
     const qty = parseInt(form.qty, 10)
     if (!form.name || !form.code || isNaN(qty) || qty < 1) {
+      savingRef.current = false
+      setFieldErrors({
+        ...(!form.name && { name: 'Nome é obrigatório.' }),
+        ...(!form.code && { code: 'Código é obrigatório.' }),
+        ...((isNaN(qty) || qty < 1) && { total_qty: 'Quantidade deve ser maior que 0.' }),
+      })
       toast({
         title: 'Dados inválidos',
         description: 'Preencha nome, código e quantidade válidos.',
@@ -81,12 +120,10 @@ export function CreateItemDialog() {
         availableQty: qty,
         rentedQty: 0,
         conditionStatus: form.conditionStatus,
-        image:
-          form.image ||
-          `https://img.usecurling.com/p/200/200?q=${encodeURIComponent(form.category || 'tool')}`,
         monthlyPrice: parseFloat(form.monthlyPrice) || 0,
         dailyPrice: parseFloat(form.dailyPrice) || 0,
         salePrice: parseFloat(form.salePrice) || 0,
+        imageFile: selectedFile,
       })
       const newId = (created as any).id
       const selLoc = form.locationId || locations[0]?.id || ''
@@ -103,21 +140,23 @@ export function CreateItemDialog() {
         title: 'Item Cadastrado',
         description: `${form.name} adicionado ao estoque do ${locName}.`,
       })
-      setOpen(false)
-      setForm({ ...EMPTY_FORM })
+      handleOpenChange(false)
     } catch (err) {
+      const errs = extractFieldErrors(err)
+      setFieldErrors(errs)
       toast({
         title: 'Erro ao cadastrar',
-        description: getErrorMessage(err),
+        description: Object.values(errs).join(' ') || getErrorMessage(err),
         variant: 'destructive',
       })
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button>
           <Plus className="w-4 h-4 mr-2" /> Novo Modelo
@@ -136,6 +175,7 @@ export function CreateItemDialog() {
               required
               placeholder="Ex: Furadeira Makita"
             />
+            {fieldErrors.name && <p className="text-xs text-red-500">{fieldErrors.name}</p>}
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
@@ -146,6 +186,7 @@ export function CreateItemDialog() {
                 required
                 placeholder="FUR-002"
               />
+              {fieldErrors.code && <p className="text-xs text-red-500">{fieldErrors.code}</p>}
             </div>
             <div className="grid gap-2">
               <Label>Categoria</Label>
@@ -190,7 +231,7 @@ export function CreateItemDialog() {
             <Textarea
               value={form.description}
               onChange={(e) => set('description', e.target.value)}
-              placeholder="Detalhes adicionais do equipamento..."
+              placeholder="Detalhes adicionais..."
               className="resize-none h-20"
             />
           </div>
@@ -214,6 +255,9 @@ export function CreateItemDialog() {
                 onChange={(e) => set('qty', e.target.value)}
                 required
               />
+              {fieldErrors.total_qty && (
+                <p className="text-xs text-red-500">{fieldErrors.total_qty}</p>
+              )}
             </div>
             <div className="grid gap-2">
               <Label>Status</Label>
@@ -246,27 +290,30 @@ export function CreateItemDialog() {
             </Select>
           </div>
           <div className="grid gap-2">
-            <Label>Upload de Imagem</Label>
+            <Label>Imagem do Produto</Label>
             <Input
               type="file"
               accept="image/jpeg, image/png, image/webp"
-              onChange={handleImageUpload}
+              onChange={handleFileSelect}
             />
+            {fieldErrors.image_file && (
+              <p className="text-xs text-red-500">{fieldErrors.image_file}</p>
+            )}
+            {previewUrl && (
+              <div className="flex justify-center mt-2">
+                <img
+                  src={previewUrl}
+                  alt="Preview"
+                  className="h-24 w-24 object-cover rounded shadow-sm border"
+                />
+              </div>
+            )}
           </div>
-          {form.image && form.image.startsWith('data:') && (
-            <div className="flex justify-center mt-2">
-              <img
-                src={form.image}
-                alt="Preview"
-                className="h-24 w-24 object-cover rounded shadow-sm border"
-              />
-            </div>
-          )}
           <DialogFooter className="pt-4">
             <Button
               type="button"
               variant="outline"
-              onClick={() => setOpen(false)}
+              onClick={() => handleOpenChange(false)}
               disabled={saving}
             >
               Cancelar

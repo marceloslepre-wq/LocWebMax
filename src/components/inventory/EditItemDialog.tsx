@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -25,7 +25,7 @@ import { useLocations } from '@/hooks/use-locations'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { inventoryService } from '@/services/inventory'
 import { refreshStoreInventory } from '@/lib/inventory-refresh'
-import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { getErrorMessage, extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
 
 interface StockLoc {
   local_id: string
@@ -33,18 +33,24 @@ interface StockLoc {
   quantidade_locada: number
 }
 
+const VALID_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const MAX_FILE_SIZE = 5 * 1024 * 1024
+
 export function EditItemDialog({ item }: { item: InventoryItem }) {
   const { settings } = useMainStore()
   const { toast } = useToast()
   const { locations } = useLocations()
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const savingRef = useRef(false)
   const [form, setForm] = useState({
     name: item.name,
     code: item.code,
     category: item.category,
     description: item.description || '',
-    image: item.image,
     conditionStatus: item.conditionStatus,
     monthlyPrice: item.monthlyPrice?.toString() || '',
     dailyPrice: item.dailyPrice?.toString() || '',
@@ -69,13 +75,38 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
     }
   }, [open, item.id, locations])
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => set('image', reader.result as string)
-      reader.readAsDataURL(file)
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+      setSelectedFile(null)
+      setPreviewUrl(null)
+      setFieldErrors({})
     }
+    setOpen(newOpen)
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!VALID_IMAGE_TYPES.includes(file.type)) {
+      setFieldErrors((p) => ({ ...p, image_file: 'Tipo inválido. Use JPG, PNG ou WebP.' }))
+      e.target.value = ''
+      return
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      setFieldErrors((p) => ({ ...p, image_file: 'Arquivo muito grande. Máximo 5MB.' }))
+      e.target.value = ''
+      return
+    }
+    setFieldErrors((p) => {
+      const n = { ...p }
+      delete n.image_file
+      return n
+    })
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setSelectedFile(file)
+    setPreviewUrl(URL.createObjectURL(file))
+    e.target.value = ''
   }
 
   const updateLoc = (idx: number, value: number) => {
@@ -86,13 +117,23 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (saving) return
+    if (savingRef.current) return
+    savingRef.current = true
     const totalSum = locs.reduce((acc, curr) => acc + curr.quantidade_total, 0)
     if (totalSum <= 0) {
+      savingRef.current = false
       toast({
         title: 'Erro',
         description: 'O total consolidado deve ser maior que 0.',
         variant: 'destructive',
+      })
+      return
+    }
+    if (!form.name || !form.code) {
+      savingRef.current = false
+      setFieldErrors({
+        ...(!form.name && { name: 'Nome é obrigatório.' }),
+        ...(!form.code && { code: 'Código é obrigatório.' }),
       })
       return
     }
@@ -108,11 +149,11 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
         totalQty: totalSum,
         availableQty: newAvailable,
         rentedQty: totalRented,
-        image: form.image || item.image,
         conditionStatus: form.conditionStatus,
         monthlyPrice: parseFloat(form.monthlyPrice) || 0,
         dailyPrice: parseFloat(form.dailyPrice) || 0,
         salePrice: parseFloat(form.salePrice) || 0,
+        imageFile: selectedFile,
       })
       if (locs.length > 0) {
         await Promise.all(
@@ -128,20 +169,23 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
       }
       await refreshStoreInventory()
       toast({ title: 'Item Atualizado', description: `${form.name} modificado com sucesso.` })
-      setOpen(false)
+      handleOpenChange(false)
     } catch (err) {
+      const errs = extractFieldErrors(err)
+      setFieldErrors(errs)
       toast({
         title: 'Erro ao atualizar',
-        description: getErrorMessage(err),
+        description: Object.values(errs).join(' ') || getErrorMessage(err),
         variant: 'destructive',
       })
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Editar">
           <Edit className="w-4 h-4 text-primary" />
@@ -156,11 +200,13 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
             <div className="grid gap-2">
               <Label>Nome do Modelo</Label>
               <Input value={form.name} onChange={(e) => set('name', e.target.value)} required />
+              {fieldErrors.name && <p className="text-xs text-red-500">{fieldErrors.name}</p>}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Código (SKU)</Label>
                 <Input value={form.code} onChange={(e) => set('code', e.target.value)} required />
+                {fieldErrors.code && <p className="text-xs text-red-500">{fieldErrors.code}</p>}
               </div>
               <div className="grid gap-2">
                 <Label>Categoria</Label>
@@ -283,22 +329,39 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
               <Input
                 type="file"
                 accept="image/jpeg, image/png, image/webp"
-                onChange={handleImageUpload}
+                onChange={handleFileSelect}
               />
+              {fieldErrors.image_file && (
+                <p className="text-xs text-red-500">{fieldErrors.image_file}</p>
+              )}
+              {!selectedFile && item.image && (
+                <div className="flex justify-center mt-2">
+                  <img
+                    src={item.image}
+                    alt="Imagem atual"
+                    className="h-24 w-24 object-cover rounded shadow-sm border"
+                  />
+                </div>
+              )}
+              {selectedFile && previewUrl && (
+                <div className="flex justify-center mt-2">
+                  <img
+                    src={previewUrl}
+                    alt="Preview"
+                    className="h-24 w-24 object-cover rounded shadow-sm border"
+                  />
+                </div>
+              )}
             </div>
-            {form.image && (
-              <div className="flex justify-center mt-2">
-                <img
-                  src={form.image}
-                  alt="Preview"
-                  className="h-24 w-24 object-cover rounded shadow-sm border"
-                />
-              </div>
-            )}
           </form>
         </ScrollArea>
         <DialogFooter className="pt-4 border-t mt-4">
-          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => handleOpenChange(false)}
+            disabled={saving}
+          >
             Cancelar
           </Button>
           <Button type="submit" form="edit-item-form" disabled={saving}>
