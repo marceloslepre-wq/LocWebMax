@@ -61,6 +61,10 @@ routerAdd(
                   'Estoque insuficiente no local para o item: ' + inv.getString('name'),
                 )
               }
+            } else {
+              return e.badRequestError(
+                'Sem estoque cadastrado no local para o item: ' + inv.getString('name'),
+              )
             }
           } catch (err) {}
         }

@@ -20,74 +20,69 @@ routerAdd(
     }
 
     try {
-      const oldInv = $app.findRecordById('inventory', oldInvId)
-      oldInv.set('available_qty', oldInv.getInt('available_qty') + quantity)
-      oldInv.set('rented_qty', Math.max(0, oldInv.getInt('rented_qty') - quantity))
-      $app.save(oldInv)
-
-      if (localId) {
-        try {
-          var oldStocks = $app.findRecordsByFilter(
-            'estoque_por_local',
-            'inventory_id = "' + oldInvId + '" && local_id = "' + localId + '"',
-            '',
-            1,
-            0,
-          )
-          if (oldStocks.length > 0) {
-            oldStocks[0].set(
-              'quantidade_locada',
-              Math.max(0, oldStocks[0].getInt('quantidade_locada') - quantity),
-            )
-            $app.save(oldStocks[0])
-          }
-        } catch (err) {
-          $app.logger().error('estoque_por_local exchange old failed', 'err', err.message)
-        }
-      }
+      $app.findRecordById('inventory', oldInvId)
     } catch (err) {
       return e.badRequestError('old inventory item not found')
     }
 
     try {
-      const newInv = $app.findRecordById('inventory', newInvId)
+      var newInv = $app.findRecordById('inventory', newInvId)
       if (newInv.getInt('available_qty') < quantity) {
         return e.badRequestError('insufficient stock for new item')
       }
-      newInv.set('available_qty', newInv.getInt('available_qty') - quantity)
-      newInv.set('rented_qty', newInv.getInt('rented_qty') + quantity)
-      $app.save(newInv)
-
-      if (localId) {
-        try {
-          var newStocks = $app.findRecordsByFilter(
-            'estoque_por_local',
-            'inventory_id = "' + newInvId + '" && local_id = "' + localId + '"',
-            '',
-            1,
-            0,
-          )
-          if (newStocks.length > 0) {
-            newStocks[0].set(
-              'quantidade_locada',
-              Math.max(0, newStocks[0].getInt('quantidade_locada') + quantity),
-            )
-            $app.save(newStocks[0])
-          } else {
-            var estCol = $app.findCollectionByNameOrId('estoque_por_local')
-            var est = new Record(estCol)
-            est.set('inventory_id', newInvId)
-            est.set('local_id', localId)
-            est.set('quantidade_total', 0)
-            est.set('quantidade_locada', quantity)
-            $app.save(est)
-          }
-        } catch (err) {
-          $app.logger().error('estoque_por_local exchange new failed', 'err', err.message)
-        }
-      }
     } catch (err) {
       return e.badRequestError('new inventory item not found')
+    }
+
+    var newStock = null
+    if (localId) {
+      try {
+        var newStocks = $app.findRecordsByFilter(
+          'estoque_por_local',
+          'inventory_id = "' + newInvId + '" && local_id = "' + localId + '"',
+          '',
+          1,
+          0,
+        )
+        if (newStocks.length > 0) {
+          newStock = newStocks[0]
+          var newLocAvailable =
+            newStock.getInt('quantidade_total') - newStock.getInt('quantidade_locada')
+          if (newLocAvailable < quantity) {
+            return e.badRequestError('Estoque insuficiente no local para o novo item')
+          }
+        } else {
+          return e.badRequestError('Sem estoque cadastrado para o novo item no local selecionado')
+        }
+      } catch (err) {
+        return e.badRequestError('Erro ao validar estoque do novo item: ' + err.message)
+      }
+    }
+
+    if (localId) {
+      try {
+        var oldStocks = $app.findRecordsByFilter(
+          'estoque_por_local',
+          'inventory_id = "' + oldInvId + '" && local_id = "' + localId + '"',
+          '',
+          1,
+          0,
+        )
+        if (oldStocks.length > 0) {
+          oldStocks[0].set(
+            'quantidade_locada',
+            Math.max(0, oldStocks[0].getInt('quantidade_locada') - quantity),
+          )
+          $app.save(oldStocks[0])
+        }
+      } catch (err) {
+        $app.logger().error('estoque_por_local exchange old failed', 'err', err.message)
+      }
+    }
+
+    if (newStock) {
+      newStock.set('quantidade_locada', newStock.getInt('quantidade_locada') + quantity)
+      $app.save(newStock)
     }
 
     for (let i = 0; i < items.length; i++) {
@@ -129,7 +124,9 @@ routerAdd(
         pay.set('payment_method', rental.getString('payment_method') || 'PIX')
         pay.set('status', 'pending')
         $app.save(pay)
-      } catch (err) {}
+      } catch (err) {
+        $app.logger().error('exchange payment creation failed', 'err', err.message)
+      }
     }
 
     return e.json(200, { success: true })
