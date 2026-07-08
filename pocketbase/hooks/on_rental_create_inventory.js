@@ -25,10 +25,17 @@ onRecordAfterCreateSuccess((e) => {
           stock.set('quantidade_locada', stock.getInt('quantidade_locada') + qty)
           $app.save(stock)
         } else {
+          var estCol = $app.findCollectionByNameOrId('estoque_por_local')
+          var newStock = new Record(estCol)
+          newStock.set('inventory_id', item.itemId)
+          newStock.set('local_id', localId)
+          newStock.set('quantidade_total', qty)
+          newStock.set('quantidade_locada', qty)
+          $app.save(newStock)
           $app
             .logger()
             .warn(
-              'No stock record found for rental item — skipping stock update',
+              'Created missing stock record for rental item',
               'itemId',
               item.itemId,
               'localId',

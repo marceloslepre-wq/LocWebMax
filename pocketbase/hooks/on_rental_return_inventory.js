@@ -55,6 +55,14 @@ onRecordAfterUpdateSuccess((e) => {
             )
           }
           $app.save(pickupStock)
+        } else {
+          var estCol = $app.findCollectionByNameOrId('estoque_por_local')
+          var fallbackStock = new Record(estCol)
+          fallbackStock.set('inventory_id', newItem.itemId)
+          fallbackStock.set('local_id', pickupLocalId)
+          fallbackStock.set('quantidade_total', 0)
+          fallbackStock.set('quantidade_locada', 0)
+          $app.save(fallbackStock)
         }
       } catch (err) {
         $app.logger().error('estoque pickup update failed on return', 'err', err.message)
