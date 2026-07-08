@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-08T12:36:47.235Z",
+  "generatedAt": "2026-07-08T18:53:35.181Z",
   "collections": [
     {
       "name": "users",
@@ -341,7 +341,8 @@
       ],
       "indexes": [
         "CREATE INDEX idx_customers_document ON customers (document)",
-        "CREATE INDEX idx_customers_matricula ON customers (matricula)"
+        "CREATE INDEX idx_customers_matricula ON customers (matricula)",
+        "CREATE UNIQUE INDEX `idx_customers_matricula_unique` ON `customers` (matricula)"
       ]
     },
     {

@@ -84,6 +84,9 @@ routerAdd(
           if (!matricula || matricula === '-') {
             maxMatricula++
             matricula = String(maxMatricula).padStart(4, '0')
+          } else {
+            var importMatNum = parseInt(matricula, 10)
+            if (!isNaN(importMatNum) && importMatNum > maxMatricula) maxMatricula = importMatNum
           }
 
           var newRecord = new Record(customersCol)

@@ -92,12 +92,22 @@ export function CustomerFormDialog({
     setExistingComprovanteEnderecoPath(customer?.comprovanteEnderecoPath || null)
   }, [customer?.docIdentificacaoPath, customer?.comprovanteEnderecoPath])
 
+  useEffect(() => {
+    if (open && !customer) {
+      customerService
+        .getNextMatricula()
+        .then(setSuggestedMatricula)
+        .catch(() => {})
+    }
+  }, [open, customer])
+
   const [duplicateDocError, setDuplicateDocError] = useState(false)
   const [checkingDoc, setCheckingDoc] = useState(false)
 
   const [uploadProgressMsg, setUploadProgressMsg] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [createdCustomerId, setCreatedCustomerId] = useState<string | null>(null)
+  const [suggestedMatricula, setSuggestedMatricula] = useState('')
 
   const [formData, setFormData] = useState({
     matricula: customer?.matricula || '',
@@ -322,11 +332,11 @@ export function CustomerFormDialog({
         setDocIdentificacaoFile(null)
         setComprovanteEnderecoFile(null)
       }
-    } catch (error) {
+    } catch (error: any) {
       if (!uploadError) {
         toast({
           title: 'Erro',
-          description: 'Ocorreu um erro ao salvar o cliente.',
+          description: error?.message || 'Ocorreu um erro ao salvar o cliente.',
           variant: 'destructive',
         })
       }
@@ -340,6 +350,7 @@ export function CustomerFormDialog({
     if (!newOpen) {
       if (!customer) {
         setFormData({ ...defaultFormData })
+        setSuggestedMatricula('')
       } else {
         setFormData({
           matricula: customer.matricula || '',
@@ -393,7 +404,7 @@ export function CustomerFormDialog({
                   <Label className="text-muted-foreground font-medium">Matrícula:</Label>
                   <Input
                     disabled
-                    value={customer ? formData.matricula : ''}
+                    value={customer ? formData.matricula : suggestedMatricula}
                     className="bg-muted w-full sm:w-32 font-mono h-8"
                     placeholder={customer ? '' : 'Gerado após salvar'}
                   />

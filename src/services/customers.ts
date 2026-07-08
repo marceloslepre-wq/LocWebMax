@@ -99,10 +99,23 @@ export const customerService = {
     return mapped
   },
 
+  async checkMatriculaExists(matricula: string, excludeId?: string) {
+    if (!matricula) return false
+    try {
+      const all = await pb.collection('customers').getFullList()
+      return all.some((c: any) => c.matricula === matricula && c.id !== excludeId)
+    } catch {
+      return false
+    }
+  },
+
   async createCustomer(customer: Omit<Customer, 'id'>) {
     const dbPayload = mapToDb(customer)
     if (!dbPayload.matricula || dbPayload.matricula === 'AUTO') {
       dbPayload.matricula = await this.getNextMatricula()
+    }
+    if (await this.checkMatriculaExists(dbPayload.matricula)) {
+      throw new Error(`Matrícula ${dbPayload.matricula} já existe. Tente novamente.`)
     }
     const data = await pb.collection('customers').create(dbPayload)
     return mapFromDb(data)
