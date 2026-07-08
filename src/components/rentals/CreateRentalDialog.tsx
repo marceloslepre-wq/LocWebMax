@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils'
 import { useLocations } from '@/hooks/use-locations'
 import { useAuth } from '@/hooks/use-auth'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { refreshStoreInventory } from '@/lib/inventory-refresh'
 
 export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental) => void }) {
   const { customers, inventory, addRental, settings } = useMainStore()
@@ -349,6 +350,7 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
           title: 'Locação Criada',
           description: `Contrato ${createdRental.contractNumber || newId} gerado com sucesso.`,
         })
+        refreshStoreInventory()
         if (onCreated) {
           onCreated(createdRental)
         }

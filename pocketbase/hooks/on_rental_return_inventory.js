@@ -33,17 +33,6 @@ onRecordAfterUpdateSuccess((e) => {
 
     if (delta <= 0) continue
 
-    try {
-      var inv = $app.findRecordById('inventory', newItem.itemId)
-      inv.set('available_qty', inv.getInt('available_qty') + delta)
-      inv.set('rented_qty', Math.max(0, inv.getInt('rented_qty') - delta))
-      $app.save(inv)
-    } catch (err) {
-      $app
-        .logger()
-        .error('inventory update failed on return', 'err', err.message, 'itemId', newItem.itemId)
-    }
-
     if (pickupLocalId) {
       try {
         var pickupStocks = $app.findRecordsByFilter(

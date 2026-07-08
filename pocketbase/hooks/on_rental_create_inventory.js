@@ -11,17 +11,6 @@ onRecordAfterCreateSuccess((e) => {
     if (item.itemId === 'freight' || !item.itemId) continue
     var qty = item.qty || 1
 
-    try {
-      var inv = $app.findRecordById('inventory', item.itemId)
-      inv.set('available_qty', inv.getInt('available_qty') - qty)
-      inv.set('rented_qty', inv.getInt('rented_qty') + qty)
-      $app.save(inv)
-    } catch (err) {
-      $app
-        .logger()
-        .error('inventory update failed on create', 'err', err.message, 'itemId', item.itemId)
-    }
-
     if (localId) {
       try {
         var stocks = $app.findRecordsByFilter(
@@ -35,9 +24,25 @@ onRecordAfterCreateSuccess((e) => {
           var stock = stocks[0]
           stock.set('quantidade_locada', stock.getInt('quantidade_locada') + qty)
           $app.save(stock)
+        } else {
+          var estCol = $app.findCollectionByNameOrId('estoque_por_local')
+          var newStock = new Record(estCol)
+          newStock.set('inventory_id', item.itemId)
+          newStock.set('local_id', localId)
+          newStock.set('quantidade_total', 0)
+          newStock.set('quantidade_locada', qty)
+          $app.save(newStock)
         }
       } catch (err) {
-        $app.logger().error('estoque_por_local update failed on create', 'err', err.message)
+        $app
+          .logger()
+          .error(
+            'estoque update failed on rental create',
+            'err',
+            err.message,
+            'itemId',
+            item.itemId,
+          )
       }
     }
   }

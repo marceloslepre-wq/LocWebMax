@@ -14,14 +14,11 @@ routerAdd(
     var localDevolucaoId = body.local_devolucao_id || ''
     var isDelivery = pickupLocationId === 'delivery'
 
-    if (isDelivery) {
-      localRetiradaId = ''
-      localDevolucaoId = ''
-    } else if (!localRetiradaId && pickupLocationId) {
+    if (!isDelivery && !localRetiradaId && pickupLocationId) {
       localRetiradaId = pickupLocationId
     }
 
-    if (!localRetiradaId && !isDelivery && !pickupLocationId) {
+    if (!localRetiradaId) {
       try {
         var galpao = $app.findFirstRecordByData('locais', 'nome', 'Galpão')
         localRetiradaId = galpao.id

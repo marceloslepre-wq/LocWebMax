@@ -25,6 +25,7 @@ import { useLocations } from '@/hooks/use-locations'
 import { differenceInDays } from 'date-fns'
 import { Loader2 } from 'lucide-react'
 import { getErrorMessage, extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
+import { refreshStoreInventory } from '@/lib/inventory-refresh'
 
 export function ReturnDialog({
   rental,
@@ -169,6 +170,8 @@ export function ReturnDialog({
           ? 'Todos os itens foram devolvidos. Contrato finalizado.'
           : 'Itens selecionados devolvidos. Contrato permanece ativo.',
       })
+
+      refreshStoreInventory()
 
       onOpenChange(false)
       if (onReturned) {

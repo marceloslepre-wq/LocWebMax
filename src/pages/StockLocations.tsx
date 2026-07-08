@@ -5,6 +5,7 @@ import { TransferInventoryDialog } from '@/components/inventory/TransferInventor
 import { Input } from '@/components/ui/input'
 import { Search } from 'lucide-react'
 import { useLocations } from '@/hooks/use-locations'
+import { useRealtime } from '@/hooks/use-realtime'
 
 export default function StockLocations() {
   const { locations: locais } = useLocations()
@@ -28,6 +29,14 @@ export default function StockLocations() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  useRealtime('estoque_por_local', () => {
+    loadData()
+  })
+
+  useRealtime('inventory', () => {
+    loadData()
+  })
 
   const matrix = useMemo(() => {
     return inventory
