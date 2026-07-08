@@ -104,18 +104,25 @@ export default function RentalDetail() {
       dAddrStr = `${dAddr.street || ''}, ${dAddr.number || 'S/N'}${dAddr.complement ? ' - ' + dAddr.complement : ''}, Bairro: ${dAddr.neighborhood || ''}, Cidade: ${dAddr.city || ''}, Estado: ${dAddr.state || ''}, CEP: ${dAddr.zipCode || ''}`
     }
 
-    const localRetiradaId =
-      (rental as any).local_retirada_id || (rental as any).localRetiradaId || ''
-    const pickupLocationIdRaw =
-      (rental as any).pickup_location_id || (rental as any).pickupLocationId || ''
+    const localRetiradaId = rental.localRetiradaId || (rental as any).local_retirada_id || ''
+    const pickupLocationIdRaw = rental.pickupLocationId || (rental as any).pickup_location_id || ''
     const pickupLoc = locaisList.find((l) => l.id === localRetiradaId)
     let pAddress = pickupLoc?.endereco || ''
-    let pickupText =
-      pickupLocationIdRaw === 'delivery'
-        ? 'Entrega no Endereço do Cliente'
-        : pickupLoc?.nome
-          ? `${pickupLoc.nome}${pAddress ? ` - ${pAddress}` : ''}`
-          : 'Não informado'
+    let pickupText = ''
+    if (pickupLocationIdRaw === 'delivery') {
+      pickupText = 'Entrega no Endereço do Cliente'
+      if (customer?.hasDifferentDeliveryAddress && customer?.deliveryAddress) {
+        const dAddr = customer.deliveryAddress as any
+        pickupText += ` - ${dAddr.street || ''}, ${dAddr.number || 'S/N'}${dAddr.complement ? ' - ' + dAddr.complement : ''}, ${dAddr.neighborhood || ''}, ${dAddr.city || ''}/${dAddr.state || ''}`
+      } else {
+        const cAddr = (customer?.address as any) || {}
+        pickupText += ` - ${cAddr.street || ''}, ${cAddr.number || 'S/N'}${cAddr.complement ? ' - ' + cAddr.complement : ''}, ${cAddr.neighborhood || ''}, ${cAddr.city || ''}/${cAddr.state || ''}`
+      }
+    } else if (pickupLoc?.nome) {
+      pickupText = `${pickupLoc.nome}${pAddress ? ` - ${pAddress}` : ''}`
+    } else {
+      pickupText = 'Não informado'
+    }
     pickupText = pickupText
       .replace(/ - CEP: Sem CEP/gi, '')
       .replace(/CEP: Sem CEP/gi, '')
@@ -250,17 +257,24 @@ export default function RentalDetail() {
       dAddrStr = `${dAddr.street || ''}, ${dAddr.number || 'S/N'}${dAddr.complement ? ' - ' + dAddr.complement : ''}, Bairro: ${dAddr.neighborhood || ''}, Cidade: ${dAddr.city || ''}, Estado: ${dAddr.state || ''}, CEP: ${dAddr.zipCode || ''}`
     }
 
-    const localRetiradaId =
-      (rental as any).local_retirada_id || (rental as any).localRetiradaId || ''
-    const pickupLocationIdRaw =
-      (rental as any).pickup_location_id || (rental as any).pickupLocationId || ''
+    const localRetiradaId = rental.localRetiradaId || (rental as any).local_retirada_id || ''
+    const pickupLocationIdRaw = rental.pickupLocationId || (rental as any).pickup_location_id || ''
     const pickupLoc = locaisList.find((l) => l.id === localRetiradaId)
-    let pickupText =
-      pickupLocationIdRaw === 'delivery'
-        ? 'Entrega no Endereço do Cliente'
-        : pickupLoc?.nome
-          ? `${pickupLoc.nome} - ${pickupLoc.endereco || ''}`
-          : 'Não informado'
+    let pickupText = ''
+    if (pickupLocationIdRaw === 'delivery') {
+      pickupText = 'Entrega no Endereço do Cliente'
+      if (customer?.hasDifferentDeliveryAddress && customer?.deliveryAddress) {
+        const dAddr = customer.deliveryAddress as any
+        pickupText += ` - ${dAddr.street || ''}, ${dAddr.number || 'S/N'}${dAddr.complement ? ' - ' + dAddr.complement : ''}, ${dAddr.neighborhood || ''}, ${dAddr.city || ''}/${dAddr.state || ''}`
+      } else {
+        const cAddr = (customer?.address as any) || {}
+        pickupText += ` - ${cAddr.street || ''}, ${cAddr.number || 'S/N'}${cAddr.complement ? ' - ' + cAddr.complement : ''}, ${cAddr.neighborhood || ''}, ${cAddr.city || ''}/${cAddr.state || ''}`
+      }
+    } else if (pickupLoc?.nome) {
+      pickupText = `${pickupLoc.nome} - ${pickupLoc.endereco || ''}`
+    } else {
+      pickupText = 'Não informado'
+    }
     pickupText = pickupText
       .replace(/ - CEP: Sem CEP/gi, '')
       .replace(/CEP: Sem CEP/gi, '')

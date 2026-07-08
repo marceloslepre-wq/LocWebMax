@@ -61,6 +61,8 @@ export type Rental = {
   customContractHtml?: string
   userId?: string
   pickupLocationId?: string
+  localRetiradaId?: string
+  localDevolucaoId?: string
   paymentMethod?: string
   contractNumber?: string
 }
@@ -155,6 +157,8 @@ function mapRentalRow(row: any): Rental {
     customContractHtml: row.custom_contract_html,
     userId: row.user_id,
     pickupLocationId: row.pickup_location_id,
+    localRetiradaId: row.local_retirada_id || '',
+    localDevolucaoId: row.local_devolucao_id || '',
     items: row.items || [],
     contractNumber: row.contract_number,
   }
@@ -354,6 +358,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({
           customer_id: rental.customerId,
           local_retirada_id: localRetiradaId,
+          local_devolucao_id: localRetiradaId,
+          pickup_location_id: rental.pickupLocationId || '',
           start_date: rental.startDate,
           expected_return_date: rental.expectedReturnDate,
           items: rental.items,
@@ -369,11 +375,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const rentalId = typeof result === 'string' ? result : result?.id
       if (rentalId) {
         try {
-          const rentData = await pb.collection('rentals').getOne(rentalId)
+          const rentData = await pb.collection('rentals').getOne(rentalId, {
+            expand: 'local_retirada_id,local_devolucao_id',
+          })
           newRental = {
             ...rental,
             id: rentData.id,
             contractNumber: (rentData as any).contract_number,
+            localRetiradaId: (rentData as any).local_retirada_id || '',
+            localDevolucaoId: (rentData as any).local_devolucao_id || '',
+            pickupLocationId: (rentData as any).pickup_location_id || rental.pickupLocationId,
           }
           setRentals((prev) =>
             prev.map((r) => (r.id === tempId || r.id === rental.id ? newRental : r)),

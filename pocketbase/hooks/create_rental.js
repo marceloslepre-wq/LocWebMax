@@ -9,12 +9,27 @@ routerAdd(
     const items = body.items || []
     const isImported = body.is_imported || false
 
-    var defaultLocalId = body.local_retirada_id || ''
-    if (!defaultLocalId) {
+    var pickupLocationId = body.pickup_location_id || body.pickupLocationId || ''
+    var localRetiradaId = body.local_retirada_id || ''
+    var localDevolucaoId = body.local_devolucao_id || ''
+    var isDelivery = pickupLocationId === 'delivery'
+
+    if (isDelivery) {
+      localRetiradaId = ''
+      localDevolucaoId = ''
+    } else if (!localRetiradaId && pickupLocationId) {
+      localRetiradaId = pickupLocationId
+    }
+
+    if (!localRetiradaId && !isDelivery && !pickupLocationId) {
       try {
         var galpao = $app.findFirstRecordByData('locais', 'nome', 'Galpão')
-        defaultLocalId = galpao.id
+        localRetiradaId = galpao.id
       } catch (_) {}
+    }
+
+    if (!localDevolucaoId && localRetiradaId) {
+      localDevolucaoId = localRetiradaId
     }
 
     if (!isImported) {
@@ -32,11 +47,11 @@ routerAdd(
           return e.badRequestError('Item nao encontrado: ' + item.itemId)
         }
 
-        if (defaultLocalId) {
+        if (localRetiradaId) {
           try {
             var stocks = $app.findRecordsByFilter(
               'estoque_por_local',
-              'inventory_id = "' + item.itemId + '" && local_id = "' + defaultLocalId + '"',
+              'inventory_id = "' + item.itemId + '" && local_id = "' + localRetiradaId + '"',
               '',
               1,
               0,
@@ -66,9 +81,10 @@ routerAdd(
     rental.set('payment_method', body.payment_method || 'PIX')
     rental.set('user_id', userId)
     rental.set('custom_contract_html', body.custom_contract_html || '')
-    rental.set('pickup_location_id', body.pickup_location_id || body.pickupLocationId || '')
+    rental.set('pickup_location_id', pickupLocationId)
     rental.set('is_imported', isImported)
-    if (defaultLocalId) rental.set('local_retirada_id', defaultLocalId)
+    if (localRetiradaId) rental.set('local_retirada_id', localRetiradaId)
+    if (localDevolucaoId) rental.set('local_devolucao_id', localDevolucaoId)
     $app.save(rental)
 
     var contractNumber = body.contract_number || ''
@@ -93,7 +109,50 @@ routerAdd(
       }
     }
 
-    return e.json(201, { id: rental.id, contract_number: contractNumber })
+    var response = {
+      id: rental.id,
+      contract_number: contractNumber,
+      start_date: rental.getString('start_date'),
+      expected_return_date: rental.getString('expected_return_date'),
+      status: rental.getString('status'),
+      total: rental.get('total') || 0,
+      pickup_location_id: rental.getString('pickup_location_id'),
+      local_retirada_id: rental.getString('local_retirada_id'),
+      local_devolucao_id: rental.getString('local_devolucao_id'),
+      payment_method: rental.getString('payment_method'),
+      customer_id: rental.getString('customer_id'),
+      items: rental.get('items') || [],
+      is_imported: rental.getBool('is_imported'),
+      created: rental.getString('created'),
+      updated: rental.getString('updated'),
+      expand: {},
+    }
+
+    var retId = rental.getString('local_retirada_id')
+    if (retId) {
+      try {
+        var loc = $app.findRecordById('locais', retId)
+        response.expand.local_retirada_id = {
+          id: loc.id,
+          nome: loc.getString('nome'),
+          endereco: loc.getString('endereco'),
+        }
+      } catch (_) {}
+    }
+
+    var devId = rental.getString('local_devolucao_id')
+    if (devId) {
+      try {
+        var locDev = $app.findRecordById('locais', devId)
+        response.expand.local_devolucao_id = {
+          id: locDev.id,
+          nome: locDev.getString('nome'),
+          endereco: locDev.getString('endereco'),
+        }
+      } catch (_) {}
+    }
+
+    return e.json(201, response)
   },
   $apis.requireAuth(),
 )
