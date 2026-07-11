@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import useMainStore, { Rental } from '@/stores/main'
-import { formatDatePtBR } from '@/lib/utils'
+import { formatDatePtBR, formatDateCompact } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Table,
@@ -329,10 +329,10 @@ export default function Rentals() {
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {formatDateStr(rentalField(rental, 'startDate', 'start_date'))}
+                        {formatDateCompact(rentalField(rental, 'startDate', 'start_date'))}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {formatDateStr(
+                        {formatDateCompact(
                           rentalField(rental, 'expectedReturnDate', 'expected_return_date'),
                         )}
                       </TableCell>

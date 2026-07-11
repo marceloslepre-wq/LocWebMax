@@ -87,6 +87,17 @@ export function formatDatePtBR(dateStr?: string): string {
   return `${capitalize(dayOfWeek)}, ${day} de ${capitalize(month)} de ${year}`
 }
 
+export function formatDateCompact(dateStr?: string): string {
+  if (!dateStr) return '-'
+  const datePart = normalizeDate(dateStr)
+  if (!datePart) return '-'
+  const parts = datePart.split('-')
+  if (parts.length !== 3) return '-'
+  const date = new Date(datePart + 'T00:00:00')
+  if (isNaN(date.getTime())) return '-'
+  return format(date, 'dd/MM/yy')
+}
+
 export function hexToHSL(H: string) {
   let r = 0,
     g = 0,
