@@ -76,6 +76,20 @@ export const customerService = {
   async checkDocumentExists(document: string, excludeId?: string) {
     const cleanDoc = document.replace(/\D/g, '')
     if (!cleanDoc) return false
+
+    if (!pb.authStore.isValid) {
+      try {
+        const result = await pb.send('/backend/v1/public/check-document', {
+          method: 'POST',
+          body: JSON.stringify({ document: cleanDoc }),
+          headers: { 'Content-Type': 'application/json' },
+        })
+        return result.exists
+      } catch {
+        return false
+      }
+    }
+
     try {
       const all = await pb.collection('customers').getFullList()
       return all.some(
@@ -112,9 +126,11 @@ export const customerService = {
   async createCustomer(customer: Omit<Customer, 'id'>) {
     const dbPayload = mapToDb(customer)
     if (!dbPayload.matricula || dbPayload.matricula === 'AUTO') {
-      dbPayload.matricula = await this.getNextMatricula()
+      if (pb.authStore.isValid) {
+        dbPayload.matricula = await this.getNextMatricula()
+      }
     }
-    if (await this.checkMatriculaExists(dbPayload.matricula)) {
+    if (dbPayload.matricula && (await this.checkMatriculaExists(dbPayload.matricula))) {
       throw new Error(`Matrícula ${dbPayload.matricula} já existe. Tente novamente.`)
     }
     const data = await pb.collection('customers').create(dbPayload)
@@ -131,6 +147,15 @@ export const customerService = {
   },
 
   async getNextMatricula() {
+    if (!pb.authStore.isValid) {
+      try {
+        const result = await pb.send('/backend/v1/public/next-matricula', { method: 'GET' })
+        return result.matricula as string
+      } catch {
+        return '0001'
+      }
+    }
+
     try {
       const data = await pb.collection('customers').getFullList()
       let max = 0

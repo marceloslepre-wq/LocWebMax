@@ -212,15 +212,33 @@ export default function PublicCustomerForm() {
       let targetCustomerId = createdCustomerId
 
       if (!targetCustomerId) {
-        const nextMatricula = await customerService.getNextMatricula()
-        const payload: any = { ...formData, matricula: nextMatricula }
+        const payload: any = { ...formData }
         delete payload.phone
         payload.phone_cell = formData.phoneCell
         payload.phone_res = formData.phoneRes
 
-        const newCustomer = await customerService.createCustomer(payload)
-        targetCustomerId = newCustomer.id
-        setCreatedCustomerId(targetCustomerId)
+        let newCustomer
+        let retries = 0
+        const maxRetries = 3
+        while (retries < maxRetries) {
+          try {
+            newCustomer = await customerService.createCustomer(payload)
+            break
+          } catch (err: any) {
+            const isConflict =
+              err?.response?.data?.matricula ||
+              (typeof err?.message === 'string' && err.message.toLowerCase().includes('matricula'))
+            if (isConflict && retries < maxRetries - 1) {
+              retries++
+              continue
+            }
+            throw err
+          }
+        }
+        if (newCustomer) {
+          targetCustomerId = newCustomer.id
+          setCreatedCustomerId(targetCustomerId)
+        }
       }
 
       const updatePayload: any = {}
