@@ -61,7 +61,7 @@ export default function Rentals() {
 
   const [receiptOpen, setReceiptOpen] = useState(false)
   const [receiptRental, setReceiptRental] = useState<Rental | null>(null)
-  const [receiptType, setReceiptType] = useState<'new' | 'renewal'>('new')
+  const [receiptType, setReceiptType] = useState<'new' | 'renewal' | 'return' | 'late_fee'>('new')
   const [receiptRenewalInfo, setReceiptRenewalInfo] = useState<any>(null)
 
   const rentalField = (r: any, camel: string, snake: string): string => {
@@ -453,10 +453,10 @@ export default function Rentals() {
         rental={selectedRental}
         open={returnOpen}
         onOpenChange={setReturnOpen}
-        onReturned={(rental) => {
+        onReturned={(rental, lateFeeInfo) => {
           setReceiptRental(rental)
-          setReceiptType('return')
-          setReceiptRenewalInfo(null)
+          setReceiptType(lateFeeInfo ? 'late_fee' : 'return')
+          setReceiptRenewalInfo(lateFeeInfo)
           setReceiptOpen(true)
         }}
       />

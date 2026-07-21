@@ -26,6 +26,7 @@ import { differenceInDays } from 'date-fns'
 import { Loader2 } from 'lucide-react'
 import { getErrorMessage, extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
 import { refreshStoreInventory } from '@/lib/inventory-refresh'
+import { calculateLateFee, formatLateFeeDate, type LateFeeResult } from '@/lib/late-fee'
 
 export function ReturnDialog({
   rental,
@@ -36,9 +37,9 @@ export function ReturnDialog({
   rental: Rental | null
   open: boolean
   onOpenChange: (v: boolean) => void
-  onReturned?: (rental: Rental) => void
+  onReturned?: (rental: Rental, lateFeeInfo?: any) => void
 }) {
-  const { inventory, updateRental } = useMainStore()
+  const { inventory, updateRental, settings } = useMainStore()
   const { toast } = useToast()
   const today = new Date().toISOString().split('T')[0]
   const [returnDate, setReturnDate] = useState(today)
@@ -87,6 +88,18 @@ export function ReturnDialog({
     itemsWithRemaining.length > 0 &&
     itemsWithRemaining.every((i) => i.selectedQty >= i.remainingQty)
   const noneSelected = itemsWithRemaining.every((i) => i.selectedQty === 0)
+
+  const lateFeeResult = useMemo<LateFeeResult | null>(() => {
+    if (!rental) return null
+    const exp = new Date(rental.expectedReturnDate.split('T')[0] + 'T00:00:00')
+    const act = new Date(returnDate.split('T')[0] + 'T00:00:00')
+    const d = differenceInDays(act, exp)
+    if (d <= 0) return null
+    return calculateLateFee(rental.expectedReturnDate, returnDate, rentalItems, inventory, settings)
+  }, [rental, returnDate, rentalItems, inventory, settings])
+
+  const isLate = lateFeeResult !== null
+  const delay = lateFeeResult?.days || 0
 
   if (!rental) return null
 
@@ -146,6 +159,7 @@ export function ReturnDialog({
 
       const allReturned = result.allReturned as boolean
       const updatedItems = result.items || rental.items
+      const lateFee = result.lateFee || null
 
       const updates: any = {
         items: updatedItems,
@@ -167,7 +181,9 @@ export function ReturnDialog({
       toast({
         title: allReturned ? 'Devolução Completa' : 'Devolução Parcial',
         description: allReturned
-          ? 'Todos os itens foram devolvidos. Contrato finalizado.'
+          ? lateFee
+            ? `Devolução finalizada com multa por atraso de R$ ${lateFee.total.toFixed(2)}.`
+            : 'Todos os itens foram devolvidos. Contrato finalizado.'
           : 'Itens selecionados devolvidos. Contrato permanece ativo.',
       })
 
@@ -175,7 +191,7 @@ export function ReturnDialog({
 
       onOpenChange(false)
       if (onReturned) {
-        onReturned(updatedRental)
+        onReturned(updatedRental, lateFee)
       }
     } catch (error: any) {
       const fieldErrs = extractFieldErrors(error)
@@ -191,10 +207,10 @@ export function ReturnDialog({
     }
   }
 
-  const expected = new Date(rental.expectedReturnDate)
-  const actual = new Date(returnDate)
-  const delay = differenceInDays(actual, expected)
-  const isLate = delay > 0
+  const returnDateFormatted = (() => {
+    const [y, m, d] = returnDate.split('-')
+    return `${d}/${m}/${y.slice(2)}`
+  })()
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -327,12 +343,40 @@ export function ReturnDialog({
             </div>
           </div>
 
-          {isLate && (
-            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-md text-destructive">
-              <p className="font-semibold text-sm">Atenção: Devolução em Atraso</p>
-              <p className="text-xs mt-1">
-                Atraso de {delay} dia(s). Multa sugerida baseada na política do sistema.
+          {isLate && lateFeeResult && (
+            <div className="p-4 bg-pink-50 border border-pink-300 rounded-md text-pink-900">
+              <p className="font-semibold text-sm flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-pink-500" />
+                Atenção: Devolução em Atraso
               </p>
+              <div className="mt-2 space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span>Total de dias em atraso:</span>
+                  <span className="font-semibold">{delay} dia(s)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Data de fechamento do contrato:</span>
+                  <span className="font-semibold">{returnDateFormatted}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Valor total da multa (Multa):</span>
+                  <span className="font-bold text-sm text-pink-700">
+                    R$ {lateFeeResult.total.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+              {lateFeeResult.breakdown.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-pink-200 text-xs space-y-1">
+                  {lateFeeResult.breakdown.map((b, i) => (
+                    <div key={i} className="flex justify-between text-pink-700">
+                      <span>
+                        {b.itemName} ({b.qty}x R$ {b.dailyRate.toFixed(2)}/dia)
+                      </span>
+                      <span>R$ {b.subtotal.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
