@@ -83,6 +83,13 @@ export type Location = {
   address: string
 }
 
+export type NotificationTemplate = {
+  enabled: boolean
+  template: string
+}
+
+export type NotificationTemplates = Record<string, NotificationTemplate>
+
 export type Settings = {
   primaryColor: string
   logoUrl: string | null
@@ -95,6 +102,7 @@ export type Settings = {
   companyAddress: string
   locations?: Location[]
   categories?: string[]
+  notificationTemplates?: NotificationTemplates
 }
 
 interface MainStore {
@@ -200,6 +208,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     companyAddress: 'Av. Central, 1000 - Centro, São Paulo/SP',
     locations: [],
     categories: ['Ferramentas', 'Equipamentos Pesados', 'Acessórios', 'Geral'],
+    notificationTemplates: {},
   })
 
   const refreshCustomers = () => {
@@ -291,6 +300,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               'Geral',
             ],
             locations: (setData as any).locations || [],
+            notificationTemplates: (setData as any).notification_templates || {},
           })
         }
 
@@ -605,6 +615,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if ('companyAddress' in data) updateData.company_address = data.companyAddress
     if ('categories' in data) updateData.categories = data.categories
     if ('locations' in data) updateData.locations = data.locations
+    if ('notificationTemplates' in data)
+      updateData.notification_templates = data.notificationTemplates
 
     try {
       if (settingsId) {
