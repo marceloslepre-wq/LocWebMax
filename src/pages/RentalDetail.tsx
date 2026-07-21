@@ -33,7 +33,7 @@ export default function RentalDetail() {
     if (rental && rental.status === 'Ativo' && !rental.actualReturnDate) {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
-      const dateStr = rental.expectedReturnDate.split('T')[0]
+      const dateStr = rental.expectedReturnDate.split('T')[0].split(' ')[0]
       const returnDate = new Date(dateStr + 'T00:00:00')
       if (returnDate < today) {
         rentalsService
@@ -143,7 +143,7 @@ export default function RentalDetail() {
     // FIX: Preserva data local sem timezone shift
     const formatDateLocal = (dateStr?: string | null) => {
       if (!dateStr) return ''
-      const cleanStr = dateStr.split('T')[0]
+      const cleanStr = dateStr.split('T')[0].split(' ')[0]
       const [y, m, d] = cleanStr.split('-')
       if (!y || !m || !d) return dateStr
       return `${d}/${m}/${y}`
@@ -201,7 +201,7 @@ export default function RentalDetail() {
       'novembro',
       'dezembro',
     ]
-    const startStr = rental.startDate.split('T')[0]
+    const startStr = rental.startDate.split('T')[0].split(' ')[0]
     const [ry, rm, rd] = startStr.split('-').map(Number)
     const date = new Date(ry, rm - 1, rd, 12, 0, 0)
     text += `Vitória - ES, ${date.getDate().toString().padStart(2, '0')} de ${months[date.getMonth()]} de ${date.getFullYear()}\n`
@@ -304,7 +304,7 @@ export default function RentalDetail() {
     // FIX: Preserva data local sem timezone shift
     const formatDateLocal = (dateStr?: string | null) => {
       if (!dateStr) return ''
-      const cleanStr = dateStr.split('T')[0]
+      const cleanStr = dateStr.split('T')[0].split(' ')[0]
       const [y, m, d] = cleanStr.split('-')
       if (!y || !m || !d) return dateStr
       return `${d}/${m}/${y}`
@@ -455,7 +455,7 @@ export default function RentalDetail() {
           <p><strong>LOCADOR:</strong> ${settings.companyName || 'Lojas Hospital Home'}</p>
           <p><strong>LOCATÁRIO:</strong> ${customer?.name}</p>
           <p><strong>CPF/CNPJ:</strong> ${customer?.document}</p>
-          <p><strong>Data de Devolução:</strong> ${rental?.actualReturnDate ? rental.actualReturnDate.split('T')[0].split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}</p>
+          <p><strong>Data de Devolução:</strong> ${rental?.actualReturnDate ? rental.actualReturnDate.split('T')[0].split(' ')[0].split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}</p>
         </div>
 
         <p>Declaramos para os devidos fins que recebemos em devolução os equipamentos abaixo descritos, referentes ao contrato supracitado:</p>
@@ -510,7 +510,7 @@ export default function RentalDetail() {
           <p><strong>LOCADOR:</strong> ${settings.companyName || 'Lojas Hospital Home'}</p>
           <p><strong>LOCATÁRIO:</strong> ${customer?.name}</p>
           <p><strong>CPF/CNPJ:</strong> ${customer?.document}</p>
-          <p><strong>Data de Retirada:</strong> ${rental?.startDate ? rental.startDate.split('T')[0].split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}</p>
+          <p><strong>Data de Retirada:</strong> ${rental?.startDate ? rental.startDate.split('T')[0].split(' ')[0].split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}</p>
         </div>
 
         <p>Declaramos para os devidos fins que o locatário retirou/recebeu os equipamentos abaixo descritos, em perfeitas condições de uso:</p>
@@ -850,10 +850,20 @@ export default function RentalDetail() {
 
                         if (field === 'start_date' || field === 'expected_return_date') {
                           displayOld = oldV
-                            ? String(oldV).split('T')[0].split('-').reverse().join('/')
+                            ? String(oldV)
+                                .split('T')[0]
+                                .split(' ')[0]
+                                .split('-')
+                                .reverse()
+                                .join('/')
                             : '-'
                           displayNew = newV
-                            ? String(newV).split('T')[0].split('-').reverse().join('/')
+                            ? String(newV)
+                                .split('T')[0]
+                                .split(' ')[0]
+                                .split('-')
+                                .reverse()
+                                .join('/')
                             : '-'
                         }
 
