@@ -15,6 +15,16 @@ routerAdd(
       return e.badRequestError('Missing "to" or "message" field')
     }
 
+    // Sanitize: strip all non-numeric characters
+    var sanitized = String(to).replace(/\D/g, '')
+
+    // Auto-prefix Brazilian country code "55" if missing
+    if (sanitized.length > 0 && sanitized.substring(0, 2) !== '55') {
+      sanitized = '55' + sanitized
+    }
+
+    to = sanitized
+
     var apiUrl = $secrets.get('EVOLUTION_API_URL') || ''
     var apiKey = $secrets.get('EVOLUTION_API_KEY') || ''
     var instance = $secrets.get('EVOLUTION_INSTANCE') || ''
