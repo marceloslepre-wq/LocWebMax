@@ -39,7 +39,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   FileBarChart,
   Download,
@@ -51,13 +50,13 @@ import {
 import useMainStore from '@/stores/main'
 import { handleExport } from '@/lib/export'
 import { useLocations } from '@/hooks/use-locations'
+import { normalizeDate } from '@/lib/utils'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 
-function getDatePart(dateStr: string) {
-  if (!dateStr) return ''
-  return dateStr.split('T')[0].split(' ')[0]
+function rentalField(r: any, camel: string, snake: string): string {
+  return r[camel] ?? r[snake] ?? ''
 }
 
 function formatPhone(phone: string) {
@@ -86,10 +85,12 @@ export function RentalsReportDialog() {
 
   const customerContracts = useMemo(() => {
     const map: Record<string, string[]> = {}
-    rentals.forEach((r) => {
-      if (r.customerId && r.contractNumber) {
-        if (!map[r.customerId]) map[r.customerId] = []
-        map[r.customerId].push(r.contractNumber)
+    rentals.forEach((r: any) => {
+      const cid = rentalField(r, 'customerId', 'customer_id')
+      const cnum = rentalField(r, 'contractNumber', 'contract_number')
+      if (cid && cnum) {
+        if (!map[cid]) map[cid] = []
+        map[cid].push(cnum)
       }
     })
     return map
@@ -98,23 +99,31 @@ export function RentalsReportDialog() {
   const filteredRentals = useMemo(() => {
     const startStr = startDate ? format(startDate, 'yyyy-MM-dd') : ''
     const endStr = endDate ? format(endDate, 'yyyy-MM-dd') : ''
-    return rentals.filter((r) => {
-      const rDate = getDatePart(r.startDate)
+    return rentals.filter((r: any) => {
+      const rDate = normalizeDate(rentalField(r, 'startDate', 'start_date'))
       if (startStr && rDate < startStr) return false
       if (endStr && rDate > endStr) return false
-      if (userId !== 'all' && r.userId !== userId) return false
-      if (customerId !== 'all' && r.customerId !== customerId) return false
+      const rUserId = rentalField(r, 'userId', 'user_id')
+      if (userId !== 'all' && rUserId !== userId) return false
+      const rCustomerId = rentalField(r, 'customerId', 'customer_id')
+      if (customerId !== 'all' && rCustomerId !== customerId) return false
       if (locationId !== 'all') {
-        const rLoc = r.localRetiradaId || r.pickupLocationId
+        const rLoc =
+          rentalField(r, 'localRetiradaId', 'local_retirada_id') ||
+          rentalField(r, 'pickupLocationId', 'pickup_location_id')
         if (rLoc !== locationId) return false
       }
-      if (paymentMethod !== 'all' && (r.paymentMethod || 'PIX') !== paymentMethod) return false
-      if (productId !== 'all' && !r.items.some((i) => i.itemId === productId)) return false
+      const rPayment = rentalField(r, 'paymentMethod', 'payment_method') || 'PIX'
+      if (paymentMethod !== 'all' && rPayment !== paymentMethod) return false
+      if (productId !== 'all') {
+        const items = r.items || []
+        if (!items.some((i: any) => i.itemId === productId || i.item_id === productId)) return false
+      }
       return true
     })
   }, [rentals, startDate, endDate, userId, customerId, locationId, productId, paymentMethod])
 
-  const totalValue = filteredRentals.reduce((sum, r) => sum + r.total, 0)
+  const totalValue = filteredRentals.reduce((sum: number, r: any) => sum + (r.total || 0), 0)
 
   const handleExportData = (fmt: 'pdf' | 'csv' | 'excel') => {
     const headers = [
@@ -127,18 +136,34 @@ export function RentalsReportDialog() {
       'Forma de Pagamento',
       'Total',
     ]
-    const data = filteredRentals.map((r) => {
-      const c = customers.find((cust) => cust.id === r.customerId)
-      const phone = c?.phoneCell || c?.phoneRes || c?.phoneCom || ''
+    const data = filteredRentals.map((r: any) => {
+      const cid = rentalField(r, 'customerId', 'customer_id')
+      const c = customers.find((cust: any) => cust.id === cid)
+      const phone =
+        c?.phoneCell ||
+        c?.phone_cell ||
+        c?.phoneRes ||
+        c?.phone_res ||
+        c?.phoneCom ||
+        c?.phone_com ||
+        ''
       return [
-        r.contractNumber || r.id.substring(0, 8).toUpperCase(),
+        rentalField(r, 'contractNumber', 'contract_number') || r.id.substring(0, 8).toUpperCase(),
         c?.name || '-',
         formatPhone(phone),
-        new Date(r.startDate).toLocaleDateString('pt-BR'),
-        r.expectedReturnDate ? new Date(r.expectedReturnDate).toLocaleDateString('pt-BR') : '-',
+        normalizeDate(rentalField(r, 'startDate', 'start_date'))
+          .split('-')
+          .reverse()
+          .join('/'),
+        rentalField(r, 'expectedReturnDate', 'expected_return_date')
+          ? normalizeDate(rentalField(r, 'expectedReturnDate', 'expected_return_date'))
+              .split('-')
+              .reverse()
+              .join('/')
+          : '-',
         r.status || 'Ativo',
-        r.paymentMethod || 'PIX',
-        `R$ ${r.total.toFixed(2)}`,
+        rentalField(r, 'paymentMethod', 'payment_method') || 'PIX',
+        `R$ ${(r.total || 0).toFixed(2)}`,
       ]
     })
     data.push(['', '', '', '', '', '', 'TOTAL', `R$ ${totalValue.toFixed(2)}`])
@@ -150,19 +175,19 @@ export function RentalsReportDialog() {
 
   const customerLabel = (id: string) => {
     if (id === 'all') return 'Todos'
-    const c = customers.find((cust) => cust.id === id)
+    const c = customers.find((cust: any) => cust.id === id)
     return c ? `${c.name} (${c.document})` : 'Todos'
   }
 
   const productLabel = (id: string) => {
     if (id === 'all') return 'Todos'
-    const i = inventory.find((item) => item.id === id)
+    const i = inventory.find((item: any) => item.id === id)
     return i ? `${i.code ? `[${i.code}] - ` : ''}${i.name}` : 'Todos'
   }
 
   const locationLabel = (id: string) => {
     if (id === 'all') return 'Todos'
-    const l = locaisList.find((loc) => loc.id === id)
+    const l = locaisList.find((loc: any) => loc.id === id)
     return l ? l.nome : 'Todos'
   }
 
@@ -236,7 +261,7 @@ export function RentalsReportDialog() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
-                {users.map((u) => (
+                {users.map((u: any) => (
                   <SelectItem key={u.id} value={u.id}>
                     {u.name}
                   </SelectItem>
@@ -275,7 +300,7 @@ export function RentalsReportDialog() {
                         />
                         <span>Todos</span>
                       </CommandItem>
-                      {customers.map((c) => {
+                      {customers.map((c: any) => {
                         const contracts = customerContracts[c.id] || []
                         return (
                           <CommandItem
@@ -335,7 +360,7 @@ export function RentalsReportDialog() {
                         />
                         <span>Todos</span>
                       </CommandItem>
-                      {inventory.map((i) => (
+                      {inventory.map((i: any) => (
                         <CommandItem
                           key={i.id}
                           value={`${i.code} ${i.name}`}
@@ -393,7 +418,7 @@ export function RentalsReportDialog() {
                         />
                         <span>Todos</span>
                       </CommandItem>
-                      {locaisList.map((loc) => (
+                      {locaisList.map((loc: any) => (
                         <CommandItem
                           key={loc.id}
                           value={`${loc.nome} ${loc.endereco || ''}`}
@@ -460,7 +485,7 @@ export function RentalsReportDialog() {
           </DropdownMenu>
         </div>
 
-        <ScrollArea className="flex-1 border rounded-md">
+        <div className="flex-1 overflow-y-auto border rounded-md max-h-[45vh]">
           <Table>
             <TableHeader className="sticky top-0 bg-background z-10">
               <TableRow>
@@ -481,31 +506,53 @@ export function RentalsReportDialog() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredRentals.map((r) => {
-                  const c = customers.find((cust) => cust.id === r.customerId)
-                  const u = users.find((user) => user.id === r.userId)
-                  const loc = locaisList.find(
-                    (l) => l.id === (r.localRetiradaId || r.pickupLocationId),
-                  )
+                filteredRentals.map((r: any) => {
+                  const cid = rentalField(r, 'customerId', 'customer_id')
+                  const c = customers.find((cust: any) => cust.id === cid)
+                  const rUserId = rentalField(r, 'userId', 'user_id')
+                  const u = users.find((user: any) => user.id === rUserId)
+                  const rLocId =
+                    rentalField(r, 'localRetiradaId', 'local_retirada_id') ||
+                    rentalField(r, 'pickupLocationId', 'pickup_location_id')
+                  const loc = locaisList.find((l: any) => l.id === rLocId)
+                  const dateStr = normalizeDate(rentalField(r, 'startDate', 'start_date'))
+                  const formattedDate = dateStr ? dateStr.split('-').reverse().join('/') : '-'
                   return (
                     <TableRow key={r.id}>
-                      <TableCell>{new Date(r.startDate).toLocaleDateString('pt-BR')}</TableCell>
+                      <TableCell>{formattedDate}</TableCell>
                       <TableCell className="font-medium">
-                        {r.contractNumber || r.id.substring(0, 8).toUpperCase()}
+                        {rentalField(r, 'contractNumber', 'contract_number') ||
+                          r.id.substring(0, 8).toUpperCase()}
                       </TableCell>
                       <TableCell>
                         <div className="font-bold">{c?.name || '-'}</div>
-                        {c && (c.phoneCell || c.phoneRes || c.phoneCom) && (
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            {formatPhone(c.phoneCell || c.phoneRes || c.phoneCom || '')}
-                          </div>
-                        )}
+                        {c &&
+                          (c.phoneCell ||
+                            c.phone_cell ||
+                            c.phoneRes ||
+                            c.phone_res ||
+                            c.phoneCom ||
+                            c.phone_com) && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {formatPhone(
+                                c.phoneCell ||
+                                  c.phone_cell ||
+                                  c.phoneRes ||
+                                  c.phone_res ||
+                                  c.phoneCom ||
+                                  c.phone_com ||
+                                  '',
+                              )}
+                            </div>
+                          )}
                       </TableCell>
                       <TableCell>{u?.name || '-'}</TableCell>
                       <TableCell>{loc?.nome || '-'}</TableCell>
-                      <TableCell>{r.paymentMethod || 'PIX'}</TableCell>
+                      <TableCell>
+                        {rentalField(r, 'paymentMethod', 'payment_method') || 'PIX'}
+                      </TableCell>
                       <TableCell className="text-right font-medium">
-                        R$ {r.total.toFixed(2)}
+                        R$ {(r.total || 0).toFixed(2)}
                       </TableCell>
                     </TableRow>
                   )
@@ -513,7 +560,7 @@ export function RentalsReportDialog() {
               )}
             </TableBody>
           </Table>
-        </ScrollArea>
+        </div>
 
         <div className="pt-4 border-t flex justify-end items-center gap-4 text-lg">
           <span className="font-semibold">Valor Total:</span>
