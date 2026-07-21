@@ -161,6 +161,7 @@ function mapRentalRow(row: any): Rental {
     localDevolucaoId: row.local_devolucao_id || '',
     items: row.items || [],
     contractNumber: row.contract_number,
+    paymentMethod: row.payment_method,
   }
 }
 
