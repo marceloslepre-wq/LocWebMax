@@ -24,8 +24,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
-import { Info, Plus, Edit, Trash2, Bell } from 'lucide-react'
-import pb from '@/lib/pocketbase/client'
+import { Info, Plus, Edit, Trash2, Bell, Loader2 } from 'lucide-react'
 import useMainStore from '@/stores/main'
 
 interface NotificationTemplate {
@@ -54,32 +53,27 @@ export function NotificationTemplates() {
   const { settings, updateSettings } = useMainStore()
   const { toast } = useToast()
 
-  const templates: NotificationTemplate[] = (
-    settings.notificationTemplates ||
-    settings.notification_templates ||
-    []
-  ).map((t: any) => ({
-    trigger: t.trigger,
-    message: t.message,
-    enabled: t.enabled !== false,
-  }))
+  const templates: NotificationTemplate[] = (settings.notificationTemplates || []).map(
+    (t: any) => ({
+      trigger: t.trigger,
+      message: t.message,
+      enabled: t.enabled !== false,
+    }),
+  )
 
   const [selectedTrigger, setSelectedTrigger] = useState('')
   const [message, setMessage] = useState('')
   const [enabled, setEnabled] = useState(true)
   const [editingTrigger, setEditingTrigger] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
-  const persistTemplates = async (newTemplates: NotificationTemplate[]) => {
-    updateSettings({ notificationTemplates: newTemplates })
+  const persistTemplates = async (newTemplates: NotificationTemplate[]): Promise<boolean> => {
+    setSaving(true)
     try {
-      const records = await pb.collection('settings').getFullList()
-      if (records.length > 0) {
-        await pb.collection('settings').update(records[0].id, {
-          notification_templates: newTemplates,
-        })
-      }
-    } catch (err) {
-      console.error('Failed to persist notification templates:', err)
+      const success = await updateSettings({ notificationTemplates: newTemplates })
+      return success
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -100,9 +94,17 @@ export function NotificationTemplates() {
       ...existing,
       { trigger: selectedTrigger, message: message.trim(), enabled },
     ]
-    await persistTemplates(newTemplates)
-    toast({ title: 'Template salvo com sucesso!' })
-    resetForm()
+    const success = await persistTemplates(newTemplates)
+    if (success) {
+      toast({ title: 'Template salvo com sucesso!' })
+      resetForm()
+    } else {
+      toast({
+        title: 'Erro ao salvar template',
+        description: 'Não foi possível salvar no banco de dados. Tente novamente.',
+        variant: 'destructive',
+      })
+    }
   }
 
   const handleEdit = (tpl: NotificationTemplate) => {
@@ -114,19 +116,35 @@ export function NotificationTemplates() {
 
   const handleDelete = async (trigger: string) => {
     const newTemplates = templates.filter((t) => t.trigger !== trigger)
-    await persistTemplates(newTemplates)
-    toast({ title: 'Template excluído' })
-    if (editingTrigger === trigger) resetForm()
+    const success = await persistTemplates(newTemplates)
+    if (success) {
+      toast({ title: 'Template excluído' })
+      if (editingTrigger === trigger) resetForm()
+    } else {
+      toast({
+        title: 'Erro ao excluir template',
+        description: 'Não foi possível excluir no banco de dados. Tente novamente.',
+        variant: 'destructive',
+      })
+    }
   }
 
   const handleToggleEnabled = async (trigger: string, newEnabled: boolean) => {
     const newTemplates = templates.map((t) =>
       t.trigger === trigger ? { ...t, enabled: newEnabled } : t,
     )
-    await persistTemplates(newTemplates)
-    toast({
-      title: newEnabled ? 'Notificação ativada' : 'Notificação desativada',
-    })
+    const success = await persistTemplates(newTemplates)
+    if (success) {
+      toast({
+        title: newEnabled ? 'Notificação ativada' : 'Notificação desativada',
+      })
+    } else {
+      toast({
+        title: 'Erro ao atualizar notificação',
+        description: 'Não foi possível salvar no banco de dados. Tente novamente.',
+        variant: 'destructive',
+      })
+    }
   }
 
   const getTriggerLabel = (value: string) =>
@@ -206,8 +224,16 @@ export function NotificationTemplates() {
             <Switch id="enabled-toggle" checked={enabled} onCheckedChange={setEnabled} />
           </div>
           <div className="flex gap-2">
-            <Button onClick={handleSave}>
-              <Plus className="w-4 h-4 mr-2" /> {editingTrigger ? 'Atualizar' : 'Adicionar'}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Salvando...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4 mr-2" /> {editingTrigger ? 'Atualizar' : 'Adicionar'}
+                </>
+              )}
             </Button>
             {editingTrigger && (
               <Button variant="outline" onClick={resetForm}>
@@ -241,12 +267,14 @@ export function NotificationTemplates() {
                 <div className="flex items-center gap-1">
                   <Switch
                     checked={tpl.enabled}
+                    disabled={saving}
                     onCheckedChange={(checked) => handleToggleEnabled(tpl.trigger, checked)}
                   />
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
+                    disabled={saving}
                     onClick={() => handleEdit(tpl)}
                   >
                     <Edit className="w-4 h-4 text-primary" />
@@ -256,6 +284,7 @@ export function NotificationTemplates() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        disabled={saving}
                         className="h-8 w-8 text-destructive hover:bg-destructive/10"
                       >
                         <Trash2 className="w-4 h-4" />

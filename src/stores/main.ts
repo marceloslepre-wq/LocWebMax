@@ -84,11 +84,10 @@ export type Location = {
 }
 
 export type NotificationTemplate = {
+  trigger: string
+  message: string
   enabled: boolean
-  template: string
 }
-
-export type NotificationTemplates = Record<string, NotificationTemplate>
 
 export type Settings = {
   primaryColor: string
@@ -102,7 +101,7 @@ export type Settings = {
   companyAddress: string
   locations?: Location[]
   categories?: string[]
-  notificationTemplates?: NotificationTemplates
+  notificationTemplates?: NotificationTemplate[]
 }
 
 interface MainStore {
@@ -124,7 +123,7 @@ interface MainStore {
   addCustomer: (customer: Customer) => void
   updateCustomer: (id: string, data: Partial<Customer>) => void
   deleteCustomer: (id: string) => void
-  updateSettings: (data: Partial<Settings>) => void
+  updateSettings: (data: Partial<Settings>) => Promise<boolean>
   addUser: (user: User) => void
   updateUser: (id: string, data: Partial<User>) => void
   deleteUser: (id: string) => void
@@ -208,7 +207,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     companyAddress: 'Av. Central, 1000 - Centro, São Paulo/SP',
     locations: [],
     categories: ['Ferramentas', 'Equipamentos Pesados', 'Acessórios', 'Geral'],
-    notificationTemplates: {},
+    notificationTemplates: [],
   })
 
   const refreshCustomers = () => {
@@ -300,7 +299,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               'Geral',
             ],
             locations: (setData as any).locations || [],
-            notificationTemplates: (setData as any).notification_templates || {},
+            notificationTemplates: (setData as any).notification_templates || [],
           })
         }
 
@@ -599,7 +598,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshCustomers()
   }
 
-  const updateSettings = async (data: Partial<Settings>) => {
+  const updateSettings = async (data: Partial<Settings>): Promise<boolean> => {
     setSettings((prev) => ({ ...prev, ...data }))
 
     const updateData: any = {}
@@ -625,8 +624,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const inserted = await pb.collection('settings').create(updateData)
         if (inserted) setSettingsId(inserted.id)
       }
+      return true
     } catch (err) {
       console.error('Error updating settings:', err)
+      return false
     }
   }
 
