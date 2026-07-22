@@ -3,6 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
@@ -29,12 +31,13 @@ import useMainStore from '@/stores/main'
 interface NotificationTemplate {
   trigger: string
   message: string
+  enabled: boolean
 }
 
 const TRIGGER_OPTIONS = [
   { value: 'novo_contrato', label: 'Novo Contrato' },
   { value: 'lembrete_devolucao', label: 'Lembrete de Devolução' },
-  { value: 'contrato_atrasado', label: 'Contrato Atrasado' },
+  { value: 'contrato_atrasado', label: 'Alerta de Atraso' },
   { value: 'devolucao_concluida', label: 'Devolução Concluída' },
   { value: 'confirmacao_pagamento', label: 'Confirmação de Pagamento' },
 ]
@@ -51,11 +54,19 @@ export function NotificationTemplates() {
   const { settings, updateSettings } = useMainStore()
   const { toast } = useToast()
 
-  const templates: NotificationTemplate[] =
-    settings.notificationTemplates || settings.notification_templates || []
+  const templates: NotificationTemplate[] = (
+    settings.notificationTemplates ||
+    settings.notification_templates ||
+    []
+  ).map((t: any) => ({
+    trigger: t.trigger,
+    message: t.message,
+    enabled: t.enabled !== false,
+  }))
 
   const [selectedTrigger, setSelectedTrigger] = useState('')
   const [message, setMessage] = useState('')
+  const [enabled, setEnabled] = useState(true)
   const [editingTrigger, setEditingTrigger] = useState<string | null>(null)
 
   const persistTemplates = async (newTemplates: NotificationTemplate[]) => {
@@ -75,6 +86,7 @@ export function NotificationTemplates() {
   const resetForm = () => {
     setSelectedTrigger('')
     setMessage('')
+    setEnabled(true)
     setEditingTrigger(null)
   }
 
@@ -84,7 +96,10 @@ export function NotificationTemplates() {
       return
     }
     const existing = templates.filter((t) => t.trigger !== selectedTrigger)
-    const newTemplates = [...existing, { trigger: selectedTrigger, message: message.trim() }]
+    const newTemplates = [
+      ...existing,
+      { trigger: selectedTrigger, message: message.trim(), enabled },
+    ]
     await persistTemplates(newTemplates)
     toast({ title: 'Template salvo com sucesso!' })
     resetForm()
@@ -94,6 +109,7 @@ export function NotificationTemplates() {
     setEditingTrigger(tpl.trigger)
     setSelectedTrigger(tpl.trigger)
     setMessage(tpl.message)
+    setEnabled(tpl.enabled)
   }
 
   const handleDelete = async (trigger: string) => {
@@ -101,6 +117,16 @@ export function NotificationTemplates() {
     await persistTemplates(newTemplates)
     toast({ title: 'Template excluído' })
     if (editingTrigger === trigger) resetForm()
+  }
+
+  const handleToggleEnabled = async (trigger: string, newEnabled: boolean) => {
+    const newTemplates = templates.map((t) =>
+      t.trigger === trigger ? { ...t, enabled: newEnabled } : t,
+    )
+    await persistTemplates(newTemplates)
+    toast({
+      title: newEnabled ? 'Notificação ativada' : 'Notificação desativada',
+    })
   }
 
   const getTriggerLabel = (value: string) =>
@@ -144,7 +170,11 @@ export function NotificationTemplates() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label>Gatilho</Label>
-            <Select value={selectedTrigger} onValueChange={setSelectedTrigger}>
+            <Select
+              value={selectedTrigger}
+              onValueChange={setSelectedTrigger}
+              disabled={!!editingTrigger}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Selecione um gatilho" />
               </SelectTrigger>
@@ -165,6 +195,15 @@ export function NotificationTemplates() {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
             />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="enabled-toggle">Ativar notificação</Label>
+              <p className="text-xs text-muted-foreground">
+                Quando ativado, a mensagem será enviada automaticamente quando o gatilho ocorrer.
+              </p>
+            </div>
+            <Switch id="enabled-toggle" checked={enabled} onCheckedChange={setEnabled} />
           </div>
           <div className="flex gap-2">
             <Button onClick={handleSave}>
@@ -188,13 +227,22 @@ export function NotificationTemplates() {
           </Card>
         ) : (
           templates.map((tpl) => (
-            <Card key={tpl.trigger}>
+            <Card key={tpl.trigger} className={tpl.enabled ? '' : 'opacity-60'}>
               <CardContent className="flex items-start justify-between gap-4 py-4">
                 <div className="flex-1 space-y-1">
-                  <p className="font-semibold text-sm">{getTriggerLabel(tpl.trigger)}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-sm">{getTriggerLabel(tpl.trigger)}</p>
+                    <Badge variant={tpl.enabled ? 'default' : 'secondary'}>
+                      {tpl.enabled ? 'Ativo' : 'Inativo'}
+                    </Badge>
+                  </div>
                   <p className="text-sm text-muted-foreground line-clamp-2">{tpl.message}</p>
                 </div>
                 <div className="flex items-center gap-1">
+                  <Switch
+                    checked={tpl.enabled}
+                    onCheckedChange={(checked) => handleToggleEnabled(tpl.trigger, checked)}
+                  />
                   <Button
                     variant="ghost"
                     size="icon"

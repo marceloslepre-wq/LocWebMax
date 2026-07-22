@@ -375,11 +375,11 @@ export default function Settings() {
           <TabsTrigger value="aparencia" className="text-base h-full flex-1">
             Aparência
           </TabsTrigger>
-          <TabsTrigger value="locais" className="text-base h-full flex-1">
-            Logística
-          </TabsTrigger>
           <TabsTrigger value="notificacoes" className="text-base h-full flex-1">
             Notificações
+          </TabsTrigger>
+          <TabsTrigger value="locais" className="text-base h-full flex-1">
+            Logística
           </TabsTrigger>
         </TabsList>
 

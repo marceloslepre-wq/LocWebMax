@@ -19,6 +19,7 @@ onRecordAfterCreateSuccess((e) => {
     }
   }
   if (!tpl) return e.next()
+  if (tpl.enabled === false) return e.next()
 
   var customer = null
   try {
@@ -31,8 +32,10 @@ onRecordAfterCreateSuccess((e) => {
   var contrato = rental.getString('contract_number')
   var valor = String(rental.get('total') || 0)
 
+  var rawDate = rental.getString('expected_return_date') || ''
+  var datePart = rawDate.split('T')[0].split(' ')[0]
+  var dParts = datePart.split('-')
   var dataDevolucao = ''
-  var dParts = (rental.getString('expected_return_date') || '').split('T')[0].split('-')
   if (dParts.length === 3) dataDevolucao = dParts[2] + '/' + dParts[1] + '/' + dParts[0]
 
   var rentalItems = rental.get('items') || []
@@ -46,7 +49,14 @@ onRecordAfterCreateSuccess((e) => {
         itemName = inv.getString('name')
       } catch (_) {}
     }
-    if (itemName) itemNames.push(itemName)
+    if (itemName) {
+      itemName = itemName
+        .replace(/\bEstoque\b/gi, '')
+        .replace(/\bModelo\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+      if (itemName) itemNames.push(itemName)
+    }
   }
   var itensStr = itemNames.join(', ')
 
