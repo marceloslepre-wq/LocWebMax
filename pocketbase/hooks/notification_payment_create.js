@@ -1,0 +1,108 @@
+onRecordAfterCreateSuccess((e) => {
+  var payment = e.record
+
+  var paymentMethod = payment.getString('payment_method') || ''
+  if (paymentMethod === 'Multa por Atraso') return e.next()
+
+  var rentalId = payment.getString('rental_id')
+  if (!rentalId) return e.next()
+
+  var rental = null
+  try {
+    rental = $app.findRecordById('rentals', rentalId)
+  } catch (_) {
+    return e.next()
+  }
+
+  var sRecords = $app.findRecordsByFilter('settings', "id != ''", '', 1, 0)
+  if (sRecords.length === 0) return e.next()
+
+  var templates = []
+  try {
+    templates = JSON.parse(sRecords[0].getString('notification_templates') || '[]')
+  } catch (_) {
+    return e.next()
+  }
+
+  var tpl = null
+  for (var i = 0; i < templates.length; i++) {
+    if (templates[i].trigger === 'confirmacao_pagamento') {
+      tpl = templates[i]
+      break
+    }
+  }
+  if (!tpl) return e.next()
+
+  var customer = null
+  try {
+    customer = $app.findRecordById('customers', rental.getString('customer_id'))
+  } catch (_) {}
+  if (!customer) return e.next()
+
+  var msg = tpl.message || ''
+  var cliente = customer.getString('name')
+  var contrato = rental.getString('contract_number')
+  var valor = String(payment.get('amount') || rental.get('total') || 0)
+
+  var dataDevolucao = ''
+  var dParts = (rental.getString('expected_return_date') || '').split('T')[0].split('-')
+  if (dParts.length === 3) dataDevolucao = dParts[2] + '/' + dParts[1] + '/' + dParts[0]
+
+  var rentalItems = rental.get('items') || []
+  var itemNames = []
+  for (var j = 0; j < rentalItems.length; j++) {
+    if (rentalItems[j].itemId === 'freight' || !rentalItems[j].itemId) continue
+    var itemName = rentalItems[j].name || ''
+    if (!itemName) {
+      try {
+        var inv = $app.findRecordById('inventory', rentalItems[j].itemId)
+        itemName = inv.getString('name')
+      } catch (_) {}
+    }
+    if (itemName) itemNames.push(itemName)
+  }
+  var itensStr = itemNames.join(', ')
+
+  msg = msg
+    .replace(/\{cliente\}/g, cliente)
+    .replace(/\{contrato\}/g, contrato)
+    .replace(/\{itens\}/g, itensStr)
+    .replace(/\{data_devolucao\}/g, dataDevolucao)
+    .replace(/\{valor\}/g, valor)
+
+  var phone = customer.getString('phone_cell') || customer.getString('phone_res') || ''
+  if (!phone) return e.next()
+
+  var sanitized = String(phone).replace(/\D/g, '')
+  if (sanitized.length > 0 && sanitized.substring(0, 2) !== '55') {
+    sanitized = '55' + sanitized
+  }
+
+  var apiUrl = $secrets.get('EVOLUTION_API_URL') || ''
+  var apiKey = $secrets.get('EVOLUTION_API_KEY') || ''
+  var instance = $secrets.get('EVOLUTION_INSTANCE') || ''
+
+  if (!apiUrl || !apiKey || !instance) return e.next()
+
+  try {
+    $http.send({
+      url: apiUrl.replace(/\/+$/, '') + '/message/sendText/' + instance,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: apiKey },
+      body: JSON.stringify({ number: sanitized, text: msg }),
+      timeout: 30,
+    })
+  } catch (err) {
+    $app
+      .logger()
+      .error(
+        'Notification failed',
+        'trigger',
+        'confirmacao_pagamento',
+        'err',
+        err.message || String(err),
+      )
+  }
+
+  return e.next()
+}, 'payments')

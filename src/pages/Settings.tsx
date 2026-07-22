@@ -48,6 +48,7 @@ import { useAuth } from '@/hooks/use-auth'
 import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
 import pb from '@/lib/pocketbase/client'
 import { refreshLocations } from '@/hooks/use-locations'
+import { NotificationTemplates } from '@/components/settings/NotificationTemplates'
 
 const PERMISSION_OPTIONS = [
   { id: 'items:write', label: 'Cadastrar/Editar Itens' },
@@ -376,6 +377,9 @@ export default function Settings() {
           </TabsTrigger>
           <TabsTrigger value="locais" className="text-base h-full flex-1">
             Logística
+          </TabsTrigger>
+          <TabsTrigger value="notificacoes" className="text-base h-full flex-1">
+            Notificações
           </TabsTrigger>
         </TabsList>
 
@@ -967,6 +971,10 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="notificacoes" className="space-y-6">
+          <NotificationTemplates />
         </TabsContent>
       </Tabs>
     </div>

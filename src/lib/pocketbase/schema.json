@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-21T22:46:58.684Z",
+  "generatedAt": "2026-07-22T00:34:39.703Z",
   "collections": [
     {
       "name": "users",
@@ -851,6 +851,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "notification_templates",
+          "type": "json",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
