@@ -27,6 +27,7 @@ import { customerService } from '@/services/customers'
 import { useToast } from '@/hooks/use-toast'
 import { compressImage } from '@/lib/utils'
 import { SingleFileUploadField } from '@/components/customers/SingleFileUploadField'
+import { fetchCepData } from '@/lib/cep'
 
 const emptyAddress: Address = {
   street: '',
@@ -146,20 +147,26 @@ export default function PublicCustomerForm() {
   }
 
   const fetchCep = async (cep: string, isDelivery = false) => {
-    const cleanCep = cep.replace(/\D/g, '')
-    if (cleanCep.length === 8) {
-      try {
-        const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`)
-        const data = await res.json()
-        if (!data.erro) {
-          updateAddress('street', data.logradouro, isDelivery)
-          updateAddress('neighborhood', data.bairro, isDelivery)
-          updateAddress('city', data.localidade, isDelivery)
-          updateAddress('state', data.uf, isDelivery)
-        }
-      } catch (e) {
-        console.error(e)
+    try {
+      const result = await fetchCepData(cep)
+      if (result) {
+        if (result.street) updateAddress('street', result.street, isDelivery)
+        if (result.neighborhood) updateAddress('neighborhood', result.neighborhood, isDelivery)
+        if (result.city) updateAddress('city', result.city, isDelivery)
+        if (result.state) updateAddress('state', result.state, isDelivery)
+      } else {
+        toast({
+          title: 'CEP não encontrado',
+          description: 'Preencha o endereço manualmente.',
+          variant: 'destructive',
+        })
       }
+    } catch {
+      toast({
+        title: 'Erro ao buscar CEP',
+        description: 'Não foi possível consultar o CEP. Preencha o endereço manualmente.',
+        variant: 'destructive',
+      })
     }
   }
 

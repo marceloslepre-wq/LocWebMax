@@ -24,6 +24,8 @@ import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import { useEffect } from 'react'
 import pb from '@/lib/pocketbase/client'
+import { RouteErrorBoundary, ErrorBoundaryOutlet } from '@/components/RouteErrorBoundary'
+import { PublicErrorBoundary } from '@/components/PublicErrorBoundary'
 
 const OverdueChecker = () => {
   useEffect(() => {
@@ -51,22 +53,59 @@ const App = () => (
           <Sonner />
           <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/public/customer/new" element={<PublicCustomerForm />} />
-            <Route path="/public/asset/new" element={<PublicAssetForm />} />
-            <Route path="/public/transfer" element={<PublicTransfer />} />
-            <Route path="/public/forgot-password" element={<ForgotPassword />} />
-            <Route path="/public/reset-password" element={<ResetPassword />} />
+            <Route
+              path="/public/customer/new"
+              element={
+                <PublicErrorBoundary>
+                  <PublicCustomerForm />
+                </PublicErrorBoundary>
+              }
+            />
+            <Route
+              path="/public/asset/new"
+              element={
+                <PublicErrorBoundary>
+                  <PublicAssetForm />
+                </PublicErrorBoundary>
+              }
+            />
+            <Route
+              path="/public/transfer"
+              element={
+                <PublicErrorBoundary>
+                  <PublicTransfer />
+                </PublicErrorBoundary>
+              }
+            />
+            <Route
+              path="/public/forgot-password"
+              element={
+                <PublicErrorBoundary>
+                  <ForgotPassword />
+                </PublicErrorBoundary>
+              }
+            />
+            <Route
+              path="/public/reset-password"
+              element={
+                <PublicErrorBoundary>
+                  <ResetPassword />
+                </PublicErrorBoundary>
+              }
+            />
             <Route element={<ProtectedRoute />}>
-              <Route element={<Layout />}>
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/inventory" element={<Inventory />} />
-                <Route path="/inventory/:id" element={<ItemDetail />} />
-                <Route path="/assets" element={<Assets />} />
-                <Route path="/customers" element={<Customers />} />
-                <Route path="/rentals" element={<Rentals />} />
-                <Route path="/rentals/:id" element={<RentalDetail />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/guide" element={<Guide />} />
+              <Route element={<ErrorBoundaryOutlet />}>
+                <Route element={<Layout />}>
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/inventory" element={<Inventory />} />
+                  <Route path="/inventory/:id" element={<ItemDetail />} />
+                  <Route path="/assets" element={<Assets />} />
+                  <Route path="/customers" element={<Customers />} />
+                  <Route path="/rentals" element={<Rentals />} />
+                  <Route path="/rentals/:id" element={<RentalDetail />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/guide" element={<Guide />} />
+                </Route>
               </Route>
             </Route>
             <Route path="*" element={<NotFound />} />
