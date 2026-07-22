@@ -73,8 +73,25 @@ routerAdd(
 
     var contractNumber = body.contract_number || ''
     if (!contractNumber) {
-      const count = $app.countRecords('rentals')
-      contractNumber = 'LOC-' + String(count).padStart(5, '0')
+      var maxNum = 0
+      try {
+        var allRentals = $app.findRecordsByFilter(
+          'rentals',
+          "contract_number != ''",
+          '-created',
+          0,
+          0,
+        )
+        for (var i = 0; i < allRentals.length; i++) {
+          var cn = allRentals[i].getString('contract_number') || ''
+          var match = cn.match(/LOC-0*(\d+)/)
+          if (match) {
+            var num = parseInt(match[1], 10)
+            if (num > maxNum) maxNum = num
+          }
+        }
+      } catch (_) {}
+      contractNumber = 'LOC-' + String(maxNum + 1).padStart(5, '0')
     }
 
     const rentalsCol = $app.findCollectionByNameOrId('rentals')

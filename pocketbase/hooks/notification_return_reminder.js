@@ -76,16 +76,21 @@ cronAdd('notification_return_reminder', '0 9 * * *', () => {
 
     var itemNames = []
     for (var j = 0; j < rentalItems.length; j++) {
-      if (rentalItems[j].itemId === 'freight' || !rentalItems[j].itemId) continue
-      var itemName = rentalItems[j].name || rentalItems[j].description || ''
-      var itemCode = rentalItems[j].code || ''
-      if (!itemName || !itemCode) {
-        try {
-          var inv = $app.findRecordById('inventory', rentalItems[j].itemId)
-          if (!itemName) itemName = inv.getString('name')
-          if (!itemCode) itemCode = inv.getString('code')
-        } catch (_) {}
-      }
+      var rawItem = rentalItems[j]
+      var itemId = rawItem.itemId || rawItem.item_id || rawItem.inventory_id || rawItem.id || ''
+      if (itemId === 'freight' || !itemId) continue
+      var qty = rawItem.qty || rawItem.quantity || rawItem.quantidade || 1
+      var itemName = rawItem.name || rawItem.description || ''
+      var itemCode = rawItem.code || ''
+      try {
+        var inv = $app.findRecordById('inventory', itemId)
+        if (inv) {
+          var invName = inv.getString('name')
+          var invCode = inv.getString('code')
+          if (invName) itemName = invName
+          if (invCode) itemCode = invCode
+        }
+      } catch (_) {}
       if (itemName) {
         itemName = itemName
           .replace(/\bEstoque\b/gi, '')
@@ -94,7 +99,6 @@ cronAdd('notification_return_reminder', '0 9 * * *', () => {
           .trim()
       }
       if (itemName) {
-        var qty = rentalItems[j].qty || 1
         var codePart = itemCode ? ' (' + itemCode + ')' : ''
         itemNames.push(qty + ' x ' + itemName + codePart)
       }
