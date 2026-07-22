@@ -71,8 +71,15 @@ routerAdd(
       }
     }
 
+    var contractNumber = body.contract_number || ''
+    if (!contractNumber) {
+      const count = $app.countRecords('rentals')
+      contractNumber = 'LOC-' + String(count).padStart(5, '0')
+    }
+
     const rentalsCol = $app.findCollectionByNameOrId('rentals')
     const rental = new Record(rentalsCol)
+    rental.set('contract_number', contractNumber)
     rental.set('customer_id', body.customer_id || '')
     rental.set('items', body.items || [])
     rental.set('start_date', body.start_date || '')
@@ -86,14 +93,6 @@ routerAdd(
     rental.set('is_imported', isImported)
     if (localRetiradaId) rental.set('local_retirada_id', localRetiradaId)
     if (localDevolucaoId) rental.set('local_devolucao_id', localDevolucaoId)
-    $app.save(rental)
-
-    var contractNumber = body.contract_number || ''
-    if (!contractNumber) {
-      const count = $app.countRecords('rentals')
-      contractNumber = 'LOC-' + String(count).padStart(5, '0')
-    }
-    rental.set('contract_number', contractNumber)
     $app.save(rental)
 
     if (!isImported) {

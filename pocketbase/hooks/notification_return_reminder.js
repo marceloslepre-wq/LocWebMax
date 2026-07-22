@@ -56,7 +56,7 @@ cronAdd('notification_return_reminder', '0 9 * * *', () => {
 
     var msg = tpl.message || ''
     var cliente = customer.getString('name')
-    var contrato = rental.getString('contract_number')
+    var contrato = rental.getString('contract_number') || rental.id
     var valor = String(rental.get('total') || 0)
 
     var rawDate = rental.getString('expected_return_date') || ''
@@ -66,10 +66,17 @@ cronAdd('notification_return_reminder', '0 9 * * *', () => {
     if (dParts.length === 3) dataDevolucao = dParts[2] + '/' + dParts[1] + '/' + dParts[0]
 
     var rentalItems = rental.get('items') || []
+    if (typeof rentalItems === 'string') {
+      try {
+        rentalItems = JSON.parse(rentalItems)
+      } catch (_) {
+        rentalItems = []
+      }
+    }
     var itemNames = []
     for (var j = 0; j < rentalItems.length; j++) {
       if (rentalItems[j].itemId === 'freight' || !rentalItems[j].itemId) continue
-      var itemName = rentalItems[j].name || ''
+      var itemName = rentalItems[j].name || rentalItems[j].description || ''
       if (!itemName) {
         try {
           var inv = $app.findRecordById('inventory', rentalItems[j].itemId)
@@ -82,7 +89,10 @@ cronAdd('notification_return_reminder', '0 9 * * *', () => {
           .replace(/\bModelo\b/gi, '')
           .replace(/\s+/g, ' ')
           .trim()
-        if (itemName) itemNames.push(itemName)
+        if (itemName) {
+          var qty = rentalItems[j].qty || 1
+          itemNames.push(qty > 1 ? itemName + ' (x' + qty + ')' : itemName)
+        }
       }
     }
     var itensStr = itemNames.join(', ')
