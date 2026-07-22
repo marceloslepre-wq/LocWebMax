@@ -53,14 +53,17 @@ onRecordAfterCreateSuccess((e) => {
       rentalItems = []
     }
   }
+
   var itemNames = []
   for (var j = 0; j < rentalItems.length; j++) {
     if (rentalItems[j].itemId === 'freight' || !rentalItems[j].itemId) continue
     var itemName = rentalItems[j].name || rentalItems[j].description || ''
-    if (!itemName) {
+    var itemCode = rentalItems[j].code || ''
+    if (!itemName || !itemCode) {
       try {
         var inv = $app.findRecordById('inventory', rentalItems[j].itemId)
-        itemName = inv.getString('name')
+        if (!itemName) itemName = inv.getString('name')
+        if (!itemCode) itemCode = inv.getString('code')
       } catch (_) {}
     }
     if (itemName) {
@@ -69,13 +72,15 @@ onRecordAfterCreateSuccess((e) => {
         .replace(/\bModelo\b/gi, '')
         .replace(/\s+/g, ' ')
         .trim()
-      if (itemName) {
-        var qty = rentalItems[j].qty || 1
-        itemNames.push(qty > 1 ? itemName + ' (x' + qty + ')' : itemName)
-      }
+    }
+    if (itemName) {
+      var qty = rentalItems[j].qty || 1
+      var codePart = itemCode ? ' (' + itemCode + ')' : ''
+      itemNames.push(qty + ' x ' + itemName + codePart)
     }
   }
-  var itensStr = itemNames.join(', ')
+
+  var itensStr = itemNames.length > 0 ? itemNames.join('\n') : 'Nenhum item listado'
 
   msg = msg
     .replace(/\{cliente\}/g, cliente)
