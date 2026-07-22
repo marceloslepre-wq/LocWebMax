@@ -68,6 +68,24 @@ export default function Rentals() {
     return r[camel] ?? r[snake] ?? ''
   }
 
+  const getItemReturnDates = (r: any): string[] => {
+    const dates = new Set<string>()
+    const contractDate = rentalField(r, 'expectedReturnDate', 'expected_return_date')
+      .replace(' ', 'T')
+      .split('T')[0]
+    if (contractDate) dates.add(contractDate)
+
+    const items = r.items || []
+    items.forEach((item: any) => {
+      const raw =
+        item.endDate || item.end_date || item.expected_return_date || item.expectedReturnDate || ''
+      const clean = raw.toString().replace(' ', 'T').split('T')[0]
+      if (clean) dates.add(clean)
+    })
+
+    return Array.from(dates).sort()
+  }
+
   useEffect(() => {
     if (rentals.length === 0) return
 
@@ -123,11 +141,12 @@ export default function Rentals() {
 
     let matchesReturnDate = true
     if (returnDateStart || returnDateEnd) {
-      const rDate = rentalField(r, 'expectedReturnDate', 'expected_return_date')
-        .replace(' ', 'T')
-        .split('T')[0]
-      if (returnDateStart && rDate < returnDateStart) matchesReturnDate = false
-      if (returnDateEnd && rDate > returnDateEnd) matchesReturnDate = false
+      const itemDates = getItemReturnDates(r)
+      matchesReturnDate = itemDates.some((date) => {
+        if (returnDateStart && date < returnDateStart) return false
+        if (returnDateEnd && date > returnDateEnd) return false
+        return true
+      })
     }
 
     return matchesSearch && matchesStatus && matchesReturnDate
@@ -157,7 +176,9 @@ export default function Rentals() {
         c?.name || '-',
         formattedPhone || '-',
         formatDateStr(rentalField(r, 'startDate', 'start_date')),
-        formatDateStr(rentalField(r, 'expectedReturnDate', 'expected_return_date')),
+        getItemReturnDates(r)
+          .map((d) => formatDateStr(d))
+          .join(', '),
         r.status,
         `R$ ${r.total.toFixed(2)}`,
       ]
@@ -332,9 +353,15 @@ export default function Rentals() {
                         {formatDateCompact(rentalField(rental, 'startDate', 'start_date'))}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {formatDateCompact(
-                          rentalField(rental, 'expectedReturnDate', 'expected_return_date'),
-                        )}
+                        {(() => {
+                          const dates = getItemReturnDates(rental)
+                          if (dates.length <= 1) {
+                            return formatDateCompact(
+                              rentalField(rental, 'expectedReturnDate', 'expected_return_date'),
+                            )
+                          }
+                          return dates.map((d) => formatDateCompact(d)).join(', ')
+                        })()}
                       </TableCell>
                       <TableCell>
                         <Badge
