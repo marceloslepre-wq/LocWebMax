@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -10,9 +10,17 @@ import {
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import useMainStore, { Rental } from '@/stores/main'
 import { addDays, format, parseISO, differenceInDays } from 'date-fns'
 import { useToast } from '@/hooks/use-toast'
+import {
+  getItemName,
+  getItemDailyPrice,
+  getItemReturnDate,
+  getItemStartDate,
+  getRemainingDays,
+} from '@/lib/rental-items'
 
 interface RenewDialogProps {
   rental: Rental | null
@@ -24,131 +32,235 @@ interface RenewDialogProps {
   ) => void
 }
 
+function fmtDate(d: string): string {
+  if (!d) return '-'
+  try {
+    return format(parseISO(d), 'dd/MM/yy')
+  } catch {
+    return '-'
+  }
+}
+
 export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDialogProps) {
   const { updateRental, inventory } = useMainStore()
   const { toast } = useToast()
-
-  const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+
+  const tomorrowStr = format(addDays(new Date(), 1), 'yyyy-MM-dd')
+
+  const itemRows = useMemo(() => {
+    if (!rental) return []
+    const contractStart = rental.startDate?.split('T')[0] || ''
+    const contractReturn = rental.expectedReturnDate?.split('T')[0] || ''
+    return rental.items
+      .map((item: any, index: number) => {
+        if (item.itemId === 'freight') return null
+        const inv = inventory.find((i) => i.id === item.itemId)
+        const startDate = getItemStartDate(item, contractStart)
+        const returnDate = getItemReturnDate(item, contractReturn)
+        return {
+          index,
+          itemId: item.itemId,
+          name: getItemName(item, inv),
+          startDate,
+          returnDate,
+          remaining: getRemainingDays(returnDate),
+          dailyPrice: getItemDailyPrice(item, inv),
+          qty: item.qty || 1,
+        }
+      })
+      .filter(Boolean) as Array<{
+      index: number
+      itemId: string
+      name: string
+      startDate: string
+      returnDate: string
+      remaining: number
+      dailyPrice: number
+      qty: number
+    }>
+  }, [rental, inventory])
 
   useEffect(() => {
-    if (rental && open) {
-      const baseDate = rental.expectedReturnDate
-        ? rental.expectedReturnDate.split('T')[0]
-        : format(new Date(), 'yyyy-MM-dd')
+    if (!rental || !open || itemRows.length === 0) return
+    const allOverdue = itemRows.every((r) => r.remaining < 0)
+    const allActive = itemRows.every((r) => r.remaining >= 0)
+    const indices =
+      allOverdue || allActive
+        ? itemRows.map((r) => r.index)
+        : itemRows.filter((r) => r.remaining < 0).map((r) => r.index)
+    setSelected(new Set(indices))
+    const maxDate = itemRows.reduce((m, r) => (r.returnDate > m ? r.returnDate : m), '')
+    setEndDate(
+      format(addDays(parseISO(maxDate || format(new Date(), 'yyyy-MM-dd')), 30), 'yyyy-MM-dd'),
+    )
+  }, [rental, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-      setStartDate(baseDate)
-      setEndDate(format(addDays(parseISO(baseDate), 30), 'yyyy-MM-dd'))
+  const toggle = (i: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(i)) next.delete(i)
+      else next.add(i)
+      return next
+    })
+
+  const { addedTotal, error } = useMemo(() => {
+    if (selected.size === 0) return { addedTotal: 0, error: 'Selecione ao menos um item.' }
+    if (!endDate) return { addedTotal: 0, error: 'Defina a nova data de retorno.' }
+    if (endDate <= tomorrowStr)
+      return { addedTotal: 0, error: 'A nova data deve ser no mínimo amanhã.' }
+    let total = 0
+    for (const idx of selected) {
+      const row = itemRows.find((r) => r.index === idx)
+      if (!row) continue
+      if (endDate < row.startDate)
+        return { addedTotal: 0, error: `Data anterior ao início de "${row.name}".` }
+      let extra = differenceInDays(parseISO(endDate), parseISO(row.returnDate))
+      if (extra <= 0) extra = 1
+      total += row.dailyPrice * row.qty * extra
     }
-  }, [rental, open])
+    return { addedTotal: Math.round(total), error: null as string | null }
+  }, [selected, endDate, itemRows, tomorrowStr])
 
   const handleQuickSelect = (days: number) => {
-    if (!startDate) return
-    const end = addDays(parseISO(startDate), days)
-    setEndDate(format(end, 'yyyy-MM-dd'))
+    const base = endDate || format(new Date(), 'yyyy-MM-dd')
+    setEndDate(format(addDays(parseISO(base), days), 'yyyy-MM-dd'))
   }
 
   const handleSave = () => {
-    if (!rental) return
-
-    // FIX: Preserva data local sem timezone shift
-    // Salva como STRING pura (sem timezone)
-    const newExpectedReturn = endDate
-
-    // Calculate added value
-    const [year, month, day] = endDate.split('-').map(Number)
-    const start = parseISO(startDate)
-    const end = new Date(year, month - 1, day, 12, 0, 0)
-    let diffDays = differenceInDays(end, start)
-    if (diffDays <= 0) diffDays = 1
-
-    let addedTotal = 0
-    rental.items.forEach((ri) => {
-      const item = inventory.find((i) => i.id === ri.itemId)
-      if (item) {
-        addedTotal += (item.dailyPrice || 0) * ri.qty * diffDays
+    if (!rental || error) return
+    const updatedItems = rental.items.map((item: any, index: number) => {
+      if (!selected.has(index) || item.itemId === 'freight') return item
+      return {
+        ...item,
+        endDate,
+        end_date: endDate,
+        expectedReturnDate: endDate,
+        expected_return_date: endDate,
       }
     })
-    addedTotal = Math.round(addedTotal)
-
+    const allDates = updatedItems.map((item: any) =>
+      getItemReturnDate(item, rental.expectedReturnDate?.split('T')[0] || ''),
+    )
+    const newExpectedReturn = allDates.sort().pop() || endDate
     const newTotal = rental.total + addedTotal
-
     updateRental(rental.id, {
       expectedReturnDate: newExpectedReturn,
       status: 'Ativo',
       total: newTotal,
+      items: updatedItems,
     })
-
     toast({
       title: 'Locação renovada com sucesso',
-      description: `O contrato ${rental.contractNumber || rental.id} foi estendido até ${day.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')}/${year}.`,
+      description: `${selected.size} item(ns) renovado(s) até ${fmtDate(endDate)}.`,
     })
-
     if (onRenewed) {
       onRenewed(
-        { ...rental, expectedReturnDate: newExpectedReturn, total: newTotal },
+        { ...rental, expectedReturnDate: newExpectedReturn, total: newTotal, items: updatedItems },
         {
-          startDate,
+          startDate: rental.expectedReturnDate?.split('T')[0] || '',
           endDate,
           addedTotal,
         },
       )
     }
-
     onOpenChange(false)
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Renovar Locação</DialogTitle>
           <DialogDescription>
-            Defina o novo período de locação para o contrato {rental?.id}.
+            Selecione os itens para renovar e defina a nova data de retorno.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-2">
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => handleQuickSelect(15)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={() => handleQuickSelect(15)}
+            >
               + 15 Dias
             </Button>
-            <Button variant="outline" className="flex-1" onClick={() => handleQuickSelect(30)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={() => handleQuickSelect(30)}
+            >
               + 30 Dias
             </Button>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Início da Renovação</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => {
-                  setStartDate(e.target.value)
-                  if (e.target.value && endDate && e.target.value > endDate) {
-                    setEndDate(e.target.value)
-                  }
-                }}
-              />
+          <div className="space-y-2">
+            <Label>Nova Data de Retorno</Label>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              min={tomorrowStr}
+            />
+          </div>
+
+          <div className="border rounded-md">
+            <div className="grid grid-cols-[2rem_1fr_6rem_6rem_5rem] gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b bg-muted/30">
+              <span />
+              <span>Item</span>
+              <span>Início</span>
+              <span>Retorno</span>
+              <span className="text-right">Restam</span>
             </div>
-            <div className="space-y-2">
-              <Label>Término da Renovação</Label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                min={startDate}
-              />
+            <div className="max-h-[280px] overflow-y-auto">
+              {itemRows.map((row) => (
+                <div
+                  key={row.index}
+                  className="grid grid-cols-[2rem_1fr_6rem_6rem_5rem] gap-2 px-3 py-2 items-center text-sm hover:bg-muted/30 cursor-pointer border-b last:border-0"
+                  onClick={() => toggle(row.index)}
+                >
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selected.has(row.index)}
+                      onCheckedChange={() => toggle(row.index)}
+                    />
+                  </div>
+                  <span className="font-medium truncate">{row.name}</span>
+                  <span className="text-muted-foreground">{fmtDate(row.startDate)}</span>
+                  <span className="text-muted-foreground">{fmtDate(row.returnDate)}</span>
+                  <span
+                    className={`text-right font-medium ${row.remaining < 0 ? 'text-red-500' : 'text-emerald-600'}`}
+                  >
+                    {row.remaining}d
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
+
+          <div className="flex justify-between items-center text-sm bg-muted/20 rounded-md px-3 py-2">
+            <span>
+              Itens selecionados: <strong>{selected.size}</strong>
+            </span>
+            <span>
+              Valor adicional estimado: <strong>R$ {addedTotal.toFixed(2)}</strong>
+            </span>
+          </div>
+
+          {error && <p className="text-sm text-red-500">{error}</p>}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleSave}>Confirmar Renovação</Button>
+          <Button onClick={handleSave} disabled={!!error}>
+            Confirmar Renovação
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

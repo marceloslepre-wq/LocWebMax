@@ -495,6 +495,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (updateData.actualReturnDate) dbUpdate.actual_return_date = updateData.actualReturnDate
     if (updateData.expectedReturnDate) dbUpdate.expected_return_date = updateData.expectedReturnDate
     if (updateData.startDate) dbUpdate.start_date = updateData.startDate
+    if (updateData.total !== undefined) dbUpdate.total = updateData.total
+    if (updateData.items !== undefined) dbUpdate.items = updateData.items
 
     try {
       await pb.collection('rentals').update(id, dbUpdate)
