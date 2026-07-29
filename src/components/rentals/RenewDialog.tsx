@@ -91,10 +91,7 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
         ? itemRows.map((r) => r.index)
         : itemRows.filter((r) => r.remaining < 0).map((r) => r.index)
     setSelected(new Set(indices))
-    const maxDate = itemRows.reduce((m, r) => (r.returnDate > m ? r.returnDate : m), '')
-    setEndDate(
-      format(addDays(parseISO(maxDate || format(new Date(), 'yyyy-MM-dd')), 30), 'yyyy-MM-dd'),
-    )
+    setEndDate('')
   }, [rental, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (i: number) =>
@@ -124,7 +121,10 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
   }, [selected, endDate, itemRows, tomorrowStr])
 
   const handleQuickSelect = (days: number) => {
-    const base = endDate || format(new Date(), 'yyyy-MM-dd')
+    if (selected.size === 0) return
+    const selectedRows = itemRows.filter((r) => selected.has(r.index))
+    const maxReturnDate = selectedRows.reduce((m, r) => (r.returnDate > m ? r.returnDate : m), '')
+    const base = maxReturnDate || format(new Date(), 'yyyy-MM-dd')
     setEndDate(format(addDays(parseISO(base), days), 'yyyy-MM-dd'))
   }
 
