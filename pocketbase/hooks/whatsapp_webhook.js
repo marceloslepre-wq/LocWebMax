@@ -59,6 +59,11 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     return e.json(500, { error: 'Service user not configured' })
   }
 
+  if (serviceUser.get('active') === false) {
+    $app.logger().info('whatsapp_webhook: bot disabled, skipping message', 'phone', phone)
+    return e.json(200, { success: true, skipped: 'bot disabled' })
+  }
+
   let conversation = null
   let conversationId = null
   try {
