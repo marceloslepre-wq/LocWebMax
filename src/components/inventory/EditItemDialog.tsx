@@ -247,6 +247,19 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
               </div>
             </div>
             <div className="grid gap-2">
+              <Label>Valor de Venda (R$)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={form.salePrice}
+                onChange={(e) => set('salePrice', e.target.value)}
+                placeholder="0.00"
+              />
+              {fieldErrors.sale_price && (
+                <p className="text-xs text-red-500">{fieldErrors.sale_price}</p>
+              )}
+            </div>
+            <div className="grid gap-2">
               <Label>Descrição</Label>
               <Textarea
                 value={form.description}
