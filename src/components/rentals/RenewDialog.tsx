@@ -21,6 +21,7 @@ import {
   getItemStartDate,
   getRemainingDays,
 } from '@/lib/rental-items'
+import { rentalsService } from '@/services/rentals'
 
 interface RenewDialogProps {
   rental: Rental | null
@@ -46,6 +47,7 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
   const { toast } = useToast()
   const [endDate, setEndDate] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [saving, setSaving] = useState(false)
 
   const tomorrowStr = format(addDays(new Date(), 1), 'yyyy-MM-dd')
 
@@ -128,8 +130,9 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
     setEndDate(format(addDays(parseISO(base), days), 'yyyy-MM-dd'))
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!rental || error) return
+    setSaving(true)
     const updatedItems = rental.items.map((item: any, index: number) => {
       if (!selected.has(index) || item.itemId === 'freight') return item
       return {
@@ -145,6 +148,24 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
     )
     const newExpectedReturn = allDates.sort().pop() || endDate
     const newTotal = rental.total + addedTotal
+
+    try {
+      await rentalsService.update(rental.id, {
+        expected_return_date: newExpectedReturn,
+        status: 'Ativo',
+        total: newTotal,
+        items: updatedItems,
+      })
+    } catch (err) {
+      setSaving(false)
+      toast({
+        title: 'Erro ao renovar locação',
+        description: 'Falha ao salvar a renovação no servidor. Tente novamente.',
+        variant: 'destructive',
+      })
+      return
+    }
+
     updateRental(rental.id, {
       expectedReturnDate: newExpectedReturn,
       status: 'Ativo',
@@ -165,6 +186,7 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
         },
       )
     }
+    setSaving(false)
     onOpenChange(false)
   }
 
@@ -258,8 +280,8 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleSave} disabled={!!error}>
-            Confirmar Renovação
+          <Button onClick={handleSave} disabled={!!error || saving}>
+            {saving ? 'Salvando...' : 'Confirmar Renovação'}
           </Button>
         </DialogFooter>
       </DialogContent>

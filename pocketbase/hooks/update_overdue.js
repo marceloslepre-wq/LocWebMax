@@ -9,7 +9,8 @@ routerAdd(
       const activeRentals = $app.findRecordsByFilter('rentals', 'status = "Ativo"', '', 0, 0)
       for (let i = 0; i < activeRentals.length; i++) {
         var rental = activeRentals[i]
-        var expectedDate = rental.getString('expected_return_date')
+        var rawExpected = rental.getString('expected_return_date')
+        var expectedDate = rawExpected ? rawExpected.split(' ')[0].split('T')[0] : ''
         if (expectedDate && expectedDate < today) {
           rental.set('status', 'Atrasado')
           $app.save(rental)
