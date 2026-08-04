@@ -53,7 +53,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
 
   let serviceUser = null
   try {
-    serviceUser = $app.findAuthRecordByEmail('_pb_users_auth_', 'helena.bot@app.local')
+    serviceUser = $app.findAuthRecordByEmail('users', 'helena.bot@app.local')
   } catch (err) {
     $app.logger().error('whatsapp_webhook: service user not found', 'err', err.message)
     return e.json(500, { error: 'Service user not configured' })
