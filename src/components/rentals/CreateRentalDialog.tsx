@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -27,7 +27,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Trash2, Check, ChevronsUpDown } from 'lucide-react'
+import { Plus, Trash2, Check, ChevronsUpDown, Loader2 } from 'lucide-react'
+import { useElapsedTimer } from '@/hooks/use-elapsed-timer'
 import useMainStore, { Rental, RentalItem } from '@/stores/main'
 import { useToast } from '@/hooks/use-toast'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -57,6 +58,9 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
   const [customerOpen, setCustomerOpen] = useState(false)
   const [itemOpen, setItemOpen] = useState(false)
   const [errors, setErrors] = useState<{ customerId?: string; paymentMethod?: string }>({})
+  const [submitting, setSubmitting] = useState(false)
+  const submitLockRef = useRef(false)
+  const timer = useElapsedTimer()
 
   const applyDuration = (days: number) => {
     setDefaultDuration(days)
@@ -279,6 +283,11 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (submitLockRef.current || submitting) return
+    submitLockRef.current = true
+    setSubmitting(true)
+    timer.start()
+
     const newErrors: { customerId?: string; paymentMethod?: string } = {}
     if (!customerId) newErrors.customerId = 'Selecione um cliente.'
     if (!paymentMethod) newErrors.paymentMethod = 'Selecione a forma de pagamento.'
@@ -292,6 +301,9 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
           variant: 'destructive',
         })
       }
+      submitLockRef.current = false
+      setSubmitting(false)
+      timer.stop()
       return
     }
     setErrors({})
@@ -366,10 +378,15 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
         description: getErrorMessage(err),
         variant: 'destructive',
       })
+    } finally {
+      submitLockRef.current = false
+      setSubmitting(false)
+      timer.stop()
     }
   }
 
   const handleOpenChange = (newOpen: boolean) => {
+    if (submitting && !newOpen) return
     setOpen(newOpen)
     if (!newOpen) setErrors({})
   }
@@ -382,7 +399,7 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
         </Button>
       </DialogTrigger>
       <DialogContent
-        className="max-w-5xl max-h-[90vh] overflow-y-auto"
+        className="max-w-5xl max-h-[90vh] overflow-y-auto relative"
         aria-describedby="create-rental-dialog-desc"
       >
         <DialogHeader>
@@ -391,6 +408,15 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
             Preencha os detalhes para criar uma nova locação
           </DialogDescription>
         </DialogHeader>
+        {submitting && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-lg animate-fade-in">
+            <div className="flex flex-col items-center gap-3 p-8">
+              <Loader2 className="w-10 h-10 animate-spin text-primary" />
+              <p className="text-lg font-medium">Gerando contrato... aguarde</p>
+              <p className="text-2xl font-bold text-primary tabular-nums">{timer.formatted}</p>
+            </div>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-6 pt-4">
           <div className="grid gap-2">
             <Label className={cn(errors.customerId && 'text-destructive')}>
@@ -682,10 +708,24 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleOpenChange(false)}
+              disabled={submitting}
+            >
               Cancelar
             </Button>
-            <Button type="submit">Gerar Contrato</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Gerando contrato... aguarde {timer.formatted}
+                </>
+              ) : (
+                'Gerar Contrato'
+              )}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

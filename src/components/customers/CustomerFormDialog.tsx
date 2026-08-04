@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -27,6 +27,7 @@ import useMainStore, { Address } from '@/stores/main'
 import { customerService, Customer } from '@/services/customers'
 import { compressImage } from '@/lib/utils'
 import { SingleFileUploadField } from '@/components/customers/SingleFileUploadField'
+import { useElapsedTimer } from '@/hooks/use-elapsed-timer'
 
 const emptyAddress: Address = {
   street: '',
@@ -77,6 +78,8 @@ export function CustomerFormDialog({
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
+  const submitLockRef = useRef(false)
+  const timer = useElapsedTimer()
 
   const [docIdentificacaoFile, setDocIdentificacaoFile] = useState<File | null>(null)
   const [comprovanteEnderecoFile, setComprovanteEnderecoFile] = useState<File | null>(null)
@@ -217,6 +220,11 @@ export function CustomerFormDialog({
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
 
+    if (submitLockRef.current || loading) return
+    submitLockRef.current = true
+    setLoading(true)
+    timer.start()
+
     const errors: string[] = []
     if (duplicateDocError) errors.push('CPF já cadastrado. Não é permitido duplicar cadastro')
     if (!formData.name?.trim()) errors.push('Nome Completo / Razão Social')
@@ -237,11 +245,13 @@ export function CustomerFormDialog({
 
     if (errors.length > 0) {
       setValidationErrors(errors)
+      submitLockRef.current = false
+      setLoading(false)
+      timer.stop()
       return
     }
 
     try {
-      setLoading(true)
       setUploadError(null)
 
       const excludeId = customer?.id || createdCustomerId || undefined
@@ -342,10 +352,13 @@ export function CustomerFormDialog({
       }
     } finally {
       setLoading(false)
+      submitLockRef.current = false
+      timer.stop()
     }
   }
 
   const handleOpenChange = (newOpen: boolean) => {
+    if (loading && !newOpen) return
     setOpen(newOpen)
     if (!newOpen) {
       if (!customer) {
@@ -376,6 +389,8 @@ export function CustomerFormDialog({
       setUploadError(null)
       setUploadProgressMsg(null)
       setCreatedCustomerId(null)
+      submitLockRef.current = false
+      timer.reset()
     }
   }
 
@@ -693,7 +708,11 @@ export function CustomerFormDialog({
               disabled={loading || duplicateDocError || checkingDoc}
             >
               {loading || checkingDoc ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              {uploadError ? 'Tentar Novamente' : 'Salvar'}
+              {loading
+                ? `Salvando... ${timer.formatted}`
+                : uploadError
+                  ? 'Tentar Novamente'
+                  : 'Salvar'}
             </Button>
           </DialogFooter>
         </DialogContent>
