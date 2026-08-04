@@ -1,5 +1,16 @@
 import pb from '@/lib/pocketbase/client'
 
+export interface PatrimonioCreateData {
+  inventory_id: string
+  numero_patrimonio: string
+  data_aquisicao?: string | null
+  valor_compra?: number | null
+  fornecedor?: string | null
+  observacoes?: string | null
+  estado?: string
+  foto_url?: string | null
+}
+
 export const patrimonioService = {
   getByInventory(inventoryId: string) {
     return pb.collection('patrimonio').getFullList({
@@ -16,7 +27,7 @@ export const patrimonioService = {
       expand: 'inventory_id',
     })
   },
-  create(data: any) {
+  create(data: PatrimonioCreateData | FormData) {
     return pb.collection('patrimonio').create(data)
   },
   update(id: string, data: any) {

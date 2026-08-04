@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase/client'
+import pb from '@/lib/pocketbase/client'
+import { patrimonioService, type PatrimonioCreateData } from '@/services/patrimonio'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -13,29 +15,45 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
-import { CheckCircle2, Loader2, Package, Camera, Upload, Image as ImageIcon } from 'lucide-react'
+import {
+  CheckCircle2,
+  Loader2,
+  Package,
+  Camera,
+  Upload,
+  Image as ImageIcon,
+  AlertCircle,
+} from 'lucide-react'
+
+interface InventoryModel {
+  id: string
+  name: string
+  code: string
+}
 
 export default function PublicAssetForm() {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
 
-  const [models, setModels] = useState<any[]>([])
+  const [models, setModels] = useState<InventoryModel[]>([])
   const [loadingModels, setLoadingModels] = useState(true)
+  const [modelsError, setModelsError] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadModels() {
       try {
         setLoadingModels(true)
-        const { data, error } = await supabase
-          .from('inventory')
-          .select('id, name, code')
-          .order('code', { ascending: true })
-
-        if (error) throw error
+        setModelsError(null)
+        const data = await pb.collection('inventory').getFullList<InventoryModel>({
+          sort: 'code',
+        })
         setModels(data || [])
       } catch (err) {
-        console.error('Erro ao carregar modelos:', err)
+        const msg = getErrorMessage(err)
+        setModelsError(
+          `Não foi possível carregar a lista de modelos. Verifique sua conexão e tente novamente. (${msg})`,
+        )
       } finally {
         setLoadingModels(false)
       }
@@ -53,6 +71,7 @@ export default function PublicAssetForm() {
     estado: 'novo',
   })
 
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [image, setImage] = useState<string | null>(null)
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -68,14 +87,20 @@ export default function PublicAssetForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFormErrors({})
+
     if (!formData.itemId) {
-      toast({ title: 'Erro', description: 'Selecione um modelo.', variant: 'destructive' })
+      setFormErrors({ itemId: 'Selecione um modelo.' })
+      return
+    }
+    if (!formData.serialNumber.trim()) {
+      setFormErrors({ serialNumber: 'Informe o número de série / patrimônio.' })
       return
     }
 
     setLoading(true)
     try {
-      const { error } = await supabase.from('patrimonio').insert({
+      const payload: PatrimonioCreateData = {
         inventory_id: formData.itemId,
         numero_patrimonio: formData.serialNumber,
         data_aquisicao: formData.purchaseDate || null,
@@ -84,13 +109,14 @@ export default function PublicAssetForm() {
         observacoes: formData.notes || null,
         estado: formData.estado,
         foto_url: image || null,
-      })
+      }
 
-      if (error) throw error
-
+      await patrimonioService.create(payload)
       setSuccess(true)
-    } catch (err: any) {
-      toast({ title: 'Erro', description: err.message, variant: 'destructive' })
+    } catch (err) {
+      const msg = getErrorMessage(err)
+      toast({ title: 'Erro ao cadastrar', description: msg, variant: 'destructive' })
+      setFormErrors({ submit: msg })
     } finally {
       setLoading(false)
     }
@@ -150,29 +176,64 @@ export default function PublicAssetForm() {
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>Carregando modelos disponíveis...</span>
                 </div>
+              ) : modelsError ? (
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2 p-3 border border-destructive/30 rounded-md bg-destructive/5 text-sm text-destructive">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>{modelsError}</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setLoadingModels(true)
+                      setModelsError(null)
+                      pb.collection('inventory')
+                        .getFullList<InventoryModel>({ sort: 'code' })
+                        .then((data) => setModels(data || []))
+                        .catch((err) =>
+                          setModelsError(
+                            `Não foi possível carregar a lista de modelos. (${getErrorMessage(err)})`,
+                          ),
+                        )
+                        .finally(() => setLoadingModels(false))
+                    }}
+                  >
+                    Tentar novamente
+                  </Button>
+                </div>
               ) : (
-                <Select
-                  value={formData.itemId}
-                  onValueChange={(v) => setFormData({ ...formData, itemId: v })}
-                >
-                  <SelectTrigger className="h-12 text-base bg-white">
-                    <SelectValue placeholder="Selecione um modelo da lista..." />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[300px]">
-                    {models.length === 0 ? (
-                      <div className="p-2 text-sm text-muted-foreground text-center">
-                        Nenhum modelo encontrado
-                      </div>
-                    ) : (
-                      models.map((m) => (
-                        <SelectItem key={m.id} value={m.id} className="py-3 cursor-pointer">
-                          {m.code ? `[${m.code}] - ` : ''}
-                          {m.name}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
+                <>
+                  <Select
+                    value={formData.itemId}
+                    onValueChange={(v) => {
+                      setFormData({ ...formData, itemId: v })
+                      setFormErrors((prev) => ({ ...prev, itemId: '' }))
+                    }}
+                  >
+                    <SelectTrigger className="h-12 text-base bg-white">
+                      <SelectValue placeholder="Selecione um modelo da lista..." />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[300px]">
+                      {models.length === 0 ? (
+                        <div className="p-2 text-sm text-muted-foreground text-center">
+                          Nenhum modelo encontrado
+                        </div>
+                      ) : (
+                        models.map((m) => (
+                          <SelectItem key={m.id} value={m.id} className="py-3 cursor-pointer">
+                            {m.code ? `[${m.code}] - ` : ''}
+                            {m.name}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {formErrors.itemId && (
+                    <p className="text-xs text-destructive">{formErrors.itemId}</p>
+                  )}
+                </>
               )}
             </div>
 
@@ -183,8 +244,14 @@ export default function PublicAssetForm() {
                 className="h-11 bg-white"
                 placeholder="Ex: NS-102938"
                 value={formData.serialNumber}
-                onChange={(e) => setFormData({ ...formData, serialNumber: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, serialNumber: e.target.value })
+                  setFormErrors((prev) => ({ ...prev, serialNumber: '' }))
+                }}
               />
+              {formErrors.serialNumber && (
+                <p className="text-xs text-destructive">{formErrors.serialNumber}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -300,10 +367,17 @@ export default function PublicAssetForm() {
               </div>
             </div>
 
+            {formErrors.submit && (
+              <div className="flex items-start gap-2 p-3 border border-destructive/30 rounded-md bg-destructive/5 text-sm text-destructive">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>{formErrors.submit}</span>
+              </div>
+            )}
+
             <Button
               type="submit"
               className="w-full h-12 text-base font-medium mt-6"
-              disabled={loading || loadingModels || !formData.itemId}
+              disabled={loading || loadingModels || !!modelsError || !formData.itemId}
             >
               {loading ? (
                 <>
