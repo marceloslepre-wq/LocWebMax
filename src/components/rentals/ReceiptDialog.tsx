@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Rental } from '@/stores/main'
 import useMainStore from '@/stores/main'
+import { getValidRentalItems, findFreightItem } from '@/lib/rental-items'
 import { Printer, MessageCircle, Mail, Link as LinkIcon } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
@@ -81,18 +82,22 @@ export function ReceiptDialog({
       return text
     }
 
-    const items = rental?.items || []
-    const regularItems = items.filter((ri) => ri.itemId !== 'freight')
-    const freightItem = items.find((ri) => ri.itemId === 'freight')
+    const validItems = getValidRentalItems(rental?.items || [])
+    const freightRaw = findFreightItem(rental?.items || [])
+    const freightPrice = freightRaw
+      ? Number(freightRaw.totalPrice || freightRaw.total_price || 0)
+      : 0
 
     text += `*Equipamentos:*\n`
-    regularItems.forEach((ri) => {
+    validItems.forEach((ri) => {
       const item = inventory.find((i) => i.id === ri.itemId)
-      text += `- ${ri.qty}x ${item?.name || 'Item'} (SKU: ${item?.code || '-'}) ${ri.startDate && ri.endDate ? `(${formatDateStr(ri.startDate)} a ${formatDateStr(ri.endDate)})` : ''}\n`
+      const itemName = ri.name || item?.name || 'Item'
+      const itemCode = ri.code || item?.code || '-'
+      text += `- ${ri.qty}x ${itemName} (SKU: ${itemCode}) ${ri.startDate && ri.endDate ? `(${formatDateStr(ri.startDate)} a ${formatDateStr(ri.endDate)})` : ''}\n`
     })
 
-    if (freightItem && freightItem.totalPrice) {
-      text += `\n*Frete:* R$ ${freightItem.totalPrice.toFixed(2)}\n`
+    if (freightRaw && freightPrice) {
+      text += `\n*Frete:* R$ ${freightPrice.toFixed(2)}\n`
     }
 
     text += `\n*Período Geral:* `
@@ -331,33 +336,35 @@ export function ReceiptDialog({
               <div className="border-t border-b py-2 mb-4">
                 <span className="font-semibold">Equipamentos:</span>
                 <ul className="mt-1 space-y-1">
-                  {rental.items
-                    .filter((ri) => ri.itemId !== 'freight')
-                    .map((ri, idx) => {
-                      const item = inventory.find((i) => i.id === ri.itemId)
-                      return (
-                        <li key={idx} className="flex flex-col">
-                          <span>
-                            {ri.qty}x {item?.name} (SKU: {item?.code || '-'})
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {ri.startDate && ri.endDate
-                              ? `De ${formatDateStr(ri.startDate)} até ${formatDateStr(ri.endDate)}`
-                              : ''}
-                          </span>
-                        </li>
-                      )
-                    })}
+                  {getValidRentalItems(rental.items).map((ri, idx) => {
+                    const item = inventory.find((i) => i.id === ri.itemId)
+                    const itemName = ri.name || item?.name || 'Item'
+                    const itemCode = ri.code || item?.code || '-'
+                    return (
+                      <li key={idx} className="flex flex-col">
+                        <span>
+                          {ri.qty}x {itemName} (SKU: {itemCode})
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {ri.startDate && ri.endDate
+                            ? `De ${formatDateStr(ri.startDate)} até ${formatDateStr(ri.endDate)}`
+                            : ''}
+                        </span>
+                      </li>
+                    )
+                  })}
                 </ul>
-                {rental.items.find((ri) => ri.itemId === 'freight') && (
-                  <div className="mt-2 pt-2 border-t border-dashed flex justify-between">
-                    <span className="font-semibold">Frete:</span>
-                    <span>
-                      R${' '}
-                      {rental.items.find((ri) => ri.itemId === 'freight')?.totalPrice?.toFixed(2)}
-                    </span>
-                  </div>
-                )}
+                {(() => {
+                  const fRaw = findFreightItem(rental.items)
+                  const fPrice = fRaw ? Number(fRaw.totalPrice || fRaw.total_price || 0) : 0
+                  if (!fRaw || !fPrice) return null
+                  return (
+                    <div className="mt-2 pt-2 border-t border-dashed flex justify-between">
+                      <span className="font-semibold">Frete:</span>
+                      <span>R$ {fPrice.toFixed(2)}</span>
+                    </div>
+                  )
+                })()}
               </div>
             )}
 

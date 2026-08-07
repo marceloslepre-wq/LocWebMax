@@ -13,6 +13,7 @@ import { useLocations } from '@/hooks/use-locations'
 import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
 import pb from '@/lib/pocketbase/client'
 import { rentalsService } from '@/services/rentals'
+import { getValidRentalItems } from '@/lib/rental-items'
 
 export default function RentalDetail() {
   const { id } = useParams()
@@ -469,15 +470,16 @@ export default function RentalDetail() {
             </tr>
           </thead>
           <tbody>
-            ${rental?.items
-              .filter((ri) => ri.itemId !== 'freight')
+            ${getValidRentalItems(rental?.items || [])
               .map((ri) => {
                 const item = inventory.find((i) => i.id === ri.itemId)
+                const itemName = ri.name || item?.name || 'Item'
+                const itemCode = ri.code || item?.code || '-'
                 return `
                 <tr>
                   <td style="border: 1px solid #000; padding: 8px; text-align: center;">${ri.qty}</td>
-                  <td style="border: 1px solid #000; padding: 8px;">${item?.name || 'Item'}</td>
-                  <td style="border: 1px solid #000; padding: 8px;">${item?.code || '-'}</td>
+                  <td style="border: 1px solid #000; padding: 8px;">${itemName}</td>
+                  <td style="border: 1px solid #000; padding: 8px;">${itemCode}</td>
                 </tr>
               `
               })
@@ -524,15 +526,16 @@ export default function RentalDetail() {
             </tr>
           </thead>
           <tbody>
-            ${rental?.items
-              .filter((ri) => ri.itemId !== 'freight')
+            ${getValidRentalItems(rental?.items || [])
               .map((ri) => {
                 const item = inventory.find((i) => i.id === ri.itemId)
+                const itemName = ri.name || item?.name || 'Item'
+                const itemCode = ri.code || item?.code || '-'
                 return `
                 <tr>
                   <td style="border: 1px solid #000; padding: 8px; text-align: center;">${ri.qty}</td>
-                  <td style="border: 1px solid #000; padding: 8px;">${item?.name || 'Item'}</td>
-                  <td style="border: 1px solid #000; padding: 8px;">${item?.code || '-'}</td>
+                  <td style="border: 1px solid #000; padding: 8px;">${itemName}</td>
+                  <td style="border: 1px solid #000; padding: 8px;">${itemCode}</td>
                 </tr>
               `
               })

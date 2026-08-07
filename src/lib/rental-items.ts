@@ -7,7 +7,15 @@ export function getItemField(item: any, camel: string, snake: string): string {
 }
 
 export function getItemName(item: any, invItem: any): string {
-  return item.name || item.productName || invItem?.name || invItem?.code || item.itemId || 'Item'
+  return (
+    item.name ||
+    item.productName ||
+    item.product_name ||
+    invItem?.name ||
+    invItem?.code ||
+    item.itemId ||
+    'Item'
+  )
 }
 
 export function getItemDailyPrice(item: any, invItem: any): number {
@@ -33,4 +41,64 @@ export function getRemainingDays(returnDate: string): number {
   } catch {
     return 0
   }
+}
+
+export interface NormalizedRentalItem {
+  itemId: string
+  qty: number
+  startDate?: string
+  endDate?: string
+  dailyPrice?: number
+  totalPrice?: number
+  name?: string
+  code?: string
+  returnedQty?: number
+  returnedDate?: string
+}
+
+export function normalizeRentalItem(raw: any): NormalizedRentalItem {
+  const itemId = raw.itemId || raw.item_id || raw.inventory_id || raw.id || ''
+  const qty = Number(raw.qty ?? raw.quantity ?? raw.quantidade ?? 0)
+  const result: NormalizedRentalItem = {
+    itemId: String(itemId || ''),
+    qty: Number.isFinite(qty) ? qty : 0,
+  }
+  const startDate = getItemField(raw, 'startDate', 'start_date')
+  if (startDate) result.startDate = startDate
+  const endDate = getItemField(raw, 'endDate', 'end_date')
+  if (endDate) result.endDate = endDate
+  const dailyPrice = Number(raw.dailyPrice ?? raw.daily_price ?? 0)
+  if (dailyPrice) result.dailyPrice = dailyPrice
+  const totalPrice = Number(raw.totalPrice ?? raw.total_price ?? 0)
+  if (totalPrice) result.totalPrice = totalPrice
+  const name = raw.name || raw.productName || raw.product_name || ''
+  if (name) result.name = name
+  const code = raw.code || raw.sku || raw.product_code || ''
+  if (code) result.code = code
+  if (raw.returnedQty !== undefined || raw.returned_qty !== undefined) {
+    result.returnedQty = Number(raw.returnedQty ?? raw.returned_qty ?? 0)
+  }
+  const returnedDate = raw.returnedDate || raw.returned_date || ''
+  if (returnedDate) result.returnedDate = returnedDate
+  return result
+}
+
+export function getValidRentalItems(items: any[]): NormalizedRentalItem[] {
+  if (!Array.isArray(items)) return []
+  return items.map(normalizeRentalItem).filter((item) => {
+    if (item.itemId === 'freight') return false
+    const hasId = !!item.itemId && item.itemId.trim() !== ''
+    const hasName = !!item.name && item.name.trim() !== ''
+    return hasId || hasName
+  })
+}
+
+export function findFreightItem(items: any[]): any | null {
+  if (!Array.isArray(items)) return null
+  return (
+    items.find((ri: any) => {
+      const id = ri.itemId || ri.item_id || ri.inventory_id || ri.id || ''
+      return id === 'freight'
+    }) || null
+  )
 }
