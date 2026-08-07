@@ -159,7 +159,12 @@ export function ReturnDialog({
 
       const allReturned = result.allReturned as boolean
       const updatedItems = result.items || rental.items
-      const lateFee = result.lateFee || null
+      const lateFee =
+        result.lateFee && result.lateFee.total > 0
+          ? result.lateFee
+          : lateFeeResult && lateFeeResult.total > 0
+            ? lateFeeResult
+            : null
 
       const updates: any = {
         items: updatedItems,

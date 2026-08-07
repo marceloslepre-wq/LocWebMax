@@ -113,6 +113,24 @@ export function ReceiptDialog({
       text += `*Valor Total:* R$ ${(rental?.total || 0).toFixed(2)}\n`
     }
 
+    if (type === 'return' && renewalInfo) {
+      const lf = renewalInfo as any
+      if (typeof lf.days === 'number' && typeof lf.total === 'number' && lf.total > 0) {
+        text += `\n*MULTA POR ATRASO*\n`
+        text += `*Dias de Atraso:* ${lf.days} dia(s)\n`
+        if (lf.breakdown && lf.breakdown.length > 0) {
+          text += `*Detalhamento:*\n`
+          lf.breakdown.forEach((b: any) => {
+            text += `- ${b.itemName}: ${b.qty}x R$ ${b.dailyRate.toFixed(2)}/dia x ${b.days} dias = R$ ${b.subtotal.toFixed(2)}\n`
+          })
+        } else {
+          text += `*Taxa Diária:* R$ ${(lf.lateFeeValue || 0).toFixed(2)}\n`
+        }
+        text += `*Total da Multa:* R$ ${lf.total.toFixed(2)}\n`
+        text += `*Total Geral (Contrato + Multa):* R$ ${((rental?.total || 0) + lf.total).toFixed(2)}\n`
+      }
+    }
+
     text += `*Forma de Pagamento:* ${(rental as any)?.paymentMethod || (rental as any)?.payment_method || (rental as any)?.forma_pagamento || 'PIX'}\n`
 
     if (type === 'return') {
@@ -399,6 +417,43 @@ export function ReceiptDialog({
                 </div>
               </div>
             )}
+
+            {type === 'return' &&
+              renewalInfo &&
+              typeof (renewalInfo as any).days === 'number' &&
+              (renewalInfo as any).total > 0 && (
+                <div className="border-t border-pink-200 pt-3 space-y-1">
+                  <div className="flex justify-between text-pink-700 font-semibold text-sm">
+                    <span>Multa por Atraso:</span>
+                    <span>{(renewalInfo as any).days} dia(s)</span>
+                  </div>
+                  {(renewalInfo as any).breakdown?.length > 0 ? (
+                    <div className="space-y-1">
+                      {(renewalInfo as any).breakdown.map((b: any, i: number) => (
+                        <div key={i} className="flex justify-between text-xs text-pink-700">
+                          <span>
+                            {b.itemName} ({b.qty}x R$ {b.dailyRate.toFixed(2)}/dia)
+                          </span>
+                          <span>R$ {b.subtotal.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex justify-between text-xs text-pink-700">
+                      <span>Taxa Diária:</span>
+                      <span>R$ {((renewalInfo as any).lateFeeValue || 0).toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold text-pink-700">
+                    <span>Total da Multa:</span>
+                    <span>R$ {(renewalInfo as any).total.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold pt-2 border-t border-pink-200">
+                    <span>Total Pago (Contrato + Multa):</span>
+                    <span>R$ {((rental?.total || 0) + (renewalInfo as any).total).toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
 
             <div className="text-center text-xs mt-8 pt-4 border-t text-gray-500 font-semibold">
               {type === 'late_fee'

@@ -46,9 +46,11 @@ import { ReceiptDialog } from '@/components/rentals/ReceiptDialog'
 import { ExchangeDialog } from '@/components/rentals/ExchangeDialog'
 import { rentalsService } from '@/services/rentals'
 import { ImportRentalsDialog } from '@/components/rentals/ImportRentalsDialog'
+import { calculateLateFee } from '@/lib/late-fee'
 
 export default function Rentals() {
-  const { rentals, customers, globalSearch, settings, deleteRental, updateRental } = useMainStore()
+  const { rentals, customers, globalSearch, settings, deleteRental, updateRental, inventory } =
+    useMainStore()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('Todos')
   const [returnDateStart, setReturnDateStart] = useState('')
@@ -398,8 +400,34 @@ export default function Rentals() {
                             className="h-8 w-8 border-orange-500 text-orange-600 hover:bg-orange-50"
                             onClick={() => {
                               setReceiptRental(rental)
-                              setReceiptType(rental.status === 'Devolvido' ? 'return' : 'new')
-                              setReceiptRenewalInfo(null)
+                              const isReturn = rental.status === 'Devolvido'
+                              let lateFeeInfo = null
+                              if (isReturn) {
+                                const expDate = rentalField(
+                                  rental,
+                                  'expectedReturnDate',
+                                  'expected_return_date',
+                                )
+                                const actDate = rentalField(
+                                  rental,
+                                  'actualReturnDate',
+                                  'actual_return_date',
+                                )
+                                if (expDate && actDate) {
+                                  const rItems = (
+                                    Array.isArray(rental.items) ? rental.items : []
+                                  ).filter((i: any) => i.itemId !== 'freight')
+                                  lateFeeInfo = calculateLateFee(
+                                    expDate,
+                                    actDate,
+                                    rItems,
+                                    inventory,
+                                    settings,
+                                  )
+                                }
+                              }
+                              setReceiptType(isReturn ? 'return' : 'new')
+                              setReceiptRenewalInfo(lateFeeInfo)
                               setTimeout(() => setReceiptOpen(true), 0)
                             }}
                             title={rental.status === 'Devolvido' ? 'Recibo de Devolução' : 'Recibo'}
