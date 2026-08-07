@@ -21,6 +21,7 @@ import NotFound from './pages/NotFound'
 import PublicCustomerForm from './pages/PublicCustomerForm'
 import PublicAssetForm from './pages/PublicAssetForm'
 import PublicTransfer from './pages/PublicTransfer'
+import PublicPayment from './pages/PublicPayment'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import { useEffect } from 'react'
@@ -75,6 +76,14 @@ const App = () => (
               element={
                 <PublicErrorBoundary>
                   <PublicTransfer />
+                </PublicErrorBoundary>
+              }
+            />
+            <Route
+              path="/pagar/:paymentId"
+              element={
+                <PublicErrorBoundary>
+                  <PublicPayment />
                 </PublicErrorBoundary>
               }
             />

@@ -10,7 +10,6 @@ routerAdd(
     var amount = Number(body.amount || 0)
     var payerEmail = body.payer_email || ''
     var description = body.description || ''
-    var paymentType = body.payment_type || 'pix'
 
     if (!rentalId) {
       throw new BadRequestError('Dados invalidos', {
@@ -50,7 +49,6 @@ routerAdd(
         message: 'Ja existe uma cobranca pendente para esta locacao.',
         existing_payment: {
           id: existing.id,
-          payment_url: existing.getString('payment_url'),
           amount: existing.get('amount'),
           status: 'Pendente',
           description: existing.getString('description'),
@@ -81,46 +79,40 @@ routerAdd(
       ? siteUrl.replace(/\/+$/, '') + '/backend/v1/payments/mp-webhook'
       : ''
 
-    var preferenceData = {
-      items: [
-        {
-          id: rentalId,
-          title: description,
-          quantity: 1,
-          unit_price: amount,
-          currency_id: 'BRL',
-        },
-      ],
-      payment_methods: {
-        installments: 1,
-      },
-      statement_descriptor: 'Hospital Home',
+    var expirationDate = new Date(Date.now() + 30 * 60 * 1000)
+
+    var paymentData = {
+      transaction_amount: amount,
+      description: description,
+      payment_method_id: 'pix',
       external_reference: rentalId,
+      statement_descriptor: 'Hospital Home',
+      date_of_expiration: expirationDate.toISOString(),
     }
 
     if (notificationUrl) {
-      preferenceData.notification_url = notificationUrl
+      paymentData.notification_url = notificationUrl
     }
 
     if (payerEmail) {
-      preferenceData.payer = { email: payerEmail }
+      paymentData.payer = { email: payerEmail }
     }
 
     var res
     try {
       res = $http.send({
-        url: 'https://api.mercadopago.com/checkout/preferences',
+        url: 'https://api.mercadopago.com/v1/payments',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: 'Bearer ' + accessToken,
         },
-        body: JSON.stringify(preferenceData),
+        body: JSON.stringify(paymentData),
         timeout: 30,
       })
     } catch (err) {
-      $app.logger().error('MP create preference failed', 'err', err.message || String(err))
-      return e.json(502, { error: 'Failed to reach Mercado Pago API' })
+      $app.logger().error('MP create PIX payment failed', 'err', err.message || String(err))
+      return e.json(502, { error: 'Falha ao conectar com o Mercado Pago. Tente novamente.' })
     }
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -132,17 +124,48 @@ routerAdd(
       }
       $app
         .logger()
-        .error('MP API error', 'statusCode', res.statusCode, 'error', errText.substring(0, 500))
-      return e.json(res.statusCode, { error: 'Mercado Pago API error', detail: errText })
+        .error(
+          'MP API error on PIX creation',
+          'statusCode',
+          res.statusCode,
+          'error',
+          errText.substring(0, 500),
+        )
+
+      var userMessage = 'Falha ao gerar o PIX no Mercado Pago.'
+      if (res.statusCode === 401 || res.statusCode === 403) {
+        userMessage = 'Erro de autenticacao com o Mercado Pago. Verifique as configuracoes.'
+      } else if (res.statusCode === 422) {
+        userMessage = 'Dados invalidos para gerar o PIX. Verifique o valor e descricao.'
+      }
+
+      return e.json(res.statusCode, { error: userMessage, detail: errText })
     }
 
-    var pref = res.json || {}
-    var preferenceId = pref.id || ''
-    var paymentUrl = pref.init_point || pref.sandbox_init_point || ''
+    var mpPayment = res.json || {}
+    var mpPaymentId = String(mpPayment.id || '')
+    var pixQrCode = ''
+    var pixCopyPaste = ''
+    var pixExpiration = ''
 
-    var paymentMethodLabel = 'PIX'
-    if (paymentType === 'credit_card') paymentMethodLabel = 'Cartao'
-    else if (paymentType === 'boleto') paymentMethodLabel = 'Boleto'
+    if (mpPayment.point_of_interaction && mpPayment.point_of_interaction.transaction_data) {
+      var txData = mpPayment.point_of_interaction.transaction_data
+      pixQrCode = txData.qr_code_base64 || ''
+      pixCopyPaste = txData.qr_code || ''
+    }
+
+    if (mpPayment.date_of_expiration) {
+      pixExpiration = mpPayment.date_of_expiration
+    } else {
+      pixExpiration = expirationDate.toISOString()
+    }
+
+    if (!pixQrCode || !pixCopyPaste) {
+      $app.logger().error('MP PIX response missing QR data', 'mpPaymentId', mpPaymentId)
+      return e.json(502, {
+        error: 'O Mercado Pago nao retornou os dados do QR Code PIX. Tente novamente.',
+      })
+    }
 
     var txResult = { duplicate: false, payment: null }
 
@@ -168,12 +191,14 @@ routerAdd(
       var payment = new Record(paymentsCol)
       payment.set('rental_id', rentalId)
       payment.set('amount', amount)
-      payment.set('payment_method', paymentMethodLabel)
+      payment.set('payment_method', 'PIX')
       payment.set('status', 'Pendente')
-      payment.set('mp_preference_id', preferenceId)
-      payment.set('payment_url', paymentUrl)
+      payment.set('mp_payment_id', mpPaymentId)
       payment.set('payer_email', payerEmail)
       payment.set('description', description)
+      payment.set('pix_qr_code', pixQrCode)
+      payment.set('pix_copy_paste', pixCopyPaste)
+      payment.set('pix_expiration', pixExpiration)
       txApp.save(payment)
 
       txResult.duplicate = false
@@ -187,7 +212,6 @@ routerAdd(
         message: 'Ja existe uma cobranca pendente para esta locacao.',
         existing_payment: {
           id: dupPayment.id,
-          payment_url: dupPayment.getString('payment_url'),
           amount: dupPayment.get('amount'),
           status: 'Pendente',
           description: dupPayment.getString('description'),
@@ -199,12 +223,14 @@ routerAdd(
 
     return e.json(201, {
       id: savedPayment.id,
-      mp_preference_id: preferenceId,
-      payment_url: paymentUrl,
+      mp_payment_id: mpPaymentId,
       amount: amount,
       status: 'Pendente',
-      payment_method: paymentMethodLabel,
+      payment_method: 'PIX',
       description: description,
+      pix_qr_code: pixQrCode,
+      pix_copy_paste: pixCopyPaste,
+      pix_expiration: pixExpiration,
     })
   },
   $apis.requireAuth(),

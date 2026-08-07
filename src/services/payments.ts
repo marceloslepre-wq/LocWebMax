@@ -40,4 +40,10 @@ export const paymentsService = {
       method: 'GET',
     })
   },
+  getPublicPayment(id: string) {
+    return pb.send(`/backend/v1/public/payment/${id}`, { method: 'GET' })
+  },
+  regeneratePix(id: string) {
+    return pb.send(`/backend/v1/payments/${id}/regenerate-pix`, { method: 'POST' })
+  },
 }
