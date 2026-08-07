@@ -76,8 +76,10 @@ routerAdd(
       return e.json(500, { error: 'Mercado Pago not configured' })
     }
 
-    var pbUrl = $secrets.get('PB_INSTANCE_URL') || ''
-    var notificationUrl = pbUrl ? pbUrl.replace(/\/+$/, '') + '/backend/v1/payments/mp-webhook' : ''
+    var siteUrl = $secrets.get('SITE_URL') || ''
+    var notificationUrl = siteUrl
+      ? siteUrl.replace(/\/+$/, '') + '/backend/v1/payments/mp-webhook'
+      : ''
 
     var preferenceData = {
       items: [
@@ -142,20 +144,61 @@ routerAdd(
     if (paymentType === 'credit_card') paymentMethodLabel = 'Cartao'
     else if (paymentType === 'boleto') paymentMethodLabel = 'Boleto'
 
-    var paymentsCol = $app.findCollectionByNameOrId('payments')
-    var payment = new Record(paymentsCol)
-    payment.set('rental_id', rentalId)
-    payment.set('amount', amount)
-    payment.set('payment_method', paymentMethodLabel)
-    payment.set('status', 'Pendente')
-    payment.set('mp_preference_id', preferenceId)
-    payment.set('payment_url', paymentUrl)
-    payment.set('payer_email', payerEmail)
-    payment.set('description', description)
-    $app.save(payment)
+    var txResult = { duplicate: false, payment: null }
+
+    $app.runInTransaction(function (txApp) {
+      var pending = []
+      try {
+        pending = txApp.findRecordsByFilter(
+          'payments',
+          'rental_id = "' + rentalId + '" && status = "Pendente"',
+          '-created',
+          1,
+          0,
+        )
+      } catch (_) {}
+
+      if (pending.length > 0) {
+        txResult.duplicate = true
+        txResult.payment = pending[0]
+        return
+      }
+
+      var paymentsCol = txApp.findCollectionByNameOrId('payments')
+      var payment = new Record(paymentsCol)
+      payment.set('rental_id', rentalId)
+      payment.set('amount', amount)
+      payment.set('payment_method', paymentMethodLabel)
+      payment.set('status', 'Pendente')
+      payment.set('mp_preference_id', preferenceId)
+      payment.set('payment_url', paymentUrl)
+      payment.set('payer_email', payerEmail)
+      payment.set('description', description)
+      txApp.save(payment)
+
+      txResult.duplicate = false
+      txResult.payment = payment
+    })
+
+    if (txResult.duplicate) {
+      var dupPayment = txResult.payment
+      return e.json(200, {
+        duplicate: true,
+        message: 'Ja existe uma cobranca pendente para esta locacao.',
+        existing_payment: {
+          id: dupPayment.id,
+          payment_url: dupPayment.getString('payment_url'),
+          amount: dupPayment.get('amount'),
+          status: 'Pendente',
+          description: dupPayment.getString('description'),
+        },
+      })
+    }
+
+    var savedPayment = txResult.payment
 
     return e.json(201, {
-      id: payment.id,
+      id: savedPayment.id,
       mp_preference_id: preferenceId,
       payment_url: paymentUrl,
       amount: amount,

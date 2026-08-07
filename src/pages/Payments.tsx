@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   CreditCard,
   ExternalLink,
@@ -88,6 +88,7 @@ export default function Payments() {
   const [duplicatePayment, setDuplicatePayment] = useState<DuplicatePayment | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const submitLockRef = useRef(false)
 
   const activeRentals = rentals.filter((r: any) => r.status === 'Ativo')
 
@@ -128,7 +129,8 @@ export default function Payments() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (submitting) return
+    if (submitLockRef.current || submitting) return
+    submitLockRef.current = true
     setSubmitting(true)
     setFieldErrors({})
     setDuplicatePayment(null)
@@ -187,6 +189,7 @@ export default function Payments() {
         variant: 'destructive',
       })
     } finally {
+      submitLockRef.current = false
       setSubmitting(false)
     }
   }
