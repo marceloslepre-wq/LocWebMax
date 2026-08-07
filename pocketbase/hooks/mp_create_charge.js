@@ -75,9 +75,10 @@ routerAdd(
     }
 
     var siteUrl = $secrets.get('SITE_URL') || ''
-    var notificationUrl = siteUrl
-      ? siteUrl.replace(/\/+$/, '') + '/backend/v1/payments/mp-webhook'
-      : ''
+    var notificationUrl = ''
+    if (siteUrl && siteUrl.indexOf('internal') === -1) {
+      notificationUrl = siteUrl.replace(/\/+$/, '') + '/backend/v1/payments/mp-webhook'
+    }
 
     var expirationDate = new Date(Date.now() + 30 * 60 * 1000)
 
@@ -86,7 +87,6 @@ routerAdd(
       description: description,
       payment_method_id: 'pix',
       external_reference: rentalId,
-      statement_descriptor: 'Hospital Home',
       date_of_expiration: expirationDate.toISOString(),
     }
 

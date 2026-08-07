@@ -38,7 +38,7 @@ routerAdd(
     }
 
     var siteUrl = $secrets.get('SITE_URL') || ''
-    if (siteUrl) {
+    if (siteUrl && siteUrl.indexOf('internal') === -1) {
       paymentData.notification_url = siteUrl.replace(/\/+$/, '') + '/backend/v1/payments/mp-webhook'
     }
 
@@ -79,7 +79,15 @@ routerAdd(
           'error',
           errText.substring(0, 500),
         )
-      return e.json(res.statusCode, { error: 'Falha ao gerar novo PIX no Mercado Pago.' })
+
+      var regenUserMessage = 'Falha ao gerar novo PIX no Mercado Pago.'
+      if (res.statusCode === 401 || res.statusCode === 403) {
+        regenUserMessage = 'Erro de autenticacao com o Mercado Pago. Verifique as configuracoes.'
+      } else if (res.statusCode === 422) {
+        regenUserMessage = 'Dados invalidos para gerar o PIX. Verifique o valor e descricao.'
+      }
+
+      return e.json(res.statusCode, { error: regenUserMessage, detail: errText })
     }
 
     var mpPayment = res.json || {}

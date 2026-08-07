@@ -91,6 +91,16 @@ export default function Payments() {
   const submitLockRef = useRef(false)
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
 
+  const extractApiError = (err: any): string => {
+    if (err?.response?.error && typeof err.response.error === 'string') {
+      return err.response.error
+    }
+    const fieldErrs = extractFieldErrors(err)
+    const msgs = Object.values(fieldErrs)
+    if (msgs.length > 0) return msgs.join(' ')
+    return getErrorMessage(err)
+  }
+
   const activeRentals = rentals.filter((r: any) => r.status === 'Ativo')
 
   const getPublicPaymentUrl = (id: string) => `${window.location.origin}/pagar/${id}`
@@ -219,7 +229,7 @@ export default function Payments() {
       }
       toast({
         title: 'Erro',
-        description: getErrorMessage(err),
+        description: extractApiError(err),
         variant: 'destructive',
       })
     } finally {
@@ -240,7 +250,7 @@ export default function Payments() {
     } catch (err) {
       toast({
         title: 'Erro',
-        description: getErrorMessage(err),
+        description: extractApiError(err),
         variant: 'destructive',
       })
     } finally {
@@ -345,7 +355,7 @@ export default function Payments() {
     } catch (err) {
       toast({
         title: 'Erro',
-        description: getErrorMessage(err),
+        description: extractApiError(err),
         variant: 'destructive',
       })
     } finally {
@@ -366,7 +376,7 @@ export default function Payments() {
     } catch (err) {
       toast({
         title: 'Erro',
-        description: getErrorMessage(err),
+        description: extractApiError(err),
         variant: 'destructive',
       })
     } finally {
@@ -387,7 +397,29 @@ export default function Payments() {
     } catch (err) {
       toast({
         title: 'Erro',
-        description: getErrorMessage(err),
+        description: extractApiError(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setRegeneratingId(null)
+    }
+  }
+
+  const handleRegenerateDuplicatePix = async () => {
+    if (!duplicatePayment) return
+    setRegeneratingId(duplicatePayment.id)
+    try {
+      await paymentsService.regeneratePix(duplicatePayment.id)
+      toast({
+        title: 'PIX regenerado',
+        description: 'Um novo QR Code foi gerado com sucesso.',
+      })
+      setDuplicatePayment(null)
+      await loadPayments()
+    } catch (err) {
+      toast({
+        title: 'Erro',
+        description: extractApiError(err),
         variant: 'destructive',
       })
     } finally {
@@ -473,6 +505,19 @@ export default function Payments() {
                       <Trash2 className="w-3 h-3 mr-1" />
                     )}
                     Cancelar Cobrança
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRegenerateDuplicatePix}
+                    disabled={regeneratingId === duplicatePayment.id}
+                  >
+                    {regeneratingId === duplicatePayment.id ? (
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                    )}
+                    Regenerar PIX
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setDuplicatePayment(null)}>
                     <X className="w-3 h-3 mr-1" /> Fechar
@@ -713,22 +758,24 @@ export default function Payments() {
                             <MessageSquare className="h-4 w-4 text-[#25D366]" />
                           )}
                         </Button>
-                        {isPixExpired(payment) && payment.status === 'Pendente' && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => handleRegeneratePix(payment)}
-                            disabled={regeneratingId === payment.id}
-                            title="Regenerar PIX"
-                          >
-                            {regeneratingId === payment.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <RefreshCw className="h-4 w-4 text-amber-600" />
-                            )}
-                          </Button>
-                        )}
+                        {payment.status === 'Pendente' &&
+                          (isPixExpired(payment) ||
+                            (!payment.pix_qr_code && !payment.pix_copy_paste)) && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleRegeneratePix(payment)}
+                              disabled={regeneratingId === payment.id}
+                              title="Regenerar PIX"
+                            >
+                              {regeneratingId === payment.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-4 w-4 text-amber-600" />
+                              )}
+                            </Button>
+                          )}
                         <Button
                           variant="ghost"
                           size="icon"
