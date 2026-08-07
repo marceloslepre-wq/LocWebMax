@@ -32,6 +32,32 @@ routerAdd(
       })
     }
 
+    var existingPending = []
+    try {
+      existingPending = $app.findRecordsByFilter(
+        'payments',
+        'rental_id = "' + rentalId + '" && status = "Pendente"',
+        '-created',
+        1,
+        0,
+      )
+    } catch (_) {}
+
+    if (existingPending.length > 0) {
+      var existing = existingPending[0]
+      return e.json(200, {
+        duplicate: true,
+        message: 'Ja existe uma cobranca pendente para esta locacao.',
+        existing_payment: {
+          id: existing.id,
+          payment_url: existing.getString('payment_url'),
+          amount: existing.get('amount'),
+          status: 'Pendente',
+          description: existing.getString('description'),
+        },
+      })
+    }
+
     var contractNumber = rental.getString('contract_number') || rentalId.substring(0, 8)
 
     if (!payerEmail) {

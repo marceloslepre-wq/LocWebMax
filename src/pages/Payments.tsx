@@ -7,11 +7,16 @@ import {
   ChevronsUpDown,
   Copy,
   MessageSquare,
+  RefreshCw,
+  Trash2,
+  AlertTriangle,
+  X,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Select,
   SelectContent,
@@ -36,6 +41,16 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { cn, formatDatePtBR } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -43,6 +58,14 @@ import { paymentsService } from '@/services/payments'
 import { whatsappService } from '@/services/whatsapp'
 import { extractFieldErrors, getErrorMessage, type FieldErrors } from '@/lib/pocketbase/errors'
 import useMainStore from '@/stores/main'
+
+type DuplicatePayment = {
+  id: string
+  payment_url: string
+  amount: number
+  status: string
+  description: string
+}
 
 export default function Payments() {
   const { rentals, customers } = useMainStore()
@@ -61,6 +84,10 @@ export default function Payments() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [copiedPaymentId, setCopiedPaymentId] = useState<string | null>(null)
   const [sendingWhatsappId, setSendingWhatsappId] = useState<string | null>(null)
+  const [verifyingId, setVerifyingId] = useState<string | null>(null)
+  const [duplicatePayment, setDuplicatePayment] = useState<DuplicatePayment | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const activeRentals = rentals.filter((r: any) => r.status === 'Ativo')
 
@@ -85,6 +112,7 @@ export default function Payments() {
 
   const handleRentalSelect = (id: string) => {
     setRentalId(id)
+    setDuplicatePayment(null)
     const rental = rentals.find((r: any) => r.id === id)
     if (rental) {
       setAmount(String(rental.total || 0))
@@ -103,6 +131,7 @@ export default function Payments() {
     if (submitting) return
     setSubmitting(true)
     setFieldErrors({})
+    setDuplicatePayment(null)
 
     if (!rentalId) {
       setFieldErrors({ rental_id: 'Selecione uma locação ativa.' })
@@ -125,6 +154,12 @@ export default function Payments() {
         payer_email: payerEmail,
         description,
       })
+
+      if (result.duplicate) {
+        setDuplicatePayment(result.existing_payment)
+        setSubmitting(false)
+        return
+      }
 
       toast({
         title: 'Cobrança Gerada',
@@ -153,6 +188,26 @@ export default function Payments() {
       })
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleVerifyStatus = async (payment: any) => {
+    setVerifyingId(payment.id)
+    try {
+      const result = await paymentsService.checkStatus(payment.id)
+      toast({
+        title: 'Status verificado',
+        description: `Status atualizado para: ${result.status}`,
+      })
+      await loadPayments()
+    } catch (err) {
+      toast({
+        title: 'Erro',
+        description: getErrorMessage(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setVerifyingId(null)
     }
   }
 
@@ -221,11 +276,72 @@ export default function Payments() {
     }
   }
 
+  const handleCopyDuplicateLink = async () => {
+    if (!duplicatePayment?.payment_url) return
+    try {
+      await navigator.clipboard.writeText(duplicatePayment.payment_url)
+      toast({
+        title: 'Link copiado!',
+        description: 'O link de pagamento foi copiado para a área de transferência.',
+      })
+    } catch {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível copiar o link.',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const handleCancelDuplicate = async () => {
+    if (!duplicatePayment) return
+    setDeleting(true)
+    try {
+      await paymentsService.delete(duplicatePayment.id)
+      toast({
+        title: 'Cobrança cancelada',
+        description: 'A cobrança pendente foi removida. Você pode gerar uma nova cobrança.',
+      })
+      setDuplicatePayment(null)
+      await loadPayments()
+    } catch (err) {
+      toast({
+        title: 'Erro',
+        description: getErrorMessage(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const handleDeletePayment = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await paymentsService.delete(deleteTarget.id)
+      toast({
+        title: 'Pagamento excluído',
+        description: 'O registro de pagamento foi removido.',
+      })
+      await loadPayments()
+    } catch (err) {
+      toast({
+        title: 'Erro',
+        description: getErrorMessage(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setDeleting(false)
+      setDeleteTarget(null)
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     const color =
       status === 'Aprovado'
         ? 'bg-emerald-100 text-emerald-700'
-        : status === 'Rejeitado'
+        : status === 'Rejeitado' || status === 'Recusado'
           ? 'bg-red-100 text-red-700'
           : 'bg-amber-100 text-amber-700'
     return (
@@ -253,6 +369,57 @@ export default function Payments() {
           Gere cobranças via Mercado Pago e acompanhe o status dos pagamentos.
         </p>
       </div>
+
+      {duplicatePayment && (
+        <Alert className="border-amber-200 bg-amber-50">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <p className="font-medium">Cobrança pendente já existe</p>
+                <p className="text-sm mt-1">
+                  Já existe uma cobrança pendente de R${' '}
+                  {Number(duplicatePayment.amount || 0).toFixed(2)} para esta locação.
+                </p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {duplicatePayment.payment_url && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={handleCopyDuplicateLink}>
+                        <Copy className="w-3 h-3 mr-1" /> Copiar Link
+                      </Button>
+                      <Button size="sm" variant="outline" asChild>
+                        <a
+                          href={duplicatePayment.payment_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <ExternalLink className="w-3 h-3 mr-1" /> Abrir
+                        </a>
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleCancelDuplicate}
+                    disabled={deleting}
+                  >
+                    {deleting ? (
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3 h-3 mr-1" />
+                    )}
+                    Cancelar Cobrança
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setDuplicatePayment(null)}>
+                    <X className="w-3 h-3 mr-1" /> Fechar
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Card>
         <CardContent className="p-6">
@@ -414,7 +581,7 @@ export default function Payments() {
                 <TableHead>Método</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Data</TableHead>
-                <TableHead className="text-center">Link</TableHead>
+                <TableHead className="text-center">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -446,44 +613,74 @@ export default function Payments() {
                       {formatDatePtBR(payment.created)}
                     </TableCell>
                     <TableCell className="text-center">
-                      {payment.payment_url ? (
-                        <div className="flex items-center justify-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                            <a href={payment.payment_url} target="_blank" rel="noopener noreferrer">
-                              <ExternalLink className="h-4 w-4 text-primary" />
-                            </a>
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => handleCopyLink(payment)}
-                            title="Copiar Link"
-                          >
-                            {copiedPaymentId === payment.id ? (
-                              <Check className="h-4 w-4 text-emerald-600" />
-                            ) : (
-                              <Copy className="h-4 w-4 text-muted-foreground" />
-                            )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => handleSendWhatsApp(payment)}
-                            disabled={sendingWhatsappId === payment.id}
-                            title="Enviar via WhatsApp"
-                          >
-                            {sendingWhatsappId === payment.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <MessageSquare className="h-4 w-4 text-[#25D366]" />
-                            )}
-                          </Button>
-                        </div>
-                      ) : (
-                        '-'
-                      )}
+                      <div className="flex items-center justify-center gap-1">
+                        {payment.payment_url && (
+                          <>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                              <a
+                                href={payment.payment_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <ExternalLink className="h-4 w-4 text-primary" />
+                              </a>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleCopyLink(payment)}
+                              title="Copiar Link"
+                            >
+                              {copiedPaymentId === payment.id ? (
+                                <Check className="h-4 w-4 text-emerald-600" />
+                              ) : (
+                                <Copy className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleSendWhatsApp(payment)}
+                              disabled={sendingWhatsappId === payment.id}
+                              title="Enviar via WhatsApp"
+                            >
+                              {sendingWhatsappId === payment.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <MessageSquare className="h-4 w-4 text-[#25D366]" />
+                              )}
+                            </Button>
+                          </>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleVerifyStatus(payment)}
+                          disabled={
+                            verifyingId === payment.id ||
+                            (!payment.mp_preference_id && !payment.payment_url)
+                          }
+                          title="Verificar Status"
+                        >
+                          {verifyingId === payment.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-4 w-4 text-blue-600" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setDeleteTarget(payment)}
+                          title="Excluir"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -492,6 +689,31 @@ export default function Payments() {
           </Table>
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir pagamento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir este registro de pagamento?
+              {deleteTarget?.status === 'Pendente'
+                ? ' A cobrança pendente será cancelada.'
+                : ' Esta ação não pode ser desfeita.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeletePayment}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

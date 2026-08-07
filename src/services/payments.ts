@@ -19,6 +19,9 @@ export const paymentsService = {
   update(id: string, data: any) {
     return pb.collection('payments').update(id, data)
   },
+  delete(id: string) {
+    return pb.collection('payments').delete(id)
+  },
   createCharge(data: {
     rental_id: string
     amount: number
@@ -30,6 +33,11 @@ export const paymentsService = {
       method: 'POST',
       body: JSON.stringify(data),
       headers: { 'Content-Type': 'application/json' },
+    })
+  },
+  checkStatus(paymentId: string) {
+    return pb.send(`/backend/v1/payments/${paymentId}/check-status`, {
+      method: 'GET',
     })
   },
 }
