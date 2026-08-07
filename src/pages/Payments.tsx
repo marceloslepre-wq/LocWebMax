@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
-import { CreditCard, ExternalLink, Loader2, Check, ChevronsUpDown } from 'lucide-react'
+import {
+  CreditCard,
+  ExternalLink,
+  Loader2,
+  Check,
+  ChevronsUpDown,
+  Copy,
+  MessageSquare,
+} from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,6 +40,7 @@ import { cn, formatDatePtBR } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
 import { useRealtime } from '@/hooks/use-realtime'
 import { paymentsService } from '@/services/payments'
+import { whatsappService } from '@/services/whatsapp'
 import { extractFieldErrors, getErrorMessage, type FieldErrors } from '@/lib/pocketbase/errors'
 import useMainStore from '@/stores/main'
 
@@ -50,6 +59,8 @@ export default function Payments() {
   const [description, setDescription] = useState('')
   const [rentalOpen, setRentalOpen] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const [copiedPaymentId, setCopiedPaymentId] = useState<string | null>(null)
+  const [sendingWhatsappId, setSendingWhatsappId] = useState<string | null>(null)
 
   const activeRentals = rentals.filter((r: any) => r.status === 'Ativo')
 
@@ -142,6 +153,71 @@ export default function Payments() {
       })
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const getCustomerPhone = (payment: any): string | null => {
+    const rental = payment.expand?.rental_id
+    if (!rental) return null
+    const customer = customers.find((c: any) => c.id === (rental.customerId || rental.customer_id))
+    if (!customer) return null
+    return customer.phoneCell || customer.phoneRes || customer.phoneCom || null
+  }
+
+  const getCustomerName = (payment: any): string => {
+    const rental = payment.expand?.rental_id
+    if (!rental) return ''
+    const customer = customers.find((c: any) => c.id === (rental.customerId || rental.customer_id))
+    return customer?.name || ''
+  }
+
+  const handleCopyLink = async (payment: any) => {
+    if (!payment.payment_url) return
+    try {
+      await navigator.clipboard.writeText(payment.payment_url)
+      setCopiedPaymentId(payment.id)
+      toast({
+        title: 'Link copiado!',
+        description: 'O link de pagamento foi copiado para a área de transferência.',
+      })
+      setTimeout(() => setCopiedPaymentId(null), 2000)
+    } catch {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível copiar o link.',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const handleSendWhatsApp = async (payment: any) => {
+    if (!payment.payment_url) return
+    const phone = getCustomerPhone(payment)
+    const name = getCustomerName(payment)
+    if (!phone) {
+      toast({
+        title: 'Erro',
+        description: 'Cliente não possui telefone cadastrado.',
+        variant: 'destructive',
+      })
+      return
+    }
+    setSendingWhatsappId(payment.id)
+    try {
+      const message = `Olá ${name}, segue o link para pagamento: ${payment.payment_url}`
+      await whatsappService.sendMessage({ to: phone, message })
+      toast({
+        title: 'Enviado!',
+        description: 'Link de pagamento enviado via WhatsApp.',
+      })
+    } catch {
+      toast({
+        title: 'Erro',
+        description: 'Falha ao enviar mensagem via WhatsApp.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSendingWhatsappId(null)
     }
   }
 
@@ -371,11 +447,40 @@ export default function Payments() {
                     </TableCell>
                     <TableCell className="text-center">
                       {payment.payment_url ? (
-                        <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                          <a href={payment.payment_url} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="h-4 w-4 text-primary" />
-                          </a>
-                        </Button>
+                        <div className="flex items-center justify-center gap-1">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                            <a href={payment.payment_url} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="h-4 w-4 text-primary" />
+                            </a>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => handleCopyLink(payment)}
+                            title="Copiar Link"
+                          >
+                            {copiedPaymentId === payment.id ? (
+                              <Check className="h-4 w-4 text-emerald-600" />
+                            ) : (
+                              <Copy className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => handleSendWhatsApp(payment)}
+                            disabled={sendingWhatsappId === payment.id}
+                            title="Enviar via WhatsApp"
+                          >
+                            {sendingWhatsappId === payment.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <MessageSquare className="h-4 w-4 text-[#25D366]" />
+                            )}
+                          </Button>
+                        </div>
                       ) : (
                         '-'
                       )}
