@@ -6,8 +6,9 @@ routerAdd(
     const body = e.requestInfo().body || {}
 
     const rental = $app.findRecordById('rentals', rentalId)
-    const items = rental.get('items') || []
-    const itemsToReturn = body.items_to_return || []
+    var items = rental.get('items') || []
+    var itemsToReturn = body.items_to_return || []
+    var actualReturnDate = body.actual_return_date || new Date().toISOString().split('T')[0]
 
     var returnLocationId = body.local_devolucao_id || rental.getString('local_retirada_id') || ''
     if (!returnLocationId) {
@@ -31,13 +32,14 @@ routerAdd(
       }
       if (returnEntry) {
         item.returnedQty = (item.returnedQty || 0) + returnEntry.qty
+        item.returnedDate = actualReturnDate
       }
       if ((item.returnedQty || 0) < (item.qty || 0)) {
         allReturned = false
       }
     }
 
-    var actualReturnDate = body.actual_return_date || new Date().toISOString().split('T')[0]
+    items = JSON.parse(JSON.stringify(items))
 
     rental.set('items', items)
     if (allReturned) {

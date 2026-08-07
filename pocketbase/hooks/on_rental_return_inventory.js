@@ -5,11 +5,11 @@ onRecordAfterUpdateSuccess((e) => {
 
   var oldItems = []
   try {
-    oldItems = e.record.original().get('items') || []
+    oldItems = JSON.parse(JSON.stringify(e.record.original().get('items') || []))
   } catch (_) {
     oldItems = []
   }
-  var newItems = rental.get('items') || []
+  var newItems = JSON.parse(JSON.stringify(rental.get('items') || []))
 
   var pickupLocalId = rental.getString('local_retirada_id') || ''
   var returnLocalId = rental.getString('local_devolucao_id') || pickupLocalId || ''
