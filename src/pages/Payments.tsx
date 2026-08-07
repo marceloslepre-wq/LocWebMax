@@ -165,11 +165,41 @@ export default function Payments() {
 
       toast({
         title: 'Cobrança Gerada',
-        description: 'Pagamento criado com sucesso.',
+        description: 'Pagamento criado com sucesso. Enviando link via WhatsApp...',
       })
 
       if (result.payment_url) {
-        window.open(result.payment_url, '_blank')
+        const rental = rentals.find((r: any) => r.id === rentalId)
+        const customer = rental
+          ? customers.find((c: any) => c.id === (rental.customerId || rental.customer_id))
+          : null
+        const phone = customer?.phoneCell || customer?.phoneRes || customer?.phoneCom
+        const name = customer?.name || ''
+
+        if (phone) {
+          try {
+            const message = `Olá ${name}, segue o link para pagamento: ${result.payment_url}`
+            await whatsappService.sendMessage({ to: phone, message })
+            toast({
+              title: 'Link enviado!',
+              description: 'O link de pagamento foi enviado via WhatsApp para o cliente.',
+            })
+          } catch {
+            toast({
+              title: 'Erro ao enviar WhatsApp',
+              description:
+                'A cobrança foi gerada, mas falhou o envio via WhatsApp. Copie o link manualmente.',
+              variant: 'destructive',
+            })
+          }
+        } else {
+          toast({
+            title: 'Cliente sem telefone',
+            description:
+              'A cobrança foi gerada, mas o cliente não possui telefone cadastrado. Copie o link manualmente.',
+            variant: 'destructive',
+          })
+        }
       }
 
       await loadPayments()
