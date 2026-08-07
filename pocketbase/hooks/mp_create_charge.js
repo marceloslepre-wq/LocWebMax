@@ -53,15 +53,6 @@ routerAdd(
     var pbUrl = $secrets.get('PB_INSTANCE_URL') || ''
     var notificationUrl = pbUrl ? pbUrl.replace(/\/+$/, '') + '/backend/v1/payments/mp-webhook' : ''
 
-    var excludedTypes = []
-    if (paymentType === 'pix') {
-      excludedTypes = [{ id: 'ticket' }, { id: 'credit_card' }, { id: 'debit_card' }]
-    } else if (paymentType === 'credit_card') {
-      excludedTypes = [{ id: 'ticket' }]
-    } else if (paymentType === 'boleto') {
-      excludedTypes = [{ id: 'credit_card' }, { id: 'debit_card' }]
-    }
-
     var preferenceData = {
       items: [
         {
@@ -73,7 +64,6 @@ routerAdd(
         },
       ],
       payment_methods: {
-        excluded_payment_types: excludedTypes,
         installments: 1,
       },
       statement_descriptor: 'Hospital Home',
