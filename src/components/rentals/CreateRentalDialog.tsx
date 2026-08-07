@@ -37,6 +37,8 @@ import { useLocations } from '@/hooks/use-locations'
 import { useAuth } from '@/hooks/use-auth'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { refreshStoreInventory } from '@/lib/inventory-refresh'
+import { Checkbox } from '@/components/ui/checkbox'
+import { paymentsService } from '@/services/payments'
 
 export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental) => void }) {
   const { customers, inventory, addRental, settings } = useMainStore()
@@ -54,6 +56,7 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
   const [defaultDuration, setDefaultDuration] = useState<number | null>(null)
   const [freight, setFreight] = useState<number>(0)
   const [paymentMethod, setPaymentMethod] = useState('PIX')
+  const [generatePayment, setGeneratePayment] = useState(false)
 
   const [customerOpen, setCustomerOpen] = useState(false)
   const [itemOpen, setItemOpen] = useState(false)
@@ -363,6 +366,29 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
           description: `Contrato ${createdRental.contractNumber || newId} gerado com sucesso.`,
         })
         refreshStoreInventory()
+        if (generatePayment && createdRental.id) {
+          try {
+            const charge = await paymentsService.createCharge({
+              rental_id: createdRental.id,
+              amount: finalTotal,
+              payment_type: 'pix',
+              description: `Locação ${createdRental.contractNumber || newId}`,
+            })
+            if (charge.payment_url) {
+              window.open(charge.payment_url, '_blank')
+            }
+            toast({
+              title: 'Cobrança Gerada',
+              description: 'Link de pagamento aberto em nova aba.',
+            })
+          } catch (payErr) {
+            toast({
+              title: 'Erro ao gerar pagamento',
+              description: getErrorMessage(payErr),
+              variant: 'destructive',
+            })
+          }
+        }
         if (onCreated) {
           onCreated(createdRental)
         }
@@ -684,7 +710,18 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
             )}
           </div>
 
-          <div className="flex flex-col sm:flex-row justify-between items-center mt-4 border-t pt-4 gap-4">
+          <div className="flex items-center gap-2 mt-4 border-t pt-4">
+            <Checkbox
+              id="generate-payment"
+              checked={generatePayment}
+              onCheckedChange={(checked) => setGeneratePayment(checked === true)}
+            />
+            <Label htmlFor="generate-payment" className="cursor-pointer text-sm">
+              Gerar Pagamento via Mercado Pago
+            </Label>
+          </div>
+
+          <div className="flex flex-col sm:flex-row justify-between items-center mt-4 gap-4">
             <div className="flex items-center gap-2">
               <Label htmlFor="freight" className="text-base whitespace-nowrap">
                 Frete (R$):

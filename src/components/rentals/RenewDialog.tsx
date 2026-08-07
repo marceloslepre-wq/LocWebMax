@@ -22,6 +22,8 @@ import {
   getRemainingDays,
 } from '@/lib/rental-items'
 import { rentalsService } from '@/services/rentals'
+import { paymentsService } from '@/services/payments'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 
 interface RenewDialogProps {
   rental: Rental | null
@@ -48,6 +50,7 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
   const [endDate, setEndDate] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [saving, setSaving] = useState(false)
+  const [generatePayment, setGeneratePayment] = useState(false)
 
   const tomorrowStr = format(addDays(new Date(), 1), 'yyyy-MM-dd')
 
@@ -186,6 +189,29 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
         },
       )
     }
+    if (generatePayment) {
+      try {
+        const charge = await paymentsService.createCharge({
+          rental_id: rental.id,
+          amount: addedTotal,
+          payment_type: 'pix',
+          description: `Renovação - Locação ${(rental as any).contractNumber || (rental as any).contract_number || rental.id.substring(0, 8)}`,
+        })
+        if (charge.payment_url) {
+          window.open(charge.payment_url, '_blank')
+        }
+        toast({
+          title: 'Cobrança Gerada',
+          description: 'Link de pagamento aberto em nova aba.',
+        })
+      } catch (payErr) {
+        toast({
+          title: 'Erro ao gerar pagamento',
+          description: getErrorMessage(payErr),
+          variant: 'destructive',
+        })
+      }
+    }
     setSaving(false)
     onOpenChange(false)
   }
@@ -274,6 +300,17 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
           </div>
 
           {error && <p className="text-sm text-red-500">{error}</p>}
+
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="renew-generate-payment"
+              checked={generatePayment}
+              onCheckedChange={(checked) => setGeneratePayment(checked === true)}
+            />
+            <Label htmlFor="renew-generate-payment" className="cursor-pointer text-sm">
+              Gerar Pagamento via Mercado Pago
+            </Label>
+          </div>
         </div>
 
         <DialogFooter>

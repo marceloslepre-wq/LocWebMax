@@ -8,6 +8,7 @@ import {
   BookOpen,
   LogOut,
   Briefcase,
+  CreditCard,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -35,6 +36,7 @@ export function AppSidebar() {
     { title: 'Estoque', url: '/inventory', icon: Package, show: true },
     { title: 'Patrimônio', url: '/assets', icon: Briefcase, show: true },
     { title: 'Locações', url: '/rentals', icon: FileText, show: true },
+    { title: 'Pagamentos', url: '/payments', icon: CreditCard, show: true },
     { title: 'Clientes', url: '/customers', icon: Users, show: true },
     { title: 'Guia de Uso', url: '/guide', icon: BookOpen, show: true },
     {

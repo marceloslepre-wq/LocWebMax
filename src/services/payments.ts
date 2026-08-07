@@ -1,6 +1,12 @@
 import pb from '@/lib/pocketbase/client'
 
 export const paymentsService = {
+  getAll() {
+    return pb.collection('payments').getFullList({
+      sort: '-created',
+      expand: 'rental_id',
+    })
+  },
   getByRental(rentalId: string) {
     return pb.collection('payments').getFullList({
       filter: `rental_id = "${rentalId}"`,
@@ -12,5 +18,18 @@ export const paymentsService = {
   },
   update(id: string, data: any) {
     return pb.collection('payments').update(id, data)
+  },
+  createCharge(data: {
+    rental_id: string
+    amount: number
+    payment_type: string
+    payer_email?: string
+    description?: string
+  }) {
+    return pb.send('/backend/v1/payments/mp-create', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      headers: { 'Content-Type': 'application/json' },
+    })
   },
 }

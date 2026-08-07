@@ -14,6 +14,7 @@ import Customers from './pages/Customers'
 import Assets from './pages/Assets'
 import Rentals from './pages/Rentals'
 import RentalDetail from './pages/RentalDetail'
+import Payments from './pages/Payments'
 import Settings from './pages/Settings'
 import Guide from './pages/Guide'
 import NotFound from './pages/NotFound'
@@ -103,6 +104,7 @@ const App = () => (
                   <Route path="/customers" element={<Customers />} />
                   <Route path="/rentals" element={<Rentals />} />
                   <Route path="/rentals/:id" element={<RentalDetail />} />
+                  <Route path="/payments" element={<Payments />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/guide" element={<Guide />} />
                 </Route>
