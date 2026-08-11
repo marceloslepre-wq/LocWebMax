@@ -5,7 +5,15 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, Save, Edit2, Printer, Link as LinkIcon, History } from 'lucide-react'
+import {
+  ArrowLeft,
+  Save,
+  Edit2,
+  Printer,
+  Link as LinkIcon,
+  History,
+  AlertTriangle,
+} from 'lucide-react'
 import { useState, useMemo, useEffect } from 'react'
 import { useToast } from '@/hooks/use-toast'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -67,6 +75,16 @@ export default function RentalDetail() {
     const startD = new Date(editStartDate + 'T00:00:00')
     return startD < today
   }, [editStartDate])
+
+  const suggestedRestoreStatus = useMemo<'Ativo' | 'Atrasado'>(() => {
+    if (!rental) return 'Ativo'
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const dateStr = (rental.expectedReturnDate || '').split('T')[0].split(' ')[0]
+    if (!dateStr) return 'Ativo'
+    const returnDate = new Date(dateStr + 'T00:00:00')
+    return returnDate < today ? 'Atrasado' : 'Ativo'
+  }, [rental])
 
   const customerPhone = useMemo(() => {
     if (!customer) return null
@@ -678,6 +696,43 @@ export default function RentalDetail() {
     })
   }
 
+  const handleRestoreStatus = async (newStatus: 'Ativo' | 'Atrasado') => {
+    if (!rental || !currentUser) return
+
+    try {
+      const oldRecord = await pb.collection('rentals').getOne(rental.id)
+      const oldValues = {
+        status: (oldRecord as any).status,
+      }
+
+      await pb.collection('rentals').update(rental.id, { status: newStatus })
+
+      await pb.collection('auditoria_contratos').create({
+        acao: 'restore_status',
+        campos_antigos: oldValues,
+        campos_novos: {
+          status: newStatus,
+          justificativa: 'Auditoria manual - restauração de status (filtro A auditorar)',
+        },
+        rental_id: rental.id,
+        usuario_id: currentUser.id,
+      })
+
+      updateRental(rental.id, { status: newStatus })
+
+      toast({
+        title: 'Status Restaurado',
+        description: `O contrato foi restaurado para "${newStatus}".`,
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Erro',
+        description: 'Falha ao restaurar status: ' + (err?.message || 'Erro desconhecido'),
+        variant: 'destructive',
+      })
+    }
+  }
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex gap-2 mb-4 print:hidden border-b pb-4 overflow-x-auto">
@@ -706,6 +761,44 @@ export default function RentalDetail() {
           <History className="w-4 h-4 mr-2" /> Histórico
         </Button>
       </div>
+
+      {rental.status === 'Devolvido' && !rental.actualReturnDate && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 print:hidden">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-amber-900">Contrato em Auditoria</h3>
+              <p className="text-sm text-amber-700 mt-1">
+                Este contrato foi marcado como &quot;Devolvido&quot; sem data de devolução
+                registrada. Com base na data de previsão, o status sugerido é{' '}
+                <strong>{suggestedRestoreStatus}</strong>. Você pode restaurar manualmente o status
+                abaixo.
+              </p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <Button
+                  size="sm"
+                  variant={suggestedRestoreStatus === 'Ativo' ? 'default' : 'outline'}
+                  onClick={() => handleRestoreStatus('Ativo')}
+                >
+                  Restaurar como Ativo
+                </Button>
+                <Button
+                  size="sm"
+                  variant={suggestedRestoreStatus === 'Atrasado' ? 'default' : 'outline'}
+                  className={
+                    suggestedRestoreStatus === 'Atrasado'
+                      ? 'bg-red-600 hover:bg-red-700 text-white'
+                      : 'border-red-300 text-red-600 hover:bg-red-50'
+                  }
+                  onClick={() => handleRestoreStatus('Atrasado')}
+                >
+                  Restaurar como Atrasado
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 print:hidden">
         <div className="flex items-center gap-4">

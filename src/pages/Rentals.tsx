@@ -23,6 +23,7 @@ import {
   Receipt,
   Trash2,
   ArrowLeftRight,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   Select,
@@ -139,7 +140,12 @@ export default function Rentals() {
       (c &&
         (c.name.toLowerCase().includes(term.toLowerCase()) ||
           c.document.toLowerCase().includes(term.toLowerCase())))
-    const matchesStatus = statusFilter === 'Todos' || r.status === statusFilter
+    const matchesStatus =
+      statusFilter === 'Todos'
+        ? true
+        : statusFilter === 'A auditorar'
+          ? r.status === 'Devolvido' && !rentalField(r, 'actualReturnDate', 'actual_return_date')
+          : r.status === statusFilter
 
     let matchesReturnDate = true
     if (returnDateStart || returnDateEnd) {
@@ -271,6 +277,7 @@ export default function Rentals() {
               <SelectItem value="Ativo">Ativos</SelectItem>
               <SelectItem value="Atrasado">Atrasados</SelectItem>
               <SelectItem value="Devolvido">Devolvidos</SelectItem>
+              <SelectItem value="A auditorar">A auditorar (Temporário)</SelectItem>
             </SelectContent>
           </Select>
           <div className="flex items-center gap-2">
@@ -292,6 +299,16 @@ export default function Rentals() {
             />
           </div>
         </div>
+        {statusFilter === 'A auditorar' && (
+          <div className="px-4 py-2 bg-amber-50 border-b text-sm text-amber-800 flex items-center gap-2 print:hidden">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>
+              <strong>Filtro temporário:</strong> Exibindo contratos marcados como
+              &quot;Devolvido&quot; sem data de devolução registrada. Remova este filtro após
+              concluir a auditoria.
+            </span>
+          </div>
+        )}
         <CardContent className="p-0">
           <Table>
             <TableHeader>
