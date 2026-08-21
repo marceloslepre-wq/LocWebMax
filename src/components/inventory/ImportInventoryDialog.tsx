@@ -256,8 +256,6 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
         }
       }
 
-
-
       setResult({ imported, updated, skipped, failed, errors })
       if (onSuccess) onSuccess()
 

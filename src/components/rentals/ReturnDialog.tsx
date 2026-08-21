@@ -39,7 +39,7 @@ export function ReturnDialog({
   onOpenChange: (v: boolean) => void
   onReturned?: (rental: Rental, lateFeeInfo?: any) => void
 }) {
-  const { inventory, settings } = useMainStore()
+  const { inventory, settings, updateRental } = useMainStore()
   const { toast } = useToast()
   const today = new Date().toISOString().split('T')[0]
   const [returnDate, setReturnDate] = useState(today)
@@ -185,12 +185,23 @@ export function ReturnDialog({
             ? lateFeeResult
             : null
 
-      const updatedRental = {
+      const updatedRental: Rental = {
         ...rental,
         items: updatedItems,
-        status: allReturned ? 'Devolvido' : rental.status,
-        actualReturnDate: allReturned ? returnDate : rental.actualReturnDate,
-      } as Rental
+        status: allReturned ? 'Devolvido' : rental.status === 'Devolvido' ? 'Ativo' : rental.status,
+        actualReturnDate: allReturned ? returnDate : rental.actualReturnDate || undefined,
+        localDevolucaoId: returnLocationId || rental.localDevolucaoId,
+      }
+
+      // Update the global store state so all components reflect this immediately
+      if (updateRental) {
+        updateRental(rental.id, {
+          items: updatedItems,
+          status: updatedRental.status,
+          actualReturnDate: updatedRental.actualReturnDate,
+          localDevolucaoId: updatedRental.localDevolucaoId,
+        })
+      }
 
       toast({
         title: allReturned ? 'Devolução Completa' : 'Devolução Parcial',

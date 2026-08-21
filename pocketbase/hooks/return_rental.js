@@ -7,54 +7,29 @@ routerAdd(
 
     const rental = $app.findRecordById('rentals', rentalId)
 
-    var rawItems = rental.get('items') || []
-    if (typeof rawItems === 'string') {
-      try {
-        rawItems = JSON.parse(rawItems)
-      } catch (_) {
-        rawItems = []
+    var rawItems = []
+    try {
+      var itemsStr = rental.getString('items')
+      if (itemsStr && itemsStr.trim() !== '') {
+        rawItems = JSON.parse(itemsStr)
+      } else {
+        var getItems = rental.get('items')
+        if (typeof getItems === 'string') {
+          rawItems = JSON.parse(getItems)
+        } else if (Array.isArray(getItems)) {
+          rawItems = getItems
+        }
       }
+    } catch (_) {
+      rawItems = []
     }
 
-    var items = []
-    for (var si = 0; si < rawItems.length; si++) {
-      var ri = rawItems[si]
-      var sItemId = ri.itemId || ri.item_id || ri.inventory_id || ri.id || ''
-      var rawQty = ri.qty ?? ri.quantity ?? ri.quantidade
-      var sQty = Number(rawQty !== undefined && rawQty !== null ? rawQty : 1)
-      if (isNaN(sQty) || sQty < 0) sQty = 1
-
-      if (sItemId === 'freight' || ri.itemId === 'freight') {
-        var fItem = { itemId: 'freight', qty: 1 }
-        var fPrice = Number(ri.totalPrice || ri.total_price || 0)
-        if (fPrice) fItem.totalPrice = fPrice
-        items.push(fItem)
-        continue
-      }
-
-      if (!sItemId || String(sItemId).trim() === '') continue
-
-      var sItem = { itemId: String(sItemId), qty: sQty }
-      if (ri.name || ri.productName || ri.product_name) {
-        sItem.name = ri.name || ri.productName || ri.product_name
-      }
-      if (ri.code || ri.sku || ri.product_code) {
-        sItem.code = ri.code || ri.sku || ri.product_code
-      }
-      var sSd = ri.startDate || ri.start_date
-      if (sSd) sItem.startDate = sSd
-      var sEd = ri.endDate || ri.end_date
-      if (sEd) sItem.endDate = sEd
-      var sDp = Number(ri.dailyPrice || ri.daily_price || 0)
-      if (sDp) sItem.dailyPrice = sDp
-      var sTp = Number(ri.totalPrice || ri.total_price || 0)
-      if (sTp) sItem.totalPrice = sTp
-      var sRq = Number(ri.returnedQty || ri.returned_qty || 0)
-      if (sRq) sItem.returnedQty = sRq
-      var sRd = ri.returnedDate || ri.returned_date
-      if (sRd) sItem.returnedDate = sRd
-      items.push(sItem)
+    if (!Array.isArray(rawItems)) {
+      rawItems = []
     }
+
+    // Clone array to avoid mutating original references unexpectedly
+    var items = JSON.parse(JSON.stringify(rawItems))
 
     var itemsToReturn = body.items_to_return || []
     var actualReturnDate = body.actual_return_date || new Date().toISOString().split('T')[0]
@@ -67,42 +42,73 @@ routerAdd(
       } catch (_) {}
     }
 
-    let realItemCount = 0
-    let fullyReturnedRealItemCount = 0
+    var realItemCount = 0
+    var fullyReturnedRealItemCount = 0
 
-    for (let i = 0; i < items.length; i++) {
+    for (var i = 0; i < items.length; i++) {
       var item = items[i]
-      if (item.itemId === 'freight') continue
+      var currentItemId = String(item.itemId || item.item_id || item.inventory_id || item.id || '')
+
+      // Preserve itemId key normalization if missing
+      if (!item.itemId && currentItemId) {
+        item.itemId = currentItemId
+      }
+
+      if (currentItemId === 'freight' || item.itemId === 'freight') {
+        continue
+      }
+
       realItemCount++
 
       var returnEntry = null
-      for (let j = 0; j < itemsToReturn.length; j++) {
-        var retItemId =
-          itemsToReturn[j].itemId || itemsToReturn[j].item_id || itemsToReturn[j].inventory_id || ''
-        if (retItemId === item.itemId) {
+      for (var j = 0; j < itemsToReturn.length; j++) {
+        var retItemId = String(
+          itemsToReturn[j].itemId ||
+            itemsToReturn[j].item_id ||
+            itemsToReturn[j].inventory_id ||
+            itemsToReturn[j].id ||
+            '',
+        )
+        if (retItemId === currentItemId || (item.itemId && retItemId === item.itemId)) {
           returnEntry = itemsToReturn[j]
           break
         }
       }
+
       if (returnEntry) {
-        var retQty = Number(returnEntry.qty || returnEntry.quantity || returnEntry.quantidade || 0)
-        item.returnedQty = (item.returnedQty || 0) + retQty
-        item.returnedDate = actualReturnDate
+        var rawRetQty = returnEntry.qty ?? returnEntry.quantity ?? returnEntry.quantidade
+        var retQty = Number(rawRetQty !== undefined && rawRetQty !== null ? rawRetQty : 0)
+        if (retQty > 0) {
+          var currentReturned = Number(item.returnedQty ?? item.returned_qty ?? 0)
+          item.returnedQty = currentReturned + retQty
+          item.returnedDate = actualReturnDate
+        }
       }
 
-      var itemEffectiveQty = Math.max(1, Number(item.qty || 1))
-      var itemEffectiveReturned = Number(item.returnedQty || 0)
+      var rawItemQty = item.qty ?? item.quantity ?? item.quantidade
+      var itemEffectiveQty = Number(
+        rawItemQty !== undefined && rawItemQty !== null ? rawItemQty : 1,
+      )
+      if (isNaN(itemEffectiveQty) || itemEffectiveQty <= 0) itemEffectiveQty = 1
+
+      var itemEffectiveReturned = Number(item.returnedQty ?? item.returned_qty ?? 0)
       if (itemEffectiveReturned >= itemEffectiveQty) {
         fullyReturnedRealItemCount++
       }
     }
 
-    let allReturned = realItemCount > 0 && fullyReturnedRealItemCount === realItemCount
+    var allReturned = realItemCount > 0 && fullyReturnedRealItemCount === realItemCount
 
     rental.set('items', items)
     if (allReturned) {
       rental.set('status', 'Devolvido')
       rental.set('actual_return_date', actualReturnDate)
+    } else {
+      // Ensure status remains active if not fully returned
+      var currentStatus = rental.getString('status')
+      if (currentStatus === 'Devolvido') {
+        rental.set('status', 'Ativo')
+      }
     }
     if (returnLocationId) rental.set('local_devolucao_id', returnLocationId)
     $app.save(rental)
@@ -201,6 +207,20 @@ routerAdd(
     }
 
     return e.json(200, {
+      id: rental.id,
+      contract_number: rental.getString('contract_number'),
+      customer_id: rental.getString('customer_id'),
+      start_date: rental.getString('start_date'),
+      expected_return_date: rental.getString('expected_return_date'),
+      actual_return_date: rental.getString('actual_return_date') || null,
+      status: rental.getString('status'),
+      total: rental.get('total') || 0,
+      pickup_location_id: rental.getString('pickup_location_id'),
+      local_retirada_id: rental.getString('local_retirada_id'),
+      local_devolucao_id: rental.getString('local_devolucao_id'),
+      payment_method: rental.getString('payment_method'),
+      custom_contract_text: rental.getString('custom_contract_text'),
+      custom_contract_html: rental.getString('custom_contract_html'),
       allReturned: allReturned,
       items: items,
       lateFee: lateFeeInfo,

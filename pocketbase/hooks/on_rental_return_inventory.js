@@ -5,11 +5,39 @@ onRecordAfterUpdateSuccess((e) => {
 
   var oldItems = []
   try {
-    oldItems = JSON.parse(JSON.stringify(e.record.original().get('items') || []))
+    var rawOldStr = e.record.original().getString('items')
+    if (rawOldStr && rawOldStr.trim() !== '') {
+      oldItems = JSON.parse(rawOldStr)
+    } else {
+      var rawOld = e.record.original().get('items')
+      if (typeof rawOld === 'string') {
+        oldItems = JSON.parse(rawOld)
+      } else if (Array.isArray(rawOld)) {
+        oldItems = rawOld
+      }
+    }
   } catch (_) {
     oldItems = []
   }
-  var newItems = JSON.parse(JSON.stringify(rental.get('items') || []))
+  if (!Array.isArray(oldItems)) oldItems = []
+
+  var newItems = []
+  try {
+    var rawNewStr = rental.getString('items')
+    if (rawNewStr && rawNewStr.trim() !== '') {
+      newItems = JSON.parse(rawNewStr)
+    } else {
+      var rawNew = rental.get('items')
+      if (typeof rawNew === 'string') {
+        newItems = JSON.parse(rawNew)
+      } else if (Array.isArray(rawNew)) {
+        newItems = rawNew
+      }
+    }
+  } catch (_) {
+    newItems = []
+  }
+  if (!Array.isArray(newItems)) newItems = []
 
   var pickupLocalId = rental.getString('local_retirada_id') || ''
   var returnLocalId = rental.getString('local_devolucao_id') || pickupLocalId || ''
@@ -19,9 +47,12 @@ onRecordAfterUpdateSuccess((e) => {
     var newItem = newItems[i]
     if (newItem.itemId === 'freight' || !newItem.itemId) continue
 
+    var curItemId = newItem.itemId || newItem.item_id || newItem.inventory_id || newItem.id
     var oldItem = null
     for (let j = 0; j < oldItems.length; j++) {
-      if (oldItems[j].itemId === newItem.itemId) {
+      var oldItemId =
+        oldItems[j].itemId || oldItems[j].item_id || oldItems[j].inventory_id || oldItems[j].id
+      if (oldItemId === curItemId) {
         oldItem = oldItems[j]
         break
       }

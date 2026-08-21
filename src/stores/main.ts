@@ -475,16 +475,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const dbUpdate: any = {}
     if (updateData.status) dbUpdate.status = updateData.status
-    if (updateData.actualReturnDate) dbUpdate.actual_return_date = updateData.actualReturnDate
+    if (updateData.actualReturnDate !== undefined)
+      dbUpdate.actual_return_date = updateData.actualReturnDate
     if (updateData.expectedReturnDate) dbUpdate.expected_return_date = updateData.expectedReturnDate
     if (updateData.startDate) dbUpdate.start_date = updateData.startDate
     if (updateData.total !== undefined) dbUpdate.total = updateData.total
     if (updateData.items !== undefined) dbUpdate.items = updateData.items
+    if (updateData.localDevolucaoId !== undefined)
+      dbUpdate.local_devolucao_id = updateData.localDevolucaoId
+    if (updateData.localRetiradaId !== undefined)
+      dbUpdate.local_retirada_id = updateData.localRetiradaId
+    if (updateData.customContractText !== undefined)
+      dbUpdate.custom_contract_text = updateData.customContractText
+    if (updateData.customContractHtml !== undefined)
+      dbUpdate.custom_contract_html = updateData.customContractHtml
 
-    try {
-      await pb.collection('rentals').update(id, dbUpdate)
-    } catch (err) {
-      console.error('Error updating rental:', err)
+    if (Object.keys(dbUpdate).length > 0) {
+      try {
+        await pb.collection('rentals').update(id, dbUpdate)
+      } catch (err) {
+        console.error('Error updating rental:', err)
+      }
     }
   }
 
