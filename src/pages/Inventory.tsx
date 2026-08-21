@@ -142,6 +142,7 @@ export default function Inventory() {
       'Modelo',
       'Categoria',
       'Local',
+      'Preço de Venda',
       'Estoque Total',
       'Locados',
       'Disponível',
@@ -152,6 +153,7 @@ export default function Inventory() {
       i.name,
       i.category,
       locationFilter,
+      i.salePrice ? `R$ ${i.salePrice.toFixed(2)}` : '-',
       getLocTotal(i),
       getLocRented(i),
       i.conditionStatus === 'Disponível' ? getLocAvailable(i) : 0,
@@ -315,6 +317,7 @@ export default function Inventory() {
                 <TableHead className="w-[80px]">Foto</TableHead>
                 <TableHead>Modelo</TableHead>
                 <TableHead>Mensal</TableHead>
+                <TableHead>Preço de Venda</TableHead>
                 <TableHead>Categoria</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Locados</TableHead>
@@ -326,7 +329,7 @@ export default function Inventory() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                     Nenhum item encontrado.
                   </TableCell>
                 </TableRow>
@@ -348,6 +351,9 @@ export default function Inventory() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {item.monthlyPrice ? `R$ ${item.monthlyPrice.toFixed(2)}` : '-'}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {item.salePrice ? `R$ ${item.salePrice.toFixed(2)}` : '-'}
                     </TableCell>
                     <TableCell>{item.category}</TableCell>
                     <TableCell className="text-right font-medium">{getLocTotal(item)}</TableCell>

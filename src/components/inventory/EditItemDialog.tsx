@@ -247,7 +247,7 @@ export function EditItemDialog({ item }: { item: InventoryItem }) {
               </div>
             </div>
             <div className="grid gap-2">
-              <Label>Valor de Venda (R$)</Label>
+              <Label>Preço de Venda (R$)</Label>
               <Input
                 type="number"
                 step="0.01"
