@@ -27,8 +27,8 @@ onRecordAfterUpdateSuccess((e) => {
       }
     }
 
-    var oldReturned = (oldItem && oldItem.returnedQty) || 0
-    var newReturned = newItem.returnedQty || 0
+    var oldReturned = Number((oldItem && (oldItem.returnedQty ?? oldItem.returned_qty)) || 0)
+    var newReturned = Number(newItem.returnedQty ?? newItem.returned_qty ?? 0)
     var delta = newReturned - oldReturned
 
     if (delta <= 0) continue

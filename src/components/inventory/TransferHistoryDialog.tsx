@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase/client'
+import pb from '@/lib/pocketbase/client'
 import {
   Sheet,
   SheetContent,
@@ -27,17 +27,30 @@ export function TransferHistoryDialog() {
 
   const fetchHistory = async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('inventory_transfers')
-      .select(`
-        *,
-        inventory ( name, code )
-      `)
-      .order('created_at', { ascending: false })
-      .limit(200)
-
-    if (data) setHistory(data)
-    setLoading(false)
+    try {
+      const records = await pb.collection('inventory_transfers').getList(1, 200, {
+        sort: '-created',
+        expand: 'inventory_id',
+      })
+      const mapped = records.items.map((r: any) => ({
+        id: r.id,
+        created_at: r.created,
+        inventory: {
+          name: r.expand?.inventory_id?.name || '-',
+          code: r.expand?.inventory_id?.code || '-',
+        },
+        origin_location_id: r.origem_nome || r.origin_location_id || '-',
+        destination_location_id: r.destino_nome || r.destination_location_id || '-',
+        quantity: r.quantidade || r.quantity || 0,
+        status: r.status || 'completed',
+      }))
+      setHistory(mapped)
+    } catch (err) {
+      console.error('Error fetching transfer history:', err)
+      setHistory([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {

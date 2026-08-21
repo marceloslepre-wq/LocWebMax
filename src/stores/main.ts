@@ -428,31 +428,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const rental = rentals.find((r) => r.id === rentalId)
     if (!rental) return
 
-    setRentals((prev) =>
-      prev.map((r) =>
-        r.id === rentalId ? { ...r, status: 'Devolvido', actualReturnDate: actualDate } : r,
-      ),
-    )
-    setInventory((prev) =>
-      prev.map((item) => {
-        const rented = rental.items.find((ri) => ri.itemId === item.id)
-        if (rented) {
-          return {
-            ...item,
-            availableQty: item.availableQty + rented.qty,
-            rentedQty: Math.max(0, item.rentedQty - rented.qty),
-          }
-        }
-        return item
-      }),
-    )
-
     try {
       await pb.send(`/backend/v1/rentals/${rentalId}/return`, {
         method: 'POST',
         body: JSON.stringify({ actual_return_date: actualDate }),
         headers: { 'Content-Type': 'application/json' },
       })
+      await refreshRentals()
+      await refreshInventory()
     } catch (err) {
       console.error('Error returning rental:', err)
     }

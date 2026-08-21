@@ -16,6 +16,9 @@ export interface Customer {
   phoneRes?: string
   phoneCell?: string
   phoneCom?: string
+  phone_res?: string
+  phone_cell?: string
+  phone_com?: string
   phone?: string
   email?: string
   address?: Address
@@ -37,6 +40,9 @@ const mapFromDb = (row: any): Customer => ({
   phoneRes: row.phone_res,
   phoneCell: row.phone_cell,
   phoneCom: row.phone_com,
+  phone_res: row.phone_res,
+  phone_cell: row.phone_cell,
+  phone_com: row.phone_com,
   phone: row.phone_cell || row.phone_res || row.phone_com,
   email: row.email,
   address: row.address,

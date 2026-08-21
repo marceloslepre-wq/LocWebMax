@@ -20,7 +20,9 @@ routerAdd(
     for (var si = 0; si < rawItems.length; si++) {
       var ri = rawItems[si]
       var sItemId = ri.itemId || ri.item_id || ri.inventory_id || ri.id || ''
-      var sQty = Number(ri.qty || ri.quantity || ri.quantidade || 0)
+      var rawQty = ri.qty ?? ri.quantity ?? ri.quantidade
+      var sQty = Number(rawQty !== undefined && rawQty !== null ? rawQty : 1)
+      if (isNaN(sQty) || sQty < 0) sQty = 1
 
       if (sItemId === 'freight' || ri.itemId === 'freight') {
         var fItem = { itemId: 'freight', qty: 1 }
@@ -33,6 +35,12 @@ routerAdd(
       if (!sItemId || String(sItemId).trim() === '') continue
 
       var sItem = { itemId: String(sItemId), qty: sQty }
+      if (ri.name || ri.productName || ri.product_name) {
+        sItem.name = ri.name || ri.productName || ri.product_name
+      }
+      if (ri.code || ri.sku || ri.product_code) {
+        sItem.code = ri.code || ri.sku || ri.product_code
+      }
       var sSd = ri.startDate || ri.start_date
       if (sSd) sItem.startDate = sSd
       var sEd = ri.endDate || ri.end_date
@@ -59,28 +67,37 @@ routerAdd(
       } catch (_) {}
     }
 
-    let allReturned = true
+    let realItemCount = 0
+    let fullyReturnedRealItemCount = 0
 
     for (let i = 0; i < items.length; i++) {
       var item = items[i]
       if (item.itemId === 'freight') continue
+      realItemCount++
+
       var returnEntry = null
       for (let j = 0; j < itemsToReturn.length; j++) {
-        var retItemId = itemsToReturn[j].itemId || itemsToReturn[j].item_id || ''
+        var retItemId =
+          itemsToReturn[j].itemId || itemsToReturn[j].item_id || itemsToReturn[j].inventory_id || ''
         if (retItemId === item.itemId) {
           returnEntry = itemsToReturn[j]
           break
         }
       }
       if (returnEntry) {
-        var retQty = Number(returnEntry.qty || returnEntry.quantity || 0)
+        var retQty = Number(returnEntry.qty || returnEntry.quantity || returnEntry.quantidade || 0)
         item.returnedQty = (item.returnedQty || 0) + retQty
         item.returnedDate = actualReturnDate
       }
-      if ((item.returnedQty || 0) < (item.qty || 0)) {
-        allReturned = false
+
+      var itemEffectiveQty = Math.max(1, Number(item.qty || 1))
+      var itemEffectiveReturned = Number(item.returnedQty || 0)
+      if (itemEffectiveReturned >= itemEffectiveQty) {
+        fullyReturnedRealItemCount++
       }
     }
+
+    let allReturned = realItemCount > 0 && fullyReturnedRealItemCount === realItemCount
 
     rental.set('items', items)
     if (allReturned) {

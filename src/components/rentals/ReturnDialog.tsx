@@ -39,7 +39,7 @@ export function ReturnDialog({
   onOpenChange: (v: boolean) => void
   onReturned?: (rental: Rental, lateFeeInfo?: any) => void
 }) {
-  const { inventory, updateRental, settings } = useMainStore()
+  const { inventory, settings } = useMainStore()
   const { toast } = useToast()
   const today = new Date().toISOString().split('T')[0]
   const [returnDate, setReturnDate] = useState(today)
@@ -61,21 +61,40 @@ export function ReturnDialog({
 
   const rentalItems = useMemo(() => {
     if (!rental) return []
-    return (Array.isArray(rental.items) ? rental.items : []).filter(
-      (i: any) => i.itemId !== 'freight',
-    )
+    const items = Array.isArray(rental.items) ? rental.items : []
+    return items
+      .map((ri: any) => {
+        const itemId = String(ri.itemId || ri.item_id || ri.inventory_id || ri.id || '')
+        const rawQty = ri.qty ?? ri.quantity ?? ri.quantidade
+        const parsedQty = Number(rawQty !== undefined && rawQty !== null ? rawQty : 1)
+        const qty =
+          Number.isFinite(parsedQty) && parsedQty >= 0
+            ? parsedQty === 0 && itemId !== 'freight'
+              ? 1
+              : parsedQty
+            : 1
+        const returnedQty = Number(ri.returnedQty ?? ri.returned_qty ?? 0)
+        return {
+          ...ri,
+          itemId,
+          qty,
+          returnedQty,
+        }
+      })
+      .filter((i: any) => i.itemId !== 'freight' && i.itemId.trim() !== '')
   }, [rental])
 
   const itemDetails = useMemo(() => {
     return rentalItems.map((ri: any) => {
       const inv = inventory.find((i: any) => i.id === ri.itemId)
       const returnedQty = ri.returnedQty || 0
-      const remainingQty = (ri.qty || 0) - returnedQty
+      const itemQty = Math.max(1, ri.qty || 1)
+      const remainingQty = Math.max(0, itemQty - returnedQty)
       return {
         itemId: ri.itemId,
-        name: inv?.name || ri.name || 'Item Removido',
-        code: inv?.code || '-',
-        qty: ri.qty || 0,
+        name: inv?.name || ri.name || ri.productName || ri.product_name || 'Item Removido',
+        code: inv?.code || ri.code || ri.sku || '-',
+        qty: itemQty,
         returnedQty,
         remainingQty,
         selectedQty: selectedItems[ri.itemId] || 0,
@@ -165,16 +184,6 @@ export function ReturnDialog({
           : lateFeeResult && lateFeeResult.total > 0
             ? lateFeeResult
             : null
-
-      const updates: any = {
-        items: updatedItems,
-        status: allReturned ? 'Devolvido' : rental.status,
-      }
-      if (allReturned) {
-        updates.actualReturnDate = returnDate
-      }
-
-      updateRental(rental.id, updates)
 
       const updatedRental = {
         ...rental,

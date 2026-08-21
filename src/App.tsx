@@ -46,7 +46,7 @@ const OverdueChecker = () => {
 }
 
 const App = () => (
-  <BrowserRouter future={{ v7_startTransition: false, v7_relativeSplatPath: false }}>
+  <BrowserRouter>
     <AuthProvider>
       <StoreProvider>
         <TooltipProvider>

@@ -105,7 +105,6 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              variant="ghost"
               className="text-destructive hover:text-destructive hover:bg-destructive/10 cursor-pointer"
               onClick={handleLogout}
             >

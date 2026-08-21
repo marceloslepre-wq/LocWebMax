@@ -35,8 +35,7 @@ import useMainStore from '@/stores/main'
 export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void }) {
   const { toast } = useToast()
   const { locations } = useLocations()
-  const { settings, addInventoryItem, refreshInventory } = useMainStore()
-  const updateInventoryItem = useMainStore((s: any) => s.updateInventoryItem)
+  const { settings, addInventoryItem, updateInventoryItem } = useMainStore()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<InventoryImportResult | null>(null)
@@ -219,7 +218,7 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
                 totalQty: totalQty,
                 availableQty: availableQty,
                 rentedQty: rentedQty,
-                conditionStatus: row.condition_status || 'Disponível',
+                conditionStatus: (row.condition_status as any) || 'Disponível',
               })
             }
             updated++
@@ -257,13 +256,7 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
         }
       }
 
-      if (refreshInventory) {
-        try {
-          await refreshInventory()
-        } catch {
-          /* ignore */
-        }
-      }
+
 
       setResult({ imported, updated, skipped, failed, errors })
       if (onSuccess) onSuccess()

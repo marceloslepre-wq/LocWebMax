@@ -58,10 +58,17 @@ export interface NormalizedRentalItem {
 
 export function normalizeRentalItem(raw: any): NormalizedRentalItem {
   const itemId = raw.itemId || raw.item_id || raw.inventory_id || raw.id || ''
-  const qty = Number(raw.qty ?? raw.quantity ?? raw.quantidade ?? 0)
+  const rawQty = raw.qty ?? raw.quantity ?? raw.quantidade
+  const parsedQty = Number(rawQty !== undefined && rawQty !== null ? rawQty : 1)
+  const qty =
+    Number.isFinite(parsedQty) && parsedQty >= 0
+      ? parsedQty === 0 && itemId !== 'freight'
+        ? 1
+        : parsedQty
+      : 1
   const result: NormalizedRentalItem = {
     itemId: String(itemId || ''),
-    qty: Number.isFinite(qty) ? qty : 0,
+    qty,
   }
   const startDate = getItemField(raw, 'startDate', 'start_date')
   if (startDate) result.startDate = startDate
