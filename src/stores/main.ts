@@ -65,6 +65,7 @@ export type Rental = {
   localDevolucaoId?: string
   paymentMethod?: string
   contractNumber?: string
+  trackingCode?: string
 }
 
 export type User = {
@@ -169,6 +170,7 @@ function mapRentalRow(row: any): Rental {
     items: row.items || [],
     contractNumber: row.contract_number,
     paymentMethod: row.payment_method,
+    trackingCode: row.tracking_code,
   }
 }
 
@@ -377,6 +379,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           total: rental.total,
           custom_contract_html: rental.customContractHtml || null,
           contract_number: null,
+          tracking_code: rental.trackingCode || '',
         }),
         headers: { 'Content-Type': 'application/json' },
       })

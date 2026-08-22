@@ -108,6 +108,7 @@ routerAdd(
     rental.set('custom_contract_html', body.custom_contract_html || '')
     rental.set('pickup_location_id', pickupLocationId)
     rental.set('is_imported', isImported)
+    if (body.tracking_code) rental.set('tracking_code', body.tracking_code)
     if (localRetiradaId) rental.set('local_retirada_id', localRetiradaId)
     if (localDevolucaoId) rental.set('local_devolucao_id', localDevolucaoId)
     $app.save(rental)
@@ -142,6 +143,7 @@ routerAdd(
       is_imported: rental.getBool('is_imported'),
       created: rental.getString('created'),
       updated: rental.getString('updated'),
+      tracking_code: rental.getString('tracking_code'),
       expand: {},
     }
 

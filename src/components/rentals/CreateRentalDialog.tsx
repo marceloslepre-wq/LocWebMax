@@ -39,6 +39,7 @@ import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { refreshStoreInventory } from '@/lib/inventory-refresh'
 import { Checkbox } from '@/components/ui/checkbox'
 import { paymentsService } from '@/services/payments'
+import { renderContractHtml } from '@/lib/contract-template'
 
 export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental) => void }) {
   const { customers, inventory, addRental, settings } = useMainStore()
@@ -57,6 +58,7 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
   const [freight, setFreight] = useState<number>(0)
   const [paymentMethod, setPaymentMethod] = useState('PIX')
   const [generatePayment, setGeneratePayment] = useState(false)
+  const [trackingCode, setTrackingCode] = useState('')
 
   const [customerOpen, setCustomerOpen] = useState(false)
   const [itemOpen, setItemOpen] = useState(false)
@@ -120,14 +122,6 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
     const diffTime = end.getTime() - start.getTime()
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
     return diffDays <= 0 ? 1 : diffDays
-  }
-
-  const formatDateStr = (dateStr?: string) => {
-    if (!dateStr) return '-'
-    const parts = dateStr.split('T')[0].split('-')
-    if (parts.length !== 3) return dateStr
-    const [y, m, d] = parts
-    return `${d}/${m}/${y}`
   }
 
   const finalTotal = useMemo(() => {
@@ -198,85 +192,40 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
 
   const handleRemoveItem = (id: string) => setItems((prev) => prev.filter((p) => p.id !== id))
 
-  const generateContractHtml = (total: number) => {
+  const generateContractHtml = (_total: number) => {
     try {
       const customer = customers.find((c) => c.id === customerId)
       if (!customer) return ''
 
-      let html = settings?.contractTemplateHtml || ''
-      if (!html) return ''
-
-      const cAddr =
-        typeof customer.address === 'object' && customer.address !== null ? customer.address : {}
-      const addressStr = (cAddr as any).street
-        ? `${(cAddr as any).street}, ${(cAddr as any).number || 'S/N'}${(cAddr as any).complement ? ' - ' + (cAddr as any).complement : ''} - ${(cAddr as any).neighborhood || ''} - ${(cAddr as any).city || ''}/${(cAddr as any).state || ''} - CEP: ${(cAddr as any).zipCode || ''}`
-        : 'Não informado'
-      const phoneStr =
-        [customer?.phone_cell, customer?.phone_res, customer?.phone_com]
-          .filter(Boolean)
-          .join(' / ') || 'Não informado'
-
-      let locationName = 'Não informado'
-      if (pickupLocationId === 'delivery') locationName = 'Entrega no Endereço do Cliente'
-      else if (pickupLocationId) {
-        const loc = locaisList.find((l) => l.id === pickupLocationId)
-        if (loc) {
-          locationName = `${loc.nome} - ${loc.endereco || ''}`
-        }
-      }
-      locationName = locationName
-        .replace(/ - CEP: Sem CEP/gi, '')
-        .replace(/CEP: Sem CEP/gi, '')
-        .trim()
-
       const startDates = items.map((i) => i.startDate || todayStr).sort()
+      const endDates = items.map((i) => i.endDate || todayStr).sort()
 
-      html = html.replace(/{{rentalId}}/g, 'Gerado ao salvar')
-      html = html.replace(/{{companyName}}/g, settings?.companyName || 'Lojas Hospital Home')
-      html = html.replace(/{{companyDocument}}/g, settings?.companyDocument || '10.893.738/0006-93')
-      html = html.replace(
-        /{{companyAddress}}/g,
-        settings?.companyAddress ||
-          'rua Manoel Vivacqua, n. 616, Jabuor, Vitória – ES. CEP: 29072-045',
-      )
-
-      html = html.replace(/{{customerName}}/g, customer?.name || '')
-      html = html.replace(/{{customerDocument}}/g, customer?.document || '')
-      html = html.replace(/{{customerAddress}}/g, addressStr)
-      html = html.replace(/{{customerRg}}/g, (customer as any)?.rg || 'Não informado')
-      html = html.replace(/{{customerPhone}}/g, phoneStr)
-      html = html.replace(/{{pickupLocation}}/g, locationName)
-      html = html.replace(/{{currentDate}}/g, formatDateStr(startDates[0] || todayStr))
-      html = html.replace(/{{forma_pagamento}}/g, paymentMethod)
-      html = html.replace(/{{paymentMethod}}/g, paymentMethod)
-
-      let itemsHtml = items
-        .map((ri) => {
-          const item = inventory.find((i) => i.id === ri.itemId)
-          const start = formatDateStr(ri.startDate || todayStr)
-          const end = formatDateStr(ri.endDate || todayStr)
-          const totalValue = (ri.totalPrice || 0).toFixed(2)
-
-          return `<tr>
-        <td style="border: 1px solid #000; padding: 8px; text-align: center;">${ri.qty}</td>
-        <td style="border: 1px solid #000; padding: 8px;">${item?.name || 'Item Removido'}</td>
-        <td style="border: 1px solid #000; padding: 8px;">${item?.code || '-'}</td>
-        <td style="border: 1px solid #000; padding: 8px; text-align: center;">${start}</td>
-        <td style="border: 1px solid #000; padding: 8px; text-align: center;">${end}</td>
-        <td style="border: 1px solid #000; padding: 8px; text-align: right;">${totalValue}</td>
-      </tr>`
-        })
-        .join('')
-
-      if (freight > 0) {
-        itemsHtml += `<tr>
-          <td colspan="5" style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold;">Frete</td>
-          <td style="border: 1px solid #000; padding: 8px; text-align: right;">${freight.toFixed(2)}</td>
-        </tr>`
-      }
-
-      html = html.replace(/{{itemsList}}/g, itemsHtml)
-      return html
+      return renderContractHtml({
+        templateHtml: settings?.contractTemplateHtml,
+        customer,
+        items: items.map((ri) => ({
+          itemId: ri.itemId,
+          qty: ri.qty,
+          startDate: ri.startDate,
+          endDate: ri.endDate,
+          dailyPrice: ri.dailyPrice,
+          totalPrice: ri.totalPrice,
+        })),
+        inventory: inventory.map((i) => ({
+          ...i,
+          sale_price: (i as any).salePrice,
+        })),
+        settings,
+        locaisList,
+        pickupLocationId,
+        paymentMethod,
+        total: _total,
+        startDate: startDates[0] || todayStr,
+        expectedReturnDate: endDates[endDates.length - 1],
+        rentalStatus: 'Ativo',
+        rentalType: 'Locação',
+        trackingCode,
+      })
     } catch (err) {
       console.error('Error generating contract HTML:', err)
       return ''
@@ -358,6 +307,8 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
         payment_method: paymentMethod,
         userId: user?.id,
         user_id: user?.id,
+        trackingCode,
+        tracking_code: trackingCode,
       } as any)
 
       if (createdRental) {
@@ -397,6 +348,7 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
       setOpen(false)
       setCustomerId('')
       setItems([])
+      setTrackingCode('')
       setErrors({})
     } catch (err) {
       toast({
@@ -722,19 +674,34 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
           </div>
 
           <div className="flex flex-col sm:flex-row justify-between items-center mt-4 gap-4">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="freight" className="text-base whitespace-nowrap">
-                Frete (R$):
-              </Label>
-              <Input
-                id="freight"
-                type="number"
-                min="0"
-                step="0.01"
-                value={freight || ''}
-                onChange={(e) => setFreight(parseFloat(e.target.value) || 0)}
-                className="w-32"
-              />
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="freight" className="text-base whitespace-nowrap">
+                  Frete (R$):
+                </Label>
+                <Input
+                  id="freight"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={freight || ''}
+                  onChange={(e) => setFreight(parseFloat(e.target.value) || 0)}
+                  className="w-32"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="tracking-code" className="text-base whitespace-nowrap">
+                  Rastreamento:
+                </Label>
+                <Input
+                  id="tracking-code"
+                  type="text"
+                  value={trackingCode}
+                  onChange={(e) => setTrackingCode(e.target.value)}
+                  placeholder="Código da transportadora"
+                  className="w-56"
+                />
+              </div>
             </div>
             <div className="text-right">
               <span className="text-sm text-muted-foreground mr-4">Total Arredondado:</span>

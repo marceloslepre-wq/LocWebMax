@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-22T11:47:40.905Z",
+  "generatedAt": "2026-08-22T12:54:53.119Z",
   "collections": [
     {
       "name": "users",
@@ -507,6 +507,12 @@
         {
           "name": "is_imported",
           "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tracking_code",
+          "type": "text",
           "required": false,
           "system": false
         }
