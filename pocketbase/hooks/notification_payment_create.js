@@ -40,56 +40,112 @@ onRecordAfterCreateSuccess((e) => {
   } catch (_) {}
   if (!customer) return e.next()
 
-  var msg = tpl.message || ''
-  var cliente = customer.getString('name')
-  var contrato = rental.getString('contract_number') || rentalId
-  var valor = String(payment.get('amount') || rental.get('total') || 0)
-
-  var rawDate = rental.getString('expected_return_date') || ''
-  var datePart = rawDate.split('T')[0].split(' ')[0]
-  var dParts = datePart.split('-')
-  var dataDevolucao = ''
-  if (dParts.length === 3) dataDevolucao = dParts[2] + '/' + dParts[1] + '/' + dParts[0]
-
-  var rentalItems = rental.get('items') || []
-  if (typeof rentalItems === 'string') {
-    try {
-      rentalItems = JSON.parse(rentalItems)
-    } catch (_) {
-      rentalItems = []
+  var formatBRL = function (n) {
+    var v = Number(n) || 0
+    var neg = v < 0
+    if (neg) v = -v
+    var rounded = Math.round(v * 100) / 100
+    var s = rounded.toFixed(2)
+    var parts = s.split('.')
+    var intPart = parts[0]
+    var decPart = parts[1] || '00'
+    var grouped = ''
+    var len = intPart.length
+    for (var k = 0; k < len; k++) {
+      if (k > 0 && (len - k) % 3 === 0) grouped += '.'
+      grouped += intPart.charAt(k)
     }
+    return 'R$ ' + (neg ? '-' : '') + grouped + ',' + decPart
   }
 
-  var itemNames = []
-  for (var j = 0; j < rentalItems.length; j++) {
-    var rawItem = rentalItems[j]
-    var itemId = rawItem.itemId || rawItem.item_id || rawItem.inventory_id || rawItem.id || ''
-    if (itemId === 'freight' || !itemId) continue
-    var qty = rawItem.qty || rawItem.quantity || rawItem.quantidade || 1
-    var itemName = rawItem.name || rawItem.description || ''
-    var itemCode = rawItem.code || ''
-    try {
-      var inv = $app.findRecordById('inventory', itemId)
-      if (inv) {
-        var invName = inv.getString('name')
-        var invCode = inv.getString('code')
-        if (invName) itemName = invName
-        if (invCode) itemCode = invCode
+  var formatDate = function (raw) {
+    if (!raw) return ''
+    var datePart = String(raw).split('T')[0].split(' ')[0]
+    var dParts = datePart.split('-')
+    if (dParts.length === 3) return dParts[2] + '/' + dParts[1] + '/' + dParts[0]
+    return ''
+  }
+
+  // Robust item list builder. In the JSVM, `record.get('items')` on a JSON
+  // field does not always return a proper iterable JS array, so we fall back
+  // to parsing `getString('items')`. Names are resolved from the item object
+  // first, then mandatorily from the inventory record (common for imported
+  // contracts that only carry an itemId). `context` filters which items are
+  // listed: 'all', 'not_returned' (returnedQty < qty) or 'returned' (> 0).
+  var buildItemList = function (rentalRec, context) {
+    var rentalItems = rentalRec.get('items')
+    if (!Array.isArray(rentalItems)) {
+      try {
+        rentalItems = JSON.parse(rentalRec.getString('items') || '[]')
+      } catch (_) {
+        rentalItems = []
       }
-    } catch (_) {}
-    if (itemName) {
-      itemName = itemName
+    }
+    if (!Array.isArray(rentalItems)) rentalItems = []
+
+    var itemNames = []
+    for (var j = 0; j < rentalItems.length; j++) {
+      var rawItem = rentalItems[j]
+      if (!rawItem || typeof rawItem !== 'object') continue
+      var itemId = String(
+        rawItem.itemId || rawItem.item_id || rawItem.inventory_id || rawItem.id || '',
+      )
+      if (itemId === 'freight' || itemId === '' || itemId === 'undefined') continue
+      var qty = Number(rawItem.qty || rawItem.quantity || rawItem.quantidade || 1)
+      if (!qty || qty < 1) qty = 1
+      var returnedQty = Number(rawItem.returnedQty || rawItem.returned_qty || 0)
+      if (!returnedQty || returnedQty < 0) returnedQty = 0
+
+      if (context === 'not_returned') {
+        if (returnedQty >= qty) continue
+      } else if (context === 'returned') {
+        if (returnedQty <= 0) continue
+      }
+
+      var itemName =
+        rawItem.name || rawItem.description || rawItem.productName || rawItem.product_name || ''
+      var itemCode = rawItem.code || rawItem.sku || rawItem.product_code || ''
+      try {
+        var inv = $app.findRecordById('inventory', itemId)
+        if (inv) {
+          var invName = inv.getString('name')
+          var invCode = inv.getString('code')
+          if (invName) itemName = invName
+          if (invCode) itemCode = invCode
+        }
+      } catch (_) {}
+      if (!itemName) itemName = 'Item ' + itemId
+
+      itemName = String(itemName)
         .replace(/\bEstoque\b/gi, '')
         .replace(/\bModelo\b/gi, '')
         .replace(/\s+/g, ' ')
         .trim()
-    }
-    if (itemName) {
+
+      var displayQty = qty
+      if (context === 'not_returned') {
+        displayQty = qty - returnedQty
+        if (displayQty < 1) displayQty = qty
+      } else if (context === 'returned') {
+        displayQty = returnedQty
+        if (displayQty < 1) displayQty = qty
+      }
       var codePart = itemCode ? ' (' + itemCode + ')' : ''
-      itemNames.push(qty + ' x ' + itemName + codePart)
+      itemNames.push(displayQty + ' x ' + itemName + codePart)
     }
+    return itemNames
   }
 
+  var msg = tpl.message || ''
+  var cliente = customer.getString('name')
+  var contrato = rental.getString('contract_number') || rentalId
+  // No hook de pagamento, o valor prioritário é o do pagamento (amount);
+  // se ausente, usa o total do contrato.
+  var valor = formatBRL(payment.get('amount') || rental.get('total') || 0)
+
+  var dataDevolucao = formatDate(rental.getString('expected_return_date'))
+
+  var itemNames = buildItemList(rental, 'all')
   var itensStr = itemNames.length > 0 ? itemNames.join('\n') : 'Nenhum item listado'
 
   msg = msg
