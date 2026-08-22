@@ -109,3 +109,53 @@ export function findFreightItem(items: any[]): any | null {
     }) || null
   )
 }
+
+/**
+ * Itens efetivamente devolvidos (returnedQty > 0).
+ * Ajusta `qty` para refletir apenas a quantidade devolvida, mantendo preço unitário.
+ */
+export function getReturnedRentalItems(items: any[]): NormalizedRentalItem[] {
+  return getValidRentalItems(items)
+    .filter((item) => Number(item.returnedQty || 0) > 0)
+    .map((item) => {
+      const returnedQty = Number(item.returnedQty || 0)
+      const qty = Number(item.qty || 0) || returnedQty
+      const unitPrice = qty > 0 ? Number(item.totalPrice || 0) / qty : 0
+      return {
+        ...item,
+        qty: returnedQty,
+        totalPrice: Number((unitPrice * returnedQty).toFixed(2)),
+      }
+    })
+}
+
+/**
+ * Itens ainda em posse do cliente (returnedQty < qty).
+ * Ajusta `qty`/`totalPrice` para a quantidade que ainda está locada.
+ */
+export function getInPossessionRentalItems(items: any[]): NormalizedRentalItem[] {
+  return getValidRentalItems(items)
+    .filter((item) => {
+      const returnedQty = Number(item.returnedQty || 0)
+      const qty = Number(item.qty || 0) || returnedQty
+      return returnedQty < qty
+    })
+    .map((item) => {
+      const returnedQty = Number(item.returnedQty || 0)
+      const qty = Number(item.qty || 0) || returnedQty + 1
+      const remainingQty = Math.max(0, qty - returnedQty)
+      const unitPrice = qty > 0 ? Number(item.totalPrice || 0) / qty : 0
+      return {
+        ...item,
+        qty: remainingQty,
+        totalPrice: Number((unitPrice * remainingQty).toFixed(2)),
+      }
+    })
+}
+
+/**
+ * Subtotal (apenas itens regulares, sem frete) de uma lista de rental items.
+ */
+export function sumItemsTotal(items: any[]): number {
+  return items.reduce((acc, it) => acc + Number(it.totalPrice || it.total_price || 0), 0)
+}

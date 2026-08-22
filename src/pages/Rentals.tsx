@@ -66,6 +66,8 @@ export default function Rentals() {
   const [receiptRental, setReceiptRental] = useState<Rental | null>(null)
   const [receiptType, setReceiptType] = useState<'new' | 'renewal' | 'return' | 'late_fee'>('new')
   const [receiptRenewalInfo, setReceiptRenewalInfo] = useState<any>(null)
+  // Itens acabados de devolver (recibo imediato de devolução parcial)
+  const [receiptReturnedItems, setReceiptReturnedItems] = useState<any[] | null>(null)
 
   const rentalField = (r: any, camel: string, snake: string): string => {
     return r[camel] ?? r[snake] ?? ''
@@ -251,6 +253,7 @@ export default function Rentals() {
               setReceiptRental(rental)
               setReceiptType('new')
               setReceiptRenewalInfo(null)
+              setReceiptReturnedItems(null)
               setReceiptOpen(true)
             }}
           />
@@ -445,6 +448,7 @@ export default function Rentals() {
                               }
                               setReceiptType(isReturn ? 'return' : 'new')
                               setReceiptRenewalInfo(lateFeeInfo)
+                              setReceiptReturnedItems(null)
                               setTimeout(() => setReceiptOpen(true), 0)
                             }}
                             title={rental.status === 'Devolvido' ? 'Recibo de Devolução' : 'Recibo'}
@@ -525,10 +529,13 @@ export default function Rentals() {
         rental={selectedRental}
         open={returnOpen}
         onOpenChange={setReturnOpen}
-        onReturned={(rental, lateFeeInfo) => {
+        onReturned={(rental, lateFeeInfo, returnedItems) => {
           setReceiptRental(rental)
           setReceiptType(lateFeeInfo ? 'late_fee' : 'return')
           setReceiptRenewalInfo(lateFeeInfo)
+          // Recibo imediato de devolução mostra somente o que acabou de ser
+          // devolvido nesta ação (devolução parcial).
+          setReceiptReturnedItems(lateFeeInfo ? null : returnedItems)
           setReceiptOpen(true)
         }}
       />
@@ -540,6 +547,7 @@ export default function Rentals() {
           setReceiptRental(rental)
           setReceiptType('renewal')
           setReceiptRenewalInfo(info)
+          setReceiptReturnedItems(null)
           setReceiptOpen(true)
         }}
       />
@@ -550,6 +558,7 @@ export default function Rentals() {
         onOpenChange={setReceiptOpen}
         type={receiptType}
         renewalInfo={receiptRenewalInfo}
+        returnedItems={receiptReturnedItems}
       />
     </div>
   )

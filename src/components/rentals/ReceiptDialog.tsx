@@ -8,9 +8,17 @@ import {
 import { Button } from '@/components/ui/button'
 import { Rental } from '@/stores/main'
 import useMainStore from '@/stores/main'
-import { getValidRentalItems, findFreightItem } from '@/lib/rental-items'
+import {
+  findFreightItem,
+  getReturnedRentalItems,
+  getInPossessionRentalItems,
+  sumItemsTotal,
+  normalizeRentalItem,
+  type NormalizedRentalItem,
+} from '@/lib/rental-items'
 import { Printer, MessageCircle, Mail, Link as LinkIcon } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { useMemo } from 'react'
 import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
 
 interface ReceiptDialogProps {
@@ -23,6 +31,13 @@ interface ReceiptDialogProps {
     endDate: string
     addedTotal: number
   } | null
+  /**
+   * Lista específica de itens acabados de devolver (recibo imediato de
+   * devolução parcial). Quando informada com type='return', substitui o
+   * filtro de itens devolvidos do contrato, listando somente o que foi
+   * devolvido nesta ação.
+   */
+  returnedItems?: any[] | null
 }
 
 export function ReceiptDialog({
@@ -31,6 +46,7 @@ export function ReceiptDialog({
   onOpenChange,
   type = 'new',
   renewalInfo,
+  returnedItems,
 }: ReceiptDialogProps) {
   const { customers, inventory, settings } = useMainStore()
   const { toast } = useToast()
@@ -45,6 +61,32 @@ export function ReceiptDialog({
     const [y, m, d] = parts
     return `${d}/${m}/${y.slice(2)}`
   }
+
+  // Itens que devem aparecer no recibo, conforme o tipo e o estado de devolução.
+  // - late_fee: não lista equipamentos (somente a multa)
+  // - return: itens devolvidos (returnedQty > 0) ou a lista específica passada
+  //   via returnedItems (recibo imediato de devolução parcial)
+  // - new/renewal: somente itens ainda em posse do cliente (returnedQty < qty)
+  const itemsForReceipt = useMemo<NormalizedRentalItem[]>(() => {
+    if (type === 'late_fee') return []
+    if (type === 'return') {
+      if (returnedItems && returnedItems.length > 0) {
+        return returnedItems.map(normalizeRentalItem)
+      }
+      return getReturnedRentalItems(rental?.items || [])
+    }
+    return getInPossessionRentalItems(rental?.items || [])
+  }, [type, returnedItems, rental?.items])
+
+  const freightRaw = useMemo(() => findFreightItem(rental?.items || []), [rental?.items])
+  const freightPrice = freightRaw ? Number(freightRaw.totalPrice || freightRaw.total_price || 0) : 0
+  // Frete só faz sentido no recibo de locação/renovação (entrega). No recibo de
+  // devolução o foco são os equipamentos devolvidos.
+  const showFreight = type !== 'return' && type !== 'late_fee' && !!freightRaw && freightPrice > 0
+
+  // Total do recibo refletindo APENAS os itens filtrados (prorado por qty).
+  const itemsTotal = useMemo(() => sumItemsTotal(itemsForReceipt), [itemsForReceipt])
+  const receiptTotal = showFreight ? itemsTotal + freightPrice : itemsTotal
 
   const generateText = () => {
     let title = 'Recibo de Pagamento'
@@ -82,21 +124,15 @@ export function ReceiptDialog({
       return text
     }
 
-    const validItems = getValidRentalItems(rental?.items || [])
-    const freightRaw = findFreightItem(rental?.items || [])
-    const freightPrice = freightRaw
-      ? Number(freightRaw.totalPrice || freightRaw.total_price || 0)
-      : 0
-
     text += `*Equipamentos:*\n`
-    validItems.forEach((ri) => {
+    itemsForReceipt.forEach((ri) => {
       const item = inventory.find((i) => i.id === ri.itemId)
       const itemName = ri.name || item?.name || 'Item'
       const itemCode = ri.code || item?.code || '-'
       text += `- ${ri.qty}x ${itemName} (SKU: ${itemCode}) ${ri.startDate && ri.endDate ? `(${formatDateStr(ri.startDate)} a ${formatDateStr(ri.endDate)})` : ''}\n`
     })
 
-    if (freightRaw && freightPrice) {
+    if (showFreight) {
       text += `\n*Frete:* R$ ${freightPrice.toFixed(2)}\n`
     }
 
@@ -107,10 +143,10 @@ export function ReceiptDialog({
     } else if (type === 'return') {
       text += `${formatDateStr(rental?.startDate)} a ${formatDateStr(rental?.expectedReturnDate)}\n`
       text += `*Data da Devolução:* ${rental?.actualReturnDate ? formatDateStr(rental.actualReturnDate) : formatDateStr(new Date().toISOString())}\n`
-      text += `*Valor Total do Contrato:* R$ ${(rental?.total || 0).toFixed(2)}\n`
+      text += `*Valor dos Itens Devolvidos:* R$ ${receiptTotal.toFixed(2)}\n`
     } else {
       text += `${formatDateStr(rental?.startDate)} a ${formatDateStr(rental?.expectedReturnDate)}\n`
-      text += `*Valor Total:* R$ ${(rental?.total || 0).toFixed(2)}\n`
+      text += `*Valor Total:* R$ ${receiptTotal.toFixed(2)}\n`
     }
 
     if (type === 'return' && renewalInfo) {
@@ -127,7 +163,7 @@ export function ReceiptDialog({
           text += `*Taxa Diária:* R$ ${(lf.lateFeeValue || 0).toFixed(2)}\n`
         }
         text += `*Total da Multa:* R$ ${lf.total.toFixed(2)}\n`
-        text += `*Total Geral (Contrato + Multa):* R$ ${((rental?.total || 0) + lf.total).toFixed(2)}\n`
+        text += `*Total Geral (Itens Devolvidos + Multa):* R$ ${(receiptTotal + lf.total).toFixed(2)}\n`
       }
     }
 
@@ -354,7 +390,7 @@ export function ReceiptDialog({
               <div className="border-t border-b py-2 mb-4">
                 <span className="font-semibold">Equipamentos:</span>
                 <ul className="mt-1 space-y-1">
-                  {getValidRentalItems(rental.items).map((ri, idx) => {
+                  {itemsForReceipt.map((ri, idx) => {
                     const item = inventory.find((i) => i.id === ri.itemId)
                     const itemName = ri.name || item?.name || 'Item'
                     const itemCode = ri.code || item?.code || '-'
@@ -372,17 +408,12 @@ export function ReceiptDialog({
                     )
                   })}
                 </ul>
-                {(() => {
-                  const fRaw = findFreightItem(rental.items)
-                  const fPrice = fRaw ? Number(fRaw.totalPrice || fRaw.total_price || 0) : 0
-                  if (!fRaw || !fPrice) return null
-                  return (
-                    <div className="mt-2 pt-2 border-t border-dashed flex justify-between">
-                      <span className="font-semibold">Frete:</span>
-                      <span>R$ {fPrice.toFixed(2)}</span>
-                    </div>
-                  )
-                })()}
+                {showFreight && (
+                  <div className="mt-2 pt-2 border-t border-dashed flex justify-between">
+                    <span className="font-semibold">Frete:</span>
+                    <span>R$ {freightPrice.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -412,7 +443,7 @@ export function ReceiptDialog({
                     R${' '}
                     {type === 'renewal' && renewalInfo
                       ? renewalInfo.addedTotal.toFixed(2)
-                      : rental.total.toFixed(2)}
+                      : receiptTotal.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -449,8 +480,8 @@ export function ReceiptDialog({
                     <span>R$ {(renewalInfo as any).total.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between font-bold pt-2 border-t border-pink-200">
-                    <span>Total Pago (Contrato + Multa):</span>
-                    <span>R$ {((rental?.total || 0) + (renewalInfo as any).total).toFixed(2)}</span>
+                    <span>Total Pago (Itens Devolvidos + Multa):</span>
+                    <span>R$ {(receiptTotal + (renewalInfo as any).total).toFixed(2)}</span>
                   </div>
                 </div>
               )}

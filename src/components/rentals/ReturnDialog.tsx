@@ -37,7 +37,7 @@ export function ReturnDialog({
   rental: Rental | null
   open: boolean
   onOpenChange: (v: boolean) => void
-  onReturned?: (rental: Rental, lateFeeInfo?: any) => void
+  onReturned?: (rental: Rental, lateFeeInfo?: any, returnedItems?: any[]) => void
 }) {
   const { inventory, settings, updateRental } = useMainStore()
   const { toast } = useToast()
@@ -216,7 +216,26 @@ export function ReturnDialog({
 
       onOpenChange(false)
       if (onReturned) {
-        onReturned(updatedRental, lateFee)
+        // Lista específica dos itens que acabaram de ser devolvidos nesta ação,
+        // com a quantidade efetivamente devolvida agora (para o recibo imediato
+        // de devolução parcial mostrar somente o que foi devolvido).
+        const justReturnedItems = Object.entries(selectedItems)
+          .map(([itemId, qty]) => {
+            const matched = (updatedItems || []).find(
+              (ri: any) =>
+                String(ri.itemId || ri.item_id || '') === itemId ||
+                String(ri.inventory_id || '') === itemId,
+            )
+            if (!matched) return null
+            return {
+              ...matched,
+              itemId,
+              qty,
+              returnedQty: qty,
+            }
+          })
+          .filter(Boolean)
+        onReturned(updatedRental, lateFee, justReturnedItems)
       }
     } catch (error: any) {
       const fieldErrs = extractFieldErrors(error)

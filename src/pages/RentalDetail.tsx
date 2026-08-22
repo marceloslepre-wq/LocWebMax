@@ -21,7 +21,12 @@ import { useLocations } from '@/hooks/use-locations'
 import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
 import pb from '@/lib/pocketbase/client'
 import { rentalsService } from '@/services/rentals'
-import { getValidRentalItems } from '@/lib/rental-items'
+import {
+  getReturnedRentalItems,
+  getInPossessionRentalItems,
+  sumItemsTotal,
+  findFreightItem,
+} from '@/lib/rental-items'
 
 export default function RentalDetail() {
   const { id } = useParams()
@@ -462,6 +467,11 @@ export default function RentalDetail() {
   const finalHtml = useMemo(generateContractHtml, [rental, settings, customer, inventory])
 
   const getReturnReceipt = () => {
+    // Somente os itens efetivamente devolvidos (returnedQty > 0).
+    const returnedItems = getReturnedRentalItems(rental?.items || [])
+    const returnedTotal = sumItemsTotal(returnedItems)
+    const fmtBRL = (v: number) =>
+      new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
     return `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #000; padding: 20px;">
         <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
@@ -479,16 +489,17 @@ export default function RentalDetail() {
 
         <p>Declaramos para os devidos fins que recebemos em devolução os equipamentos abaixo descritos, referentes ao contrato supracitado:</p>
 
-        <table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 40px;">
+        <table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 20px;">
           <thead>
             <tr>
               <th style="border: 1px solid #000; padding: 8px; text-align: center;">Qtd</th>
               <th style="border: 1px solid #000; padding: 8px; text-align: left;">Descrição</th>
               <th style="border: 1px solid #000; padding: 8px; text-align: left;">SKU/Cód</th>
+              <th style="border: 1px solid #000; padding: 8px; text-align: right;">Valor</th>
             </tr>
           </thead>
           <tbody>
-            ${getValidRentalItems(rental?.items || [])
+            ${returnedItems
               .map((ri) => {
                 const item = inventory.find((i) => i.id === ri.itemId)
                 const itemName = ri.name || item?.name || 'Item'
@@ -498,11 +509,18 @@ export default function RentalDetail() {
                   <td style="border: 1px solid #000; padding: 8px; text-align: center;">${ri.qty}</td>
                   <td style="border: 1px solid #000; padding: 8px;">${itemName}</td>
                   <td style="border: 1px solid #000; padding: 8px;">${itemCode}</td>
+                  <td style="border: 1px solid #000; padding: 8px; text-align: right;">${fmtBRL(ri.totalPrice || 0)}</td>
                 </tr>
               `
               })
               .join('')}
           </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3" style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold;">Total Devolvido:</td>
+              <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold;">${fmtBRL(returnedTotal)}</td>
+            </tr>
+          </tfoot>
         </table>
 
         <p>O(s) equipamento(s) foi(ram) devolvido(s) e passará(ão) por vistoria técnica.</p>
@@ -518,6 +536,27 @@ export default function RentalDetail() {
   }
 
   const getDeliveryReceipt = () => {
+    // Somente os itens ainda em posse do cliente (returnedQty < qty).
+    // Após devoluções parciais o recibo de locação/renovação deve refletir
+    // somente o produto ainda locado.
+    const inPossessionItems = getInPossessionRentalItems(rental?.items || [])
+    const itemsTotal = sumItemsTotal(inPossessionItems)
+    const freightItem = findFreightItem(rental?.items || [])
+    const freightPrice = freightItem
+      ? Number(freightItem.totalPrice || freightItem.total_price || 0)
+      : 0
+    const grandTotal = itemsTotal + (freightPrice > 0 ? freightPrice : 0)
+    const fmtBRL = (v: number) =>
+      new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+
+    const freightRow =
+      freightItem && freightPrice
+        ? `<tr>
+          <td colspan="3" style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold;">Frete</td>
+          <td style="border: 1px solid #000; padding: 8px; text-align: right;">${fmtBRL(freightPrice)}</td>
+        </tr>`
+        : ''
+
     return `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #000; padding: 20px;">
         <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
@@ -535,16 +574,17 @@ export default function RentalDetail() {
 
         <p>Declaramos para os devidos fins que o locatário retirou/recebeu os equipamentos abaixo descritos, em perfeitas condições de uso:</p>
 
-        <table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 40px;">
+        <table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 20px;">
           <thead>
             <tr>
               <th style="border: 1px solid #000; padding: 8px; text-align: center;">Qtd</th>
               <th style="border: 1px solid #000; padding: 8px; text-align: left;">Descrição</th>
               <th style="border: 1px solid #000; padding: 8px; text-align: left;">SKU/Cód</th>
+              <th style="border: 1px solid #000; padding: 8px; text-align: right;">Valor</th>
             </tr>
           </thead>
           <tbody>
-            ${getValidRentalItems(rental?.items || [])
+            ${inPossessionItems
               .map((ri) => {
                 const item = inventory.find((i) => i.id === ri.itemId)
                 const itemName = ri.name || item?.name || 'Item'
@@ -554,11 +594,19 @@ export default function RentalDetail() {
                   <td style="border: 1px solid #000; padding: 8px; text-align: center;">${ri.qty}</td>
                   <td style="border: 1px solid #000; padding: 8px;">${itemName}</td>
                   <td style="border: 1px solid #000; padding: 8px;">${itemCode}</td>
+                  <td style="border: 1px solid #000; padding: 8px; text-align: right;">${fmtBRL(ri.totalPrice || 0)}</td>
                 </tr>
               `
               })
               .join('')}
+            ${freightRow}
           </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3" style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold;">Total:</td>
+              <td style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold;">${fmtBRL(grandTotal)}</td>
+            </tr>
+          </tfoot>
         </table>
 
         <div style="margin-top: 60px; text-align: center;">
