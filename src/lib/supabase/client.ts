@@ -11,12 +11,13 @@ export const supabase = {
   rpc: () => Promise.reject(new Error(ERROR_MSG)),
   auth: {
     getSession: () => Promise.resolve({ data: { session: null }, error: null }),
-    onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+    onAuthStateChange: (_callback?: any) => ({ data: { subscription: { unsubscribe: () => {} } } }),
     signInWithPassword: () => Promise.reject(new Error(ERROR_MSG)),
     signUp: () => Promise.reject(new Error(ERROR_MSG)),
     signOut: () => Promise.resolve({ error: null }),
-    resetPasswordForEmail: () => Promise.reject(new Error(ERROR_MSG)),
-    updateUser: () => Promise.reject(new Error(ERROR_MSG)),
+    resetPasswordForEmail: (_email?: string, _opts?: any) =>
+      Promise.resolve({ data: {}, error: null }),
+    updateUser: (_attrs?: any) => Promise.resolve({ data: { user: null }, error: null }),
   },
   storage: {
     from: () => ({

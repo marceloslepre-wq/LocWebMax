@@ -131,10 +131,10 @@ export default function Payments() {
     if (rental) {
       setAmount(String(rental.total || 0))
       const customer = customers.find(
-        (c: any) => c.id === (rental.customerId || rental.customer_id),
+        (c: any) => c.id === (rental.customerId || (rental as any).customer_id),
       )
       if (customer?.email) setPayerEmail(customer.email)
-      const contractNum = rental.contractNumber || rental.contract_number || id
+      const contractNum = rental.contractNumber || (rental as any).contract_number || id
       setDescription(`Locação ${contractNum}`)
     }
     setFieldErrors({})
@@ -185,7 +185,7 @@ export default function Payments() {
         const publicUrl = getPublicPaymentUrl(result.id)
         const rental = rentals.find((r: any) => r.id === rentalId)
         const customer = rental
-          ? customers.find((c: any) => c.id === (rental.customerId || rental.customer_id))
+          ? customers.find((c: any) => c.id === (rental.customerId || (rental as any).customer_id))
           : null
         const phone = customer?.phoneCell || customer?.phoneRes || customer?.phoneCom
         const name = customer?.name || ''
@@ -552,10 +552,12 @@ export default function Payments() {
                         ? (() => {
                             const r = rentals.find((x: any) => x.id === rentalId)
                             const c = customers.find(
-                              (x: any) => x.id === (r?.customerId || r?.customer_id),
+                              (x: any) => x.id === (r?.customerId || (r as any)?.customer_id),
                             )
                             const cnNum =
-                              r?.contractNumber || r?.contract_number || r?.id?.substring(0, 8)
+                              r?.contractNumber ||
+                              (r as any)?.contract_number ||
+                              r?.id?.substring(0, 8)
                             return c ? `${cnNum} - ${c.name}` : cnNum || 'Selecione...'
                           })()
                         : 'Selecione uma locação ativa...'}
@@ -571,10 +573,10 @@ export default function Payments() {
                       <CommandGroup>
                         {activeRentals.map((r: any) => {
                           const c = customers.find(
-                            (x: any) => x.id === (r.customerId || r.customer_id),
+                            (x: any) => x.id === (r.customerId || (r as any).customer_id),
                           )
                           const cnNum =
-                            r.contractNumber || r.contract_number || r.id?.substring(0, 8)
+                            r.contractNumber || (r as any).contract_number || r.id?.substring(0, 8)
                           return (
                             <CommandItem
                               key={r.id}

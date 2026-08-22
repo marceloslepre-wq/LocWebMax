@@ -87,131 +87,270 @@ function getDurationDays(start?: string, end?: string): number {
   return diff > 0 ? diff : 0
 }
 
-export const DEFAULT_CONTRACT_TEMPLATE_HTML = `<div style="font-family: Arial, sans-serif; color: #000; line-height: 1.6; max-width: 800px; margin: 0 auto; background: white; padding: 40px; box-sizing: border-box; font-size: 14px;">
+export const DEFAULT_CONTRACT_TEMPLATE_HTML = `<div style="font-family: Arial, sans-serif; color: #111; line-height: 1.6; max-width: 820px; margin: 0 auto; background: #ffffff; padding: 40px 48px; box-sizing: border-box; font-size: 13.5px; position: static;">
 
-  <p style="text-align: justify; margin-top: 10px;">
-    Constitui objeto do presente termo de condições de locação, uso e guarda de equipamento hospitalar de propriedade de {{companyName}}.
-  </p>
-
-  <div style="margin-top: 15px; border: 1px solid #ccc; padding: 15px; border-radius: 5px;">
-    <p style="margin: 0 0 8px 0;"><strong>Locatário(a):</strong> {{customerName}}</p>
-    <p style="margin: 0 0 8px 0;"><strong>Endereço:</strong> {{customerAddress}}</p>
-    <p style="margin: 0 0 8px 0;"><strong>Bairro:</strong> {{bairroCliente}} | <strong>Cidade:</strong> {{cidadeCliente}} | <strong>Estado:</strong> {{estadoCliente}} | <strong>CEP:</strong> {{cepCliente}}</p>
-    <p style="margin: 0 0 8px 0;"><strong>CPF/CNPJ:</strong> {{customerDocument}} | <strong>RG:</strong> {{customerRg}}</p>
-    <p style="margin: 0 0 8px 0;"><strong>Telefones:</strong> {{customerPhone}}</p>
-    <p style="margin: 0;"><strong>Email:</strong> {{customerEmail}}</p>
+  <!-- CABEÇALHO DO CONTRATO -->
+  <div style="text-align: center; margin-bottom: 24px;">
+    <p style="font-size: 11px; letter-spacing: 2px; color: #666; text-transform: uppercase; margin: 0 0 6px 0;">
+      {{companyName}}
+    </p>
+    <h1 style="font-size: 18px; font-weight: bold; text-transform: uppercase; margin: 0 0 4px 0; letter-spacing: 0.5px; color: #000;">
+      CONTRATO DE LOCAÇÃO, USO E GUARDA DE EQUIPAMENTO HOSPITALAR
+    </h1>
+    <p style="font-size: 12px; font-style: italic; color: #444; margin: 0 0 6px 0;">
+      Instrumento Particular de Locação de Bens Móveis com Força de Título Executivo Extrajudicial
+    </p>
+    <p style="font-size: 12px; color: #666; margin: 0;">
+      {{currentDateFull}}
+    </p>
   </div>
 
-  <p style="margin-top: 15px;"><strong>Endereço de Entrega:</strong> {{deliveryAddress}}</p>
-  <p style="margin-top: 5px;"><strong>Local de Retirada/Entrega:</strong> {{pickupLocation}}</p>
-
-  <p style="text-align: justify; margin-top: 15px;">
-    <strong>Locador:</strong> {{companyName}}, {{companyAddress}}. CNPJ: {{companyDocument}}.
+  <!-- TEXTO INTRODUTÓRIO -->
+  <p style="text-align: justify; margin: 0 0 16px 0; text-indent: 24px;">
+    Constitui objeto do presente termo de condições de locação, uso e guarda de equipamento hospitalar de propriedade de <strong>{{companyName}}</strong>, doravante denominada simplesmente <strong>LOCADOR</strong>, inscrita no CNPJ sob o nº <strong>{{companyDocument}}</strong>, com sede na <strong>{{companyAddress}}</strong>.
   </p>
 
-  <p style="text-align: justify; margin-top: 15px;">
-    <strong>1 -</strong> Pelo presente instrumento o locador aluga à locatária o(s) equipamento(s) abaixo discriminado(s), e se obriga a locá-lo(s) nas condições estabelecidas neste contrato: <strong>"{{rentalId}}"</strong>
-  </p>
-
-  <p style="margin-top: 20px;"><strong>2 - PREÇO E PRAZO DE LOCAÇÃO:</strong></p>
-  <table style="width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px;">
-    <thead>
-      <tr style="background-color: #f5f5f5;">
-        <th style="border: 1px solid #000; padding: 8px; text-align: center; width: 60px;">Qtd</th>
-        <th style="border: 1px solid #000; padding: 8px; text-align: left;">Descrição do Equipamento</th>
-        <th style="border: 1px solid #000; padding: 8px; text-align: left; width: 120px;">Código</th>
-        <th style="border: 1px solid #000; padding: 8px; text-align: center; width: 100px;">Retirada</th>
-        <th style="border: 1px solid #000; padding: 8px; text-align: center; width: 100px;">Devolução</th>
-        <th style="border: 1px solid #000; padding: 8px; text-align: right; width: 100px;">Valor (R$)</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{itemsList}}
-    </tbody>
-  </table>
-
-  <p style="margin-top: 10px;">
-    <strong>Valor dos itens:</strong> {{valorTotalContrato}}<br/>
-    <strong>Frete:</strong> {{frete}}<br/>
-    <strong>Código de Rastreamento:</strong> {{codigoRastreamento}}<br/>
-    <strong>Valor total:</strong> {{totalValue}}
-  </p>
-
-  <p style="text-align: justify; margin-top: 15px;">
-    <strong>2.1 -</strong> O locador compromete a manter no endereço informado no momento da locação responsável para receber o equipamento locado, esse deverá assinar o recibo de entrega no momento da entrega pela transportadora ou em loja física se for o caso.<br/><br/>
-    <strong>2.2 -</strong> No primeiro dia após o termino do prazo do contrato de locação a locatária deverá entrar em sua conta no site do locador e solicitar renovação ou cancelamento com recolhimento do(s) produto(s) ora locado(s), ou se preferir entrar em contato no Telefone: (0xx27)3026-3300 ou email: aluguel@hospitalhome.com.br, para efetuar a renovação do aluguel e pagamento do mês seguinte dentro da vigência do contrato.<br/><br/>
-    <strong>2.3 -</strong> Após o término do prazo do contrato a locatária deverá entrar em contato com o locador para agendar a retirada do equipamento (se for o caso) ou marcar dia de devolução no mesmo local da retirada, a locatária tem um prazo de até 03 (três) dias corridos para fazer a devolução sem que haja cobrança de pró-rata da locação.<br/><br/>
-    <strong>2.4 -</strong> Se a devolução for por transportadora a locatária tem que disponibilizar o equipamento para a coleta pela transportadora no dia e hora combinado sob pena de ser cobrado pela remarcação da mesma.
-  </p>
-
-  <p style="margin-top: 20px;"><strong>3 - DO VALOR DE VENDA E LIQUIDEZ DA DÍVIDA:</strong></p>
-  <p style="text-align: justify; margin-top: 5px;">
-    <strong>3.1 -</strong> O valor de venda de cada equipamento ora locado está descrito na tabela abaixo, servindo como referência para fins de liquidação da dívida em caso de perda, extravio, dano ou não devolução do equipamento.<br/><br/>
-    <strong>3.2 -</strong> Em caso de perda, extravio, dano ou não devolução do(s) equipamento(s) locado(s), a dívida torna-se líquida, certa e exigível, correspondendo ao valor de venda do(s) equipamento(s) conforme tabela abaixo, deduzidos os valores eventualmente pagos a título de aluguel.<br/><br/>
-    <strong>3.3 -</strong> O locatário assinará uma nota promissória no valor de venda do equipamento ora locado, a título de garantia. Em caso de inadimplemento, o locador poderá levar o título a protesto, independentemente de protesto do contrato.
-  </p>
-
-  <div style="margin: 15px 0;">
-    {{tabelaValorVenda}}
-  </div>
-
-  <p style="margin-top: 20px;"><strong>4 - DO PAGAMENTO E REAJUSTE:</strong></p>
-  <p style="text-align: justify; margin-top: 5px;">
-    <strong>4.1 -</strong> O pagamento da locação deverá ser efetuado pelo locatário de acordo com o prazo estabelecido na cláusula 2, através da forma de pagamento: {{paymentMethod}}.<br/><br/>
-    <strong>4.2 -</strong> Os valores constantes neste contrato poderão ser reajustados anualmente conforme variação do IPCA ou índice similar, ou a critério do locador em caso de renovação do contrato.<br/><br/>
-    <strong>4.3 -</strong> A devolução do equipamento se dará da forma escolhida no momento da locação: se foi por transportadora será por transportadora; se foi por retirada em loja será por devolução na mesma loja que foi retirada.<br/><br/>
-    <strong>4.4 -</strong> A manutenção do(s) equipamento(s), objeto(s) do presente contrato é de total responsabilidade do locador; à Locatária cabe manter o(s) equipamento(s) em perfeitas condições de uso e avisar imediatamente ao LOCADOR sobre eventuais problemas que impeçam o seu adequado funcionamento; a danificação do equipamento pela Locatária implicará a compra do produto e seu pagamento ao Locador.<br/><br/>
-    <strong>4.5 -</strong> Em caso do equipamento locado for "cama hospitalar", sendo o endereço de entrega PRÉDIO, a entrega de cama hospitalar é realizada até a portaria principal do prédio, sendo de total responsabilidade do locatário o transporte até seu apartamento.<br/><br/>
-    <strong>4.6 -</strong> A transportadora não realiza a montagem do equipamento, este é feito pelo Locatário.
-  </p>
-
-  <p style="margin-top: 20px;"><strong>5 - DAS DISPOSIÇÕES GERAIS E PENALIDADES:</strong></p>
-  <p style="text-align: justify; margin-top: 5px;">
-    <strong>5.1 -</strong> O locatário se compromete a, no tempo e na forma acordada entre as partes, realizar a entrega do bem locado em perfeito estado de conservação aos prepostos da contratada, sob pena de ser responsabilizado por perdas e danos.<br/><br/>
-    <strong>5.2 -</strong> Em caso de mora na devolução do equipamento sem prévio acordo de renovação contratual e, em caso de inadimplemento do valor correspondente ao aluguel, fica o locatário ciente de que incidirá multa diária de R$ 100,00 (cem reais) até o limite do valor do equipamento, sem prejuízo da obrigação de arcar com os alugueis proporcionais ao tempo em que permanecer na posse do mesmo, sobre os quais incidirão juros de 1% (um por cento ao mês), correção monetária e multa de 2% (dois por cento) do valor devido.<br/><br/>
-    <strong>5.3 -</strong> Em caso de inadimplemento de quaisquer obrigações acima, fica o locatário ciente de que o locador poderá negativá-lo junto aos órgãos de proteção ao crédito e levar o título a protesto, sem prejuízo do direito de ação, ficando a cargo do locatário o pagamento de despesas de cartório e honorários advocatícios em 20% (vinte por cento).<br/><br/>
-    <strong>5.4 -</strong> Não é fornecido Nota Fiscal para locação de bens móveis, fornecemos recibo conforme o Artigo 1 da Lei 8846 de 1994.<br/><br/>
-    <strong>5.5 -</strong> Na devolução antes do prazo previsto, não haverá ressarcimento de valores.<br/><br/>
-    <strong>5.6 -</strong> Após 07 dias de inadimplência em caso de relocação, o contrato será rescindido automaticamente, devendo o locatário fazer a devolução do equipamento ora locado imediatamente, caso não ocorra poderá o locador tomar as providências previstas na cláusula 5.3 do presente contrato.<br/><br/>
-    <strong>5.7 -</strong> Os equipamentos locados são de relocações contínua, então podem conter sinais de uso como arranhões, manchas, desgastes de peças.<br/><br/>
-    <strong>5.8 -</strong> Todos os equipamentos assim que retornam da locação passam por manutenção preventiva e higienização, antes de serem relocados.<br/><br/>
-    <strong>5.9 -</strong> Pode haver diferença na cor e nos modelos locados, mas todas as características informadas compõem todos os produtos locados.<br/><br/>
-    <strong>5.10 -</strong> Não garantimos marca e modelos específicos, pois trabalhamos com várias marcas e modelos, as fotos dos produtos são ilustrativas de produto novo.
-  </p>
-
-  <p style="text-align: justify; margin-top: 20px;">
-    <strong>6 -</strong> As partes elegem o foro da comarca de Vitória/ES para resolução de eventuais disputas relacionadas a este termo.
-  </p>
-
-  <div style="margin-top: 60px; text-align: center; font-size: 15px;">
-    <div style="width: 60%; margin: 0 auto;">
-      <div style="border-bottom: 1px solid #000; margin-bottom: 8px;"></div>
-      <strong>Assinatura do Locatário (a)</strong><br/>
-      <span style="font-size: 13px; color: #555;">{{customerName}}</span>
+  <!-- DADOS DO LOCATÁRIO E ENTREGA -->
+  <div style="margin: 0 0 16px 0; border: 1px solid #d1d5db; background-color: #fcfcfc; padding: 14px 16px; border-radius: 6px;">
+    <div style="margin-bottom: 8px;">
+      <strong>LOCATÁRIO(A):</strong> {{customerName}}
+    </div>
+    <div style="margin-bottom: 8px;">
+      <strong>Endereço:</strong> {{customerAddress}}
+    </div>
+    <div style="margin-bottom: 8px;">
+      <strong>CPF/CNPJ:</strong> {{customerDocument}} &nbsp;|&nbsp; <strong>RG:</strong> {{customerRg}}
+    </div>
+    <div style="margin-bottom: 8px;">
+      <strong>Telefones:</strong> {{customerPhone}} &nbsp;|&nbsp; <strong>Email:</strong> {{customerEmail}}
+    </div>
+    <div style="margin-bottom: 8px;">
+      <strong>Endereço de Entrega:</strong> {{deliveryAddress}}
+    </div>
+    <div style="margin-bottom: 0;">
+      <strong>Local de Retirada/Entrega:</strong> {{pickupLocation}}
     </div>
   </div>
 
-  <table style="width: 100%; margin-top: 60px; text-align: center; font-size: 13px; border-collapse: collapse;">
+  <!-- CLÁUSULA 1 -->
+  <p style="text-align: justify; margin: 0 0 14px 0;">
+    <strong>1 -</strong> Pelo presente instrumento o locador aluga à locatária o(s) equipamento(s) abaixo discriminado(s), e se obriga a locá-lo(s) nas condições estabelecidas neste contrato: <strong>"{{rentalId}}"</strong>.
+  </p>
+
+  <!-- CLÁUSULA 2 -->
+  <p style="margin: 18px 0 8px 0; font-weight: bold; font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px;">
+    2 – DO PREÇO E PRAZO DE LOCAÇÃO
+  </p>
+
+  <!-- TABELA DE ITENS -->
+  <div style="margin: 10px 0 14px 0; width: 100%; overflow-x: auto;">
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin: 0; background: #fff;">
+      <thead>
+        <tr style="background-color: #f3f4f6;">
+          <th style="border: 1px solid #9ca3af; padding: 8px 6px; text-align: center; width: 50px;">Qtd</th>
+          <th style="border: 1px solid #9ca3af; padding: 8px; text-align: left;">Descrição do Equipamento</th>
+          <th style="border: 1px solid #9ca3af; padding: 8px; text-align: left; width: 110px;">Código</th>
+          <th style="border: 1px solid #9ca3af; padding: 8px; text-align: center; width: 95px;">Retirada</th>
+          <th style="border: 1px solid #9ca3af; padding: 8px; text-align: center; width: 95px;">Devolução</th>
+          <th style="border: 1px solid #9ca3af; padding: 8px; text-align: right; width: 105px;">Valor (R$)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{itemsList}}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- RESUMO DE VALORES E FRETE -->
+  <div style="margin: 0 0 14px 0; background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 12px 16px; border-radius: 4px; display: block;">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 6px;">
+      <div><strong>Valor dos Itens:</strong> {{valorTotalContrato}}</div>
+      <div><strong>Valor do Frete:</strong> {{frete}}</div>
+      <div><strong>Código de Rastreamento:</strong> {{codigoRastreamento}}</div>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; border-top: 1px dashed #d1d5db; padding-top: 6px;">
+      <div><strong>Valor Total (com frete):</strong> <span style="font-size: 14px; font-weight: bold;">{{totalValue}}</span></div>
+      <div><strong>Forma de Pagamento:</strong> {{paymentMethod}}</div>
+      <div><strong>Período da Locação:</strong> {{startDate}} a {{expectedReturnDate}} ({{contractDuration}} dias)</div>
+    </div>
+  </div>
+
+  <!-- SUBCLÁUSULAS 2.1 a 2.4 -->
+  <div style="margin: 0 0 16px 0; text-align: justify;">
+    <p style="margin: 0 0 8px 0;">
+      <strong>2.1 –</strong> O <strong>LOCATÁRIO</strong> compromete-se a manter no endereço informado no momento da locação pessoa responsável para receber o equipamento locado, a qual deverá assinar o recibo de entrega no ato da entrega pela transportadora ou em loja física, se for o caso.
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>2.2 –</strong> No primeiro dia após o término do prazo do contrato de locação, o <strong>LOCATÁRIO</strong> deverá entrar em sua conta no site do <strong>LOCADOR</strong> e solicitar renovação ou cancelamento com recolhimento do(s) produto(s) ora locado(s), ou entrar em contato pelo Telefone: (27) 3026-3300 ou e-mail: aluguel@hospitalhome.com.br, para efetuar a renovação do aluguel e pagamento do período seguinte dentro da vigência do contrato.
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>2.3 –</strong> Após o término do prazo do contrato, o <strong>LOCATÁRIO</strong> deverá entrar em contato com o <strong>LOCADOR</strong> para agendar a retirada do equipamento (se for o caso) ou marcar dia de devolução no mesmo local da retirada. O locatário tem prazo de até 03 (três) dias corridos para fazer a devolução sem que haja cobrança de pró-rata da locação.
+    </p>
+    <p style="margin: 0;">
+      <strong>2.4 –</strong> Se a devolução for por transportadora, o <strong>LOCATÁRIO</strong> deverá disponibilizar o equipamento para coleta pela transportadora no dia e hora combinados, sob pena de ser cobrado pela remarcação da mesma.
+    </p>
+  </div>
+
+  <!-- CLÁUSULA 3 -->
+  <p style="margin: 18px 0 8px 0; font-weight: bold; font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px;">
+    3 – DO VALOR DE VENDA DO EQUIPAMENTO E DA LIQUIDEZ DA DÍVIDA (CLÁUSULA ESPECÍFICA PARA FINS DE PROTESTO)
+  </p>
+
+  <p style="text-align: justify; margin: 0 0 10px 0;">
+    <strong>3.1 –</strong> Para todos os fins de direito, inclusive para fins de protesto extrajudicial, as partes declaram e acordam expressamente que o <strong>VALOR DE VENDA</strong> de cada equipamento locado, vigente na data da contratação, é o seguinte:
+  </p>
+
+  <!-- TABELA DE VALORES DE VENDA -->
+  <div style="margin: 10px 0 14px 0; width: 100%; overflow-x: auto;">
+    {{tabelaValorVenda}}
+  </div>
+
+  <div style="margin: 0 0 16px 0; text-align: justify;">
+    <p style="margin: 0 0 8px 0;">
+      <strong>3.2 –</strong> O valor de venda acima declarado é <strong>LÍQUIDO, CERTO E EXIGÍVEL</strong> e será devido integralmente pelo <strong>LOCATÁRIO</strong> em caso de perda, extravio, furto, roubo, destruição total ou parcial, dano irreparável ou não devolução do(s) equipamento(s) ao término do contrato ou após notificação do locador, servindo como base líquida para emissão de certidão de dívida ou nota promissória para fins de protesto extrajudicial (nos termos da Lei nº 9.492/1997 e do Provimento nº 167/2024 do CNJ), sendo passível de apuração por meio de conta gráfica (planilha de cálculo) assinada pelo credor, dispensando-se cálculo judicial complexo.
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>3.3 –</strong> Em caso de perda, extravio, dano ou não devolução, serão deduzidos do valor de venda tão somente os valores quitados a título de caução, se houver, não se confundindo os aluguéis mensais com amortização do valor do bem.
+    </p>
+    <p style="margin: 0 0 4px 0;">
+      <strong>3.4 – FÓRMULA DE CÁLCULO para fins de liquidez:</strong>
+    </p>
+    <p style="margin: 0 0 4px 0; padding-left: 16px;">
+      <strong>(a) Aluguel prorata</strong> = (valor mensal &divide; 30) &times; número de dias em atraso na devolução;
+    </p>
+    <p style="margin: 0 0 4px 0; padding-left: 16px;">
+      <strong>(b) Multa diária por mora = R$ 100,00 (cem reais)</strong> por dia de atraso na devolução, limitada ao valor de venda do equipamento;
+    </p>
+    <p style="margin: 0 0 4px 0; padding-left: 16px;">
+      <strong>(c) Juros de mora = 1% (um por cento)</strong> ao mês sobre o valor principal devido;
+    </p>
+    <p style="margin: 0 0 4px 0; padding-left: 16px;">
+      <strong>(d) Multa por inadimplência = 2% (dois por cento)</strong> sobre o valor devido;
+    </p>
+    <p style="margin: 0 0 8px 0; padding-left: 16px;">
+      <strong>(e) Correção monetária</strong> pelo índice IPCA acumulado, se superior a 6 meses a contar do vencimento.
+    </p>
+    <p style="margin: 0;">
+      <strong>3.5 –</strong> Este contrato, por ser instrumento particular assinado pelo devedor (<strong>LOCATÁRIO</strong>) e por <strong>02 (duas) testemunhas</strong>, constitui <strong>TÍTULO EXECUTIVO EXTRAJUDICIAL</strong> nos termos do <em>Art. 784, inciso III, do Código de Processo Civil de 2015</em>, sendo hábil para protesto extrajudicial em cartório de protesto de títulos e documentos de dívida, independentemente da emissão de nota promissória, cheque, duplicata ou qualquer outro título cambial.
+    </p>
+  </div>
+
+  <!-- CLÁUSULA 4 -->
+  <p style="margin: 18px 0 8px 0; font-weight: bold; font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px;">
+    4 – DAS CONDIÇÕES DE ENTREGA, USO E MANUTENÇÃO
+  </p>
+
+  <div style="margin: 0 0 16px 0; text-align: justify;">
+    <p style="margin: 0 0 8px 0;">
+      <strong>4.1 –</strong> A devolução do equipamento se dará da forma escolhida no momento da locação: se foi por transportadora será por transportadora; se foi por retirada em loja será por devolução na mesma loja em que foi retirado.
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>4.2 –</strong> A manutenção do(s) equipamento(s), objeto(s) do presente contrato, é de total responsabilidade do locador; à Locatária cabe manter o(s) equipamento(s) em perfeitas condições de uso e avisar imediatamente ao <strong>LOCADOR</strong> sobre eventuais problemas que impeçam o seu adequado funcionamento. A danificação do equipamento pela Locatária implicará a obrigação de indenizar o produto ao Locador pelo seu valor de venda.
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>4.3 –</strong> Em caso de o equipamento locado ser "cama hospitalar" e o endereço de entrega for em <strong>PRÉDIO</strong>, a entrega será realizada até a portaria principal do prédio, sendo de total responsabilidade do <strong>LOCATÁRIO</strong> o transporte até seu apartamento.
+    </p>
+    <p style="margin: 0;">
+      <strong>4.4 –</strong> A transportadora não realiza a montagem do equipamento, sendo esta realizada pelo <strong>LOCATÁRIO</strong>.
+    </p>
+  </div>
+
+  <!-- CLÁUSULA 5 -->
+  <p style="margin: 18px 0 8px 0; font-weight: bold; font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px;">
+    5 – DAS DISPOSIÇÕES GERAIS E PENALIDADES
+  </p>
+
+  <div style="margin: 0 0 16px 0; text-align: justify;">
+    <p style="margin: 0 0 8px 0;">
+      <strong>5.1 –</strong> O <strong>LOCATÁRIO</strong> se compromete a realizar a entrega do bem locado em perfeito estado de conservação aos prepostos do <strong>LOCADOR</strong>, sob pena de ser responsabilizado por perdas e danos.
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>5.2 –</strong> Em caso de mora na devolução do equipamento sem prévio acordo de renovação contratual, incidirá multa diária de <strong>R$ 100,00 (cem reais)</strong> até o limite do valor de venda do equipamento, sem prejuízo da obrigação de arcar com os aluguéis proporcionais (pro-rata), juros de mora de 1% ao mês, correção monetária e multa de 2%.
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>5.3 –</strong> Em caso de inadimplemento de quaisquer obrigações, fica o locatário ciente de que o locador poderá negativá-lo junto aos órgãos de proteção ao crédito (SPC/SERASA) e levar o título a protesto extrajudicial e execução judicial, respondendo o locatário por custas cartorárias/judiciais e honorários advocatícios em 20% (vinte por cento).
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>5.4 –</strong> Não é fornecida Nota Fiscal para locação de bens móveis, fornecendo-se recibo de locação conforme o Artigo 1º da Lei nº 8.846/1994.
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>5.5 –</strong> Na devolução antes do prazo previsto, não haverá ressarcimento de valores pagos.
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>5.6 –</strong> Após <strong>07 (sete) dias</strong> de inadimplência em caso de renovação, o contrato será rescindido automaticamente. Caso não ocorra a devolução imediata, o <strong>LOCADOR</strong> poderá considerar o equipamento como <strong>PERDA</strong>, sendo devido o valor de venda declarado na Cláusula 3.1.
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>5.7 –</strong> Os equipamentos locados são de relocações contínuas, podendo conter sinais normais de uso como arranhões e desgastes de peças, sem prejuízo da perfeita funcionalidade.
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>5.8 –</strong> Todos os equipamentos, assim que retornam da locação, passam por rigorosa manutenção preventiva e higienização antes de serem relocados.
+    </p>
+    <p style="margin: 0 0 8px 0;">
+      <strong>5.9 –</strong> Pode haver diferença na cor e nos modelos locados, mas todas as características essenciais informadas compõem os produtos locados.
+    </p>
+    <p style="margin: 0;">
+      <strong>5.10 –</strong> As fotos de produtos são ilustrativas.
+    </p>
+  </div>
+
+  <!-- CLÁUSULA 6 -->
+  <p style="margin: 18px 0 8px 0; font-weight: bold; font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px;">
+    6 – DO FORO
+  </p>
+  <p style="text-align: justify; margin: 0 0 20px 0;">
+    <strong>6.1 –</strong> As partes elegem o foro da comarca de Vitória/ES para resolução de eventuais disputas oriundas deste contrato, com renúncia expressa a qualquer outro, por mais privilegiado que seja.
+  </p>
+
+  <p style="text-align: justify; margin: 0 0 30px 0;">
+    E, por estarem assim justos e contratados, assinam o presente instrumento em 02 (duas) vias de igual teor e forma, juntamente com 02 (duas) testemunhas, para que produza seus jurídicos e legais efeitos.
+  </p>
+
+  <div style="text-align: right; margin-bottom: 35px; font-weight: bold;">
+    Vitória - ES, {{currentDateFull}}
+  </div>
+
+  <!-- ASSINATURAS PRINCIPAIS -->
+  <table style="width: 100%; border-collapse: collapse; margin-top: 30px; margin-bottom: 35px; table-layout: fixed;">
     <tr>
-      <td style="width: 45%; vertical-align: bottom;">
-        <div style="border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
-        <strong>Testemunha 1</strong><br/>
-        Nome: ____________________________<br/>
-        CPF: ____________________________
+      <td style="width: 46%; text-align: center; vertical-align: top; padding: 0 10px;">
+        <div style="border-bottom: 1px solid #000; margin-bottom: 6px;"></div>
+        <div style="font-size: 12px; font-weight: bold;">{{companyName}}</div>
+        <div style="font-size: 11px; color: #555;">CNPJ: {{companyDocument}}</div>
+        <div style="font-size: 11px; color: #666;">LOCADOR</div>
       </td>
-      <td style="width: 10%;"></td>
-      <td style="width: 45%; vertical-align: bottom;">
-        <div style="border-bottom: 1px solid #000; margin-bottom: 5px;"></div>
-        <strong>Testemunha 2</strong><br/>
-        Nome: ____________________________<br/>
-        CPF: ____________________________
+      <td style="width: 8%;"></td>
+      <td style="width: 46%; text-align: center; vertical-align: top; padding: 0 10px;">
+        <div style="border-bottom: 1px solid #000; margin-bottom: 6px;"></div>
+        <div style="font-size: 12px; font-weight: bold;">{{customerName}}</div>
+        <div style="font-size: 11px; color: #555;">CPF/CNPJ: {{customerDocument}}</div>
+        <div style="font-size: 11px; color: #666;">LOCATÁRIO(A)</div>
       </td>
     </tr>
   </table>
 
-  <p style="text-align: right; margin-top: 40px; font-weight: bold;">
-    Vitória - ES, {{currentDateFull}}
-  </p>
+  <!-- TESTEMUNHAS -->
+  <table style="width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed;">
+    <tr>
+      <td style="width: 46%; vertical-align: top; padding: 0 10px;">
+        <div style="border-bottom: 1px solid #000; margin-bottom: 6px;"></div>
+        <div style="font-size: 11px; font-weight: bold; text-align: center; margin-bottom: 4px;">Testemunha 1</div>
+        <div style="font-size: 11px; color: #444; line-height: 1.5;">
+          Nome: _____________________________________<br/>
+          CPF: ______________________________________
+        </div>
+      </td>
+      <td style="width: 8%;"></td>
+      <td style="width: 46%; vertical-align: top; padding: 0 10px;">
+        <div style="border-bottom: 1px solid #000; margin-bottom: 6px;"></div>
+        <div style="font-size: 11px; font-weight: bold; text-align: center; margin-bottom: 4px;">Testemunha 2</div>
+        <div style="font-size: 11px; color: #444; line-height: 1.5;">
+          Nome: _____________________________________<br/>
+          CPF: ______________________________________
+        </div>
+      </td>
+    </tr>
+  </table>
+
 </div>`
 
 export function renderContractHtml(params: RenderContractParams): string {
@@ -295,28 +434,28 @@ export function renderContractHtml(params: RenderContractParams): string {
       const totalVal = formatBRL(Number(ri.totalPrice || ri.total_price || 0))
       const qty = ri.qty ?? ri.quantity ?? 1
       return `<tr>
-        <td style="border: 1px solid #000; padding: 8px; text-align: center;">${qty}</td>
-        <td style="border: 1px solid #000; padding: 8px;">${item?.name || ri.name || 'Item Removido'}</td>
-        <td style="border: 1px solid #000; padding: 8px;">${item?.code || ri.code || '-'}</td>
-        <td style="border: 1px solid #000; padding: 8px; text-align: center;">${start}</td>
-        <td style="border: 1px solid #000; padding: 8px; text-align: center;">${end}</td>
-        <td style="border: 1px solid #000; padding: 8px; text-align: right;">${totalVal}</td>
+        <td style="border: 1px solid #9ca3af; padding: 8px 6px; text-align: center;">${qty}</td>
+        <td style="border: 1px solid #9ca3af; padding: 8px;">${item?.name || ri.name || 'Item Removido'}</td>
+        <td style="border: 1px solid #9ca3af; padding: 8px;">${item?.code || ri.code || '-'}</td>
+        <td style="border: 1px solid #9ca3af; padding: 8px; text-align: center;">${start}</td>
+        <td style="border: 1px solid #9ca3af; padding: 8px; text-align: center;">${end}</td>
+        <td style="border: 1px solid #9ca3af; padding: 8px; text-align: right; font-weight: 500;">${totalVal}</td>
       </tr>`
     })
     .join('')
 
   if (freightValue > 0) {
     itemsListHtml += `<tr>
-      <td colspan="5" style="border: 1px solid #000; padding: 8px; text-align: right; font-weight: bold;">Frete</td>
-      <td style="border: 1px solid #000; padding: 8px; text-align: right;">${formatBRL(freightValue)}</td>
+      <td colspan="5" style="border: 1px solid #9ca3af; padding: 8px; text-align: right; font-weight: bold;">Frete</td>
+      <td style="border: 1px solid #9ca3af; padding: 8px; text-align: right; font-weight: 500;">${formatBRL(freightValue)}</td>
     </tr>`
   }
 
-  const tabelaValorVenda = `<table style="width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px;">
+  const tabelaValorVenda = `<table style="width: 100%; border-collapse: collapse; margin: 0; font-size: 13px; background: #fff;">
     <thead>
-      <tr style="background-color: #f5f5f5;">
-        <th style="border: 1px solid #000; padding: 8px; text-align: left;">Equipamento</th>
-        <th style="border: 1px solid #000; padding: 8px; text-align: right; width: 200px;">Valor de Venda</th>
+      <tr style="background-color: #f3f4f6;">
+        <th style="border: 1px solid #9ca3af; padding: 8px; text-align: left;">Equipamento</th>
+        <th style="border: 1px solid #9ca3af; padding: 8px; text-align: right; width: 220px;">Valor de Venda</th>
       </tr>
     </thead>
     <tbody>
@@ -326,8 +465,8 @@ export function renderContractHtml(params: RenderContractParams): string {
           const item = inventory.find((i: any) => i.id === itemId)
           const salePrice = Number(item?.salePrice || item?.sale_price || 0)
           return `<tr>
-          <td style="border: 1px solid #000; padding: 8px;">${item?.name || ri.name || 'Item Removido'}</td>
-          <td style="border: 1px solid #000; padding: 8px; text-align: right;">${formatBRL(salePrice)}</td>
+          <td style="border: 1px solid #9ca3af; padding: 8px;">${item?.name || ri.name || 'Item Removido'}</td>
+          <td style="border: 1px solid #9ca3af; padding: 8px; text-align: right; font-weight: 500;">${formatBRL(salePrice)}</td>
         </tr>`
         })
         .join('')}

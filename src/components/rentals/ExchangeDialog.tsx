@@ -44,7 +44,7 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
         ? rental.items.filter((i: any) => i.itemId !== 'freight')
         : []
       if (items.length === 1) {
-        const firstItem = items[0]
+        const firstItem = items[0] as any
         const id =
           firstItem?.itemId ||
           firstItem?.inventoryId ||
@@ -79,10 +79,14 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
 
     const invItem = inventory.find((i) => i.id === selectedOldItemId)
     const dailyPrice =
-      item.dailyPrice || item.daily_price || invItem?.dailyPrice || invItem?.daily_price || 0
-    const quantity = item.qty || item.quantity || 1
+      item.dailyPrice ||
+      (item as any).daily_price ||
+      invItem?.dailyPrice ||
+      (invItem as any)?.daily_price ||
+      0
+    const quantity = item.qty || (item as any).quantity || 1
 
-    return { ...item, dailyPrice, quantity, name: item.name || invItem?.name }
+    return { ...item, dailyPrice, quantity, name: (item as any).name || invItem?.name }
   }, [rental, selectedOldItemIds, inventory])
 
   const newItemInfo = useMemo(() => {
@@ -115,7 +119,7 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
     }
 
     const availableCredit = daysRemaining * oldItemInfo.dailyPrice * oldItemInfo.quantity
-    const newDailyPrice = newItemInfo.dailyPrice ?? newItemInfo.daily_price ?? 0
+    const newDailyPrice = newItemInfo.dailyPrice ?? (newItemInfo as any).daily_price ?? 0
     const newCost = daysRemaining * newDailyPrice * oldItemInfo.quantity
 
     let differenceToPay = 0
@@ -145,7 +149,7 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
   const handleExchange = async () => {
     if (!rental || !oldItemInfo || !newItemInfo || !calculation) return
 
-    const availableQty = newItemInfo.availableQty ?? newItemInfo.available_qty ?? 0
+    const availableQty = newItemInfo.availableQty ?? (newItemInfo as any).available_qty ?? 0
     if (availableQty < oldItemInfo.quantity) {
       toast({
         title: 'Estoque insuficiente',
@@ -222,7 +226,7 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
   const activeInventory = useMemo(() => {
     const selectedOldItemId = selectedOldItemIds.length === 1 ? selectedOldItemIds[0] : null
     return inventory.filter(
-      (i) => (i.availableQty ?? i.available_qty ?? 0) > 0 && i.id !== selectedOldItemId,
+      (i) => (i.availableQty ?? (i as any).available_qty ?? 0) > 0 && i.id !== selectedOldItemId,
     )
   }, [inventory, selectedOldItemIds])
 
@@ -337,7 +341,8 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
                   <SelectContent>
                     {activeInventory.map((item) => (
                       <SelectItem key={item.id} value={item.id}>
-                        {item.name} — R$ {(item.dailyPrice ?? item.daily_price ?? 0).toFixed(2)}/dia
+                        {item.name} — R${' '}
+                        {(item.dailyPrice ?? (item as any).daily_price ?? 0).toFixed(2)}/dia
                       </SelectItem>
                     ))}
                   </SelectContent>

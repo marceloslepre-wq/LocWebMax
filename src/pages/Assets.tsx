@@ -122,7 +122,7 @@ export default function Assets() {
       const fetchPatrimonios = async () => {
         try {
           const data = await patrimonioService.getByInventory(selectedItem.id)
-          setPatrimonios(data as Patrimonio[])
+          setPatrimonios(data as unknown as Patrimonio[])
         } catch (error) {
           console.error('Error fetching patrimonios:', error)
           setPatrimonios([])
@@ -164,13 +164,13 @@ export default function Assets() {
       const data = await patrimonioService.create({
         inventory_id: selectedItem.id,
         numero_patrimonio: newAsset.numero_patrimonio.trim(),
-        estado: newAsset.estado,
+        estado: newAsset.estado as any,
         data_aquisicao: newAsset.data_aquisicao,
         localizacao: newAsset.localizacao || null,
         fornecedor: newAsset.fornecedor || null,
-      })
+      } as any)
       toast({ title: 'Sucesso', description: 'Patrimônio adicionado com sucesso.' })
-      const newRecord = data as Patrimonio
+      const newRecord = data as unknown as Patrimonio
       setPatrimonios([...patrimonios, newRecord])
       setAllPatrimonios([
         ...allPatrimonios,

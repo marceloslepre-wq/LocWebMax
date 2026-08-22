@@ -235,7 +235,7 @@ export function ImportInventoryDialog({ onSuccess }: { onSuccess?: () => void })
               totalQty: totalQty,
               availableQty: availableQty,
               rentedQty: rentedQty,
-              conditionStatus: row.condition_status || 'Disponível',
+              conditionStatus: (row.condition_status as any) || 'Disponível',
               image: payload.image,
               monthlyPrice: 0,
               dailyPrice: 0,

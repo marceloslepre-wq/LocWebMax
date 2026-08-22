@@ -73,7 +73,6 @@ export default function ItemDetail() {
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
-                variant="destructive"
                 variant="outline"
                 className="border-destructive text-destructive hover:bg-destructive hover:text-white"
               >

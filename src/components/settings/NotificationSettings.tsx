@@ -104,7 +104,7 @@ export function NotificationSettings() {
           template: templates[key]?.template ?? '',
           [field]: value,
         },
-      },
+      } as any,
     })
   }
 
@@ -116,7 +116,7 @@ export function NotificationSettings() {
         template: localTemplates[t.key] || '',
       }
     })
-    updateSettings({ notificationTemplates: merged })
+    updateSettings({ notificationTemplates: merged as any })
     toast({
       title: 'Modelos salvos!',
       description: 'As configurações de notificação foram atualizadas.',
