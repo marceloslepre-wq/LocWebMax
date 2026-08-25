@@ -62,6 +62,12 @@ export const CONTRACT_VARIABLES: { var: string; desc: string }[] = [
   { var: '{{companyName}}', desc: 'Razão social da empresa (locador)' },
   { var: '{{companyDocument}}', desc: 'CNPJ da empresa' },
   { var: '{{companyAddress}}', desc: 'Endereço da empresa' },
+  { var: '{{landlordRepName}}', desc: 'Nome do representante do locador' },
+  { var: '{{landlordRepDocument}}', desc: 'CPF/Documento do representante do locador' },
+  { var: '{{witness1Name}}', desc: 'Nome da Testemunha 1' },
+  { var: '{{witness1Document}}', desc: 'CPF da Testemunha 1' },
+  { var: '{{witness2Name}}', desc: 'Nome da Testemunha 2' },
+  { var: '{{witness2Document}}', desc: 'CPF da Testemunha 2' },
 ]
 
 function formatBRL(value: number): string {
@@ -87,7 +93,19 @@ function getDurationDays(start?: string, end?: string): number {
   return diff > 0 ? diff : 0
 }
 
-export const DEFAULT_CONTRACT_TEMPLATE_HTML = `<div style="font-family: Arial, sans-serif; color: #111; line-height: 1.6; max-width: 820px; margin: 0 auto; background: #ffffff; padding: 40px 48px; box-sizing: border-box; font-size: 13.5px; position: static;">
+export const DEFAULT_CONTRACT_TEMPLATE_HTML = `<style>
+  @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&display=swap');
+  .signature-handwriting {
+    font-family: 'Dancing Script', cursive, sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: #1e3a8a;
+    line-height: 1.2;
+    margin-bottom: 2px;
+    display: block;
+  }
+</style>
+<div style="font-family: Arial, sans-serif; color: #111; line-height: 1.6; max-width: 820px; margin: 0 auto; background: #ffffff; padding: 40px 48px; box-sizing: border-box; font-size: 13.5px; position: static;">
 
   <!-- CABEÇALHO DO CONTRATO -->
   <div style="text-align: center; margin-bottom: 24px;">
@@ -312,14 +330,20 @@ export const DEFAULT_CONTRACT_TEMPLATE_HTML = `<div style="font-family: Arial, s
   <!-- ASSINATURAS PRINCIPAIS -->
   <table style="width: 100%; border-collapse: collapse; margin-top: 30px; margin-bottom: 35px; table-layout: fixed;">
     <tr>
-      <td style="width: 46%; text-align: center; vertical-align: top; padding: 0 10px;">
+      <!-- LOCADOR COM ASSINATURA CURSIVA -->
+      <td style="width: 46%; text-align: center; vertical-align: bottom; padding: 0 10px;">
+        <div class="signature-handwriting" style="font-family: 'Dancing Script', cursive, sans-serif; font-size: 22px; font-weight: 700; color: #1e3a8a; margin-bottom: 4px; min-height: 28px;">
+          {{landlordRepName}}
+        </div>
         <div style="border-bottom: 1px solid #000; margin-bottom: 6px;"></div>
         <div style="font-size: 12px; font-weight: bold;">{{companyName}}</div>
         <div style="font-size: 11px; color: #555;">CNPJ: {{companyDocument}}</div>
         <div style="font-size: 11px; color: #666;">LOCADOR</div>
       </td>
       <td style="width: 8%;"></td>
-      <td style="width: 46%; text-align: center; vertical-align: top; padding: 0 10px;">
+      <!-- LOCATÁRIO(A) COM LINHA VAZIA PARA ZAPSIGN -->
+      <td style="width: 46%; text-align: center; vertical-align: bottom; padding: 0 10px;">
+        <div style="min-height: 28px; margin-bottom: 4px;"></div>
         <div style="border-bottom: 1px solid #000; margin-bottom: 6px;"></div>
         <div style="font-size: 12px; font-weight: bold;">{{customerName}}</div>
         <div style="font-size: 11px; color: #555;">CPF/CNPJ: {{customerDocument}}</div>
@@ -331,22 +355,26 @@ export const DEFAULT_CONTRACT_TEMPLATE_HTML = `<div style="font-family: Arial, s
   <!-- TESTEMUNHAS -->
   <table style="width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed;">
     <tr>
-      <td style="width: 46%; vertical-align: top; padding: 0 10px;">
-        <div style="border-bottom: 1px solid #000; margin-bottom: 6px;"></div>
-        <div style="font-size: 11px; font-weight: bold; text-align: center; margin-bottom: 4px;">Testemunha 1</div>
-        <div style="font-size: 11px; color: #444; line-height: 1.5;">
-          Nome: _____________________________________<br/>
-          CPF: ______________________________________
+      <!-- TESTEMUNHA 1 -->
+      <td style="width: 46%; text-align: center; vertical-align: bottom; padding: 0 10px;">
+        <div class="signature-handwriting" style="font-family: 'Dancing Script', cursive, sans-serif; font-size: 22px; font-weight: 700; color: #1e3a8a; margin-bottom: 4px; min-height: 28px;">
+          {{witness1Name}}
         </div>
+        <div style="border-bottom: 1px solid #000; margin-bottom: 6px;"></div>
+        <div style="font-size: 12px; font-weight: bold;">{{witness1Name}}</div>
+        <div style="font-size: 11px; color: #555;">CPF: {{witness1Document}}</div>
+        <div style="font-size: 11px; color: #666;">Testemunha 1</div>
       </td>
       <td style="width: 8%;"></td>
-      <td style="width: 46%; vertical-align: top; padding: 0 10px;">
-        <div style="border-bottom: 1px solid #000; margin-bottom: 6px;"></div>
-        <div style="font-size: 11px; font-weight: bold; text-align: center; margin-bottom: 4px;">Testemunha 2</div>
-        <div style="font-size: 11px; color: #444; line-height: 1.5;">
-          Nome: _____________________________________<br/>
-          CPF: ______________________________________
+      <!-- TESTEMUNHA 2 -->
+      <td style="width: 46%; text-align: center; vertical-align: bottom; padding: 0 10px;">
+        <div class="signature-handwriting" style="font-family: 'Dancing Script', cursive, sans-serif; font-size: 22px; font-weight: 700; color: #1e3a8a; margin-bottom: 4px; min-height: 28px;">
+          {{witness2Name}}
         </div>
+        <div style="border-bottom: 1px solid #000; margin-bottom: 6px;"></div>
+        <div style="font-size: 12px; font-weight: bold;">{{witness2Name}}</div>
+        <div style="font-size: 11px; color: #555;">CPF: {{witness2Document}}</div>
+        <div style="font-size: 11px; color: #666;">Testemunha 2</div>
       </td>
     </tr>
   </table>
@@ -510,6 +538,32 @@ export function renderContractHtml(params: RenderContractParams): string {
   html = html.replace(/{{tabelaValorVenda}}/g, tabelaValorVenda)
   html = html.replace(/{{frete}}/g, formatBRL(freightValue))
   html = html.replace(/{{codigoRastreamento}}/g, params.trackingCode || 'Não informado')
+  html = html.replace(
+    /{{landlordRepName}}/g,
+    settings?.landlordRepName || settings?.landlord_rep_name || 'Marcelo da Silveira Lepre',
+  )
+  html = html.replace(
+    /{{landlordRepDocument}}/g,
+    settings?.landlordRepDocument || settings?.landlord_rep_document || '022.862.567-05',
+  )
+  html = html.replace(
+    /{{witness1Name}}/g,
+    settings?.witness1Name ||
+      settings?.witness_1_name ||
+      'Cristiani Aparecida de Fretais Pereira Gomes',
+  )
+  html = html.replace(
+    /{{witness1Document}}/g,
+    settings?.witness1Document || settings?.witness_1_document || '106.522.497-44',
+  )
+  html = html.replace(
+    /{{witness2Name}}/g,
+    settings?.witness2Name || settings?.witness_2_name || 'Tatiane Cardoso Rodrigues',
+  )
+  html = html.replace(
+    /{{witness2Document}}/g,
+    settings?.witness2Document || settings?.witness_2_document || '141.122.117-67',
+  )
 
   return html
 }

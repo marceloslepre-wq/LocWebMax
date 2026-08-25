@@ -100,6 +100,12 @@ export type Settings = {
   companyName: string
   companyDocument: string
   companyAddress: string
+  landlordRepName?: string
+  landlordRepDocument?: string
+  witness1Name?: string
+  witness1Document?: string
+  witness2Name?: string
+  witness2Document?: string
   locations?: Location[]
   categories?: string[]
   notificationTemplates?: NotificationTemplate[]
@@ -207,6 +213,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     companyName: 'LocaWeb Gestão de Ativos LTDA',
     companyDocument: '00.000.000/0001-00',
     companyAddress: 'Av. Central, 1000 - Centro, São Paulo/SP',
+    landlordRepName: 'Marcelo da Silveira Lepre',
+    landlordRepDocument: '022.862.567-05',
+    witness1Name: 'Cristiani Aparecida de Fretais Pereira Gomes',
+    witness1Document: '106.522.497-44',
+    witness2Name: 'Tatiane Cardoso Rodrigues',
+    witness2Document: '141.122.117-67',
     locations: [],
     categories: ['Ferramentas', 'Equipamentos Pesados', 'Acessórios', 'Geral'],
     notificationTemplates: [],
@@ -294,6 +306,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             companyName: (setData as any).company_name || '',
             companyDocument: (setData as any).company_document || '',
             companyAddress: (setData as any).company_address || '',
+            landlordRepName: (setData as any).landlord_rep_name || 'Marcelo da Silveira Lepre',
+            landlordRepDocument: (setData as any).landlord_rep_document || '022.862.567-05',
+            witness1Name:
+              (setData as any).witness_1_name || 'Cristiani Aparecida de Fretais Pereira Gomes',
+            witness1Document: (setData as any).witness_1_document || '106.522.497-44',
+            witness2Name: (setData as any).witness_2_name || 'Tatiane Cardoso Rodrigues',
+            witness2Document: (setData as any).witness_2_document || '141.122.117-67',
             categories: (setData as any).categories || [
               'Ferramentas',
               'Equipamentos Pesados',
@@ -611,6 +630,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if ('companyName' in data) updateData.company_name = data.companyName
     if ('companyDocument' in data) updateData.company_document = data.companyDocument
     if ('companyAddress' in data) updateData.company_address = data.companyAddress
+    if ('landlordRepName' in data) updateData.landlord_rep_name = data.landlordRepName
+    if ('landlordRepDocument' in data) updateData.landlord_rep_document = data.landlordRepDocument
+    if ('witness1Name' in data) updateData.witness_1_name = data.witness1Name
+    if ('witness1Document' in data) updateData.witness_1_document = data.witness1Document
+    if ('witness2Name' in data) updateData.witness_2_name = data.witness2Name
+    if ('witness2Document' in data) updateData.witness_2_document = data.witness2Document
     if ('categories' in data) updateData.categories = data.categories
     if ('locations' in data) updateData.locations = data.locations
     if ('notificationTemplates' in data)

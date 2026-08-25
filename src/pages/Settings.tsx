@@ -103,6 +103,43 @@ export default function Settings() {
   const [contractVarSearch, setContractVarSearch] = useState('')
   const [showContractVarList, setShowContractVarList] = useState(true)
 
+  const [landlordRepName, setLandlordRepName] = useState(
+    settings?.landlordRepName || 'Marcelo da Silveira Lepre',
+  )
+  const [landlordRepDocument, setLandlordRepDocument] = useState(
+    settings?.landlordRepDocument || '022.862.567-05',
+  )
+  const [witness1Name, setWitness1Name] = useState(
+    settings?.witness1Name || 'Cristiani Aparecida de Fretais Pereira Gomes',
+  )
+  const [witness1Document, setWitness1Document] = useState(
+    settings?.witness1Document || '106.522.497-44',
+  )
+  const [witness2Name, setWitness2Name] = useState(
+    settings?.witness2Name || 'Tatiane Cardoso Rodrigues',
+  )
+  const [witness2Document, setWitness2Document] = useState(
+    settings?.witness2Document || '141.122.117-67',
+  )
+  const [signaturesSaving, setSignaturesSaving] = useState(false)
+
+  useEffect(() => {
+    if (settings?.landlordRepName !== undefined) setLandlordRepName(settings.landlordRepName)
+    if (settings?.landlordRepDocument !== undefined)
+      setLandlordRepDocument(settings.landlordRepDocument)
+    if (settings?.witness1Name !== undefined) setWitness1Name(settings.witness1Name)
+    if (settings?.witness1Document !== undefined) setWitness1Document(settings.witness1Document)
+    if (settings?.witness2Name !== undefined) setWitness2Name(settings.witness2Name)
+    if (settings?.witness2Document !== undefined) setWitness2Document(settings.witness2Document)
+  }, [
+    settings?.landlordRepName,
+    settings?.landlordRepDocument,
+    settings?.witness1Name,
+    settings?.witness1Document,
+    settings?.witness2Name,
+    settings?.witness2Document,
+  ])
+
   useEffect(() => {
     const current = settings?.contractTemplateHtml ?? ''
     if (current !== contractLoadedRef.current) {
@@ -181,74 +218,43 @@ export default function Settings() {
       v.var.toLowerCase().includes(contractVarSearch.toLowerCase()) ||
       v.desc.toLowerCase().includes(contractVarSearch.toLowerCase()),
   )
-  const contractVarGroups = Array.from(
-    new Set(
-      CONTRACT_VARIABLES.map((v) => {
-        if (
-          v.var.startsWith('{{customer') ||
-          v.var.startsWith('{{bairro') ||
-          v.var.startsWith('{{cidade') ||
-          v.var.startsWith('{{estado') ||
-          v.var.startsWith('{{cep')
-        )
-          return 'Cliente'
-        if (v.var.startsWith('{{company')) return 'Empresa'
-        if (v.var.startsWith('{{rental') || v.var === '{{rentalId}}') return 'Locação'
-        if (
-          v.var.startsWith('{{items') ||
-          v.var.startsWith('{{tabela') ||
-          v.var.startsWith('{{valorTotal') ||
-          v.var.startsWith('{{totalValue') ||
-          v.var.startsWith('{{frete') ||
-          v.var.startsWith('{{codigo')
-        )
-          return 'Itens/Valores'
-        if (
-          v.var.startsWith('{{start') ||
-          v.var.startsWith('{{expected') ||
-          v.var.startsWith('{{current') ||
-          v.var.startsWith('{{contractDuration')
-        )
-          return 'Datas'
-        if (v.var.startsWith('{{delivery') || v.var.startsWith('{{pickup')) return 'Entrega'
-        if (v.var.startsWith('{{payment')) return 'Pagamento'
-        return 'Outros'
-      }),
-    ),
-  )
+  const getVarGroup = (v: { var: string }) => {
+    if (
+      v.var.startsWith('{{customer') ||
+      v.var.startsWith('{{bairro') ||
+      v.var.startsWith('{{cidade') ||
+      v.var.startsWith('{{estado') ||
+      v.var.startsWith('{{cep')
+    )
+      return 'Cliente'
+    if (v.var.startsWith('{{company')) return 'Empresa'
+    if (v.var.startsWith('{{landlord') || v.var.startsWith('{{witness')) return 'Assinaturas'
+    if (v.var.startsWith('{{rental') || v.var === '{{rentalId}}') return 'Locação'
+    if (
+      v.var.startsWith('{{items') ||
+      v.var.startsWith('{{tabela') ||
+      v.var.startsWith('{{valorTotal') ||
+      v.var.startsWith('{{totalValue') ||
+      v.var.startsWith('{{frete') ||
+      v.var.startsWith('{{codigo')
+    )
+      return 'Itens/Valores'
+    if (
+      v.var.startsWith('{{start') ||
+      v.var.startsWith('{{expected') ||
+      v.var.startsWith('{{current') ||
+      v.var.startsWith('{{contractDuration')
+    )
+      return 'Datas'
+    if (v.var.startsWith('{{delivery') || v.var.startsWith('{{pickup')) return 'Entrega'
+    if (v.var.startsWith('{{payment')) return 'Pagamento'
+    return 'Outros'
+  }
+
+  const contractVarGroups = Array.from(new Set(CONTRACT_VARIABLES.map(getVarGroup)))
   const contractVarsByGroup = contractVarGroups.map((group) => ({
     group,
-    vars: CONTRACT_VARIABLES.filter((v) => {
-      const g =
-        v.var.startsWith('{{customer') ||
-        v.var.startsWith('{{bairro') ||
-        v.var.startsWith('{{cidade') ||
-        v.var.startsWith('{{estado') ||
-        v.var.startsWith('{{cep')
-          ? 'Cliente'
-          : v.var.startsWith('{{company')
-            ? 'Empresa'
-            : v.var.startsWith('{{rental') || v.var === '{{rentalId}}'
-              ? 'Locação'
-              : v.var.startsWith('{{items') ||
-                  v.var.startsWith('{{tabela') ||
-                  v.var.startsWith('{{valorTotal') ||
-                  v.var.startsWith('{{totalValue') ||
-                  v.var.startsWith('{{frete') ||
-                  v.var.startsWith('{{codigo')
-                ? 'Itens/Valores'
-                : v.var.startsWith('{{start') ||
-                    v.var.startsWith('{{expected') ||
-                    v.var.startsWith('{{current') ||
-                    v.var.startsWith('{{contractDuration')
-                  ? 'Datas'
-                  : v.var.startsWith('{{delivery') || v.var.startsWith('{{pickup')
-                    ? 'Entrega'
-                    : v.var.startsWith('{{payment')
-                      ? 'Pagamento'
-                      : 'Outros'
-      return g === group
-    }),
+    vars: CONTRACT_VARIABLES.filter((v) => getVarGroup(v) === group),
   }))
   const groupedFilteredVars = contractVarsByGroup
     .map((g) => ({
@@ -307,6 +313,41 @@ export default function Settings() {
     fetchLocais()
     setLocDialogOpen(false)
     toast({ title: 'Local salvo com sucesso!' })
+  }
+
+  const handleSaveSignatures = async () => {
+    if (signaturesSaving) return
+    setSignaturesSaving(true)
+    try {
+      const ok = await updateSettings({
+        landlordRepName,
+        landlordRepDocument,
+        witness1Name,
+        witness1Document,
+        witness2Name,
+        witness2Document,
+      })
+      if (ok) {
+        toast({
+          title: 'Dados de assinatura salvos',
+          description: 'Os dados do representante e testemunhas foram atualizados.',
+        })
+      } else {
+        toast({
+          title: 'Erro ao salvar',
+          description: 'Não foi possível salvar os dados de assinatura.',
+          variant: 'destructive',
+        })
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao salvar',
+        description: err?.message || 'Ocorreu um erro inesperado.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSignaturesSaving(false)
+    }
   }
 
   const handleContractUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1066,6 +1107,102 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="contrato" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Dados de Assinatura Fixa</CardTitle>
+              <CardDescription>
+                Configure os nomes e documentos do representante do locador e das testemunhas que
+                assinam o contrato.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div>
+                <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <span>🏢</span> Representante do Locador
+                </h4>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="landlord_rep_name">Nome Completo</Label>
+                    <Input
+                      id="landlord_rep_name"
+                      placeholder="Ex: Marcelo da Silveira Lepre"
+                      value={landlordRepName}
+                      onChange={(e) => setLandlordRepName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="landlord_rep_document">CPF / Documento</Label>
+                    <Input
+                      id="landlord_rep_document"
+                      placeholder="Ex: 022.862.567-05"
+                      value={landlordRepDocument}
+                      onChange={(e) => setLandlordRepDocument(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <span>✍️</span> Testemunha 1
+                </h4>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="witness_1_name">Nome Completo</Label>
+                    <Input
+                      id="witness_1_name"
+                      placeholder="Ex: Cristiani Aparecida de Fretais Pereira Gomes"
+                      value={witness1Name}
+                      onChange={(e) => setWitness1Name(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="witness_1_document">CPF</Label>
+                    <Input
+                      id="witness_1_document"
+                      placeholder="Ex: 106.522.497-44"
+                      value={witness1Document}
+                      onChange={(e) => setWitness1Document(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <span>✍️</span> Testemunha 2
+                </h4>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="witness_2_name">Nome Completo</Label>
+                    <Input
+                      id="witness_2_name"
+                      placeholder="Ex: Tatiane Cardoso Rodrigues"
+                      value={witness2Name}
+                      onChange={(e) => setWitness2Name(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="witness_2_document">CPF</Label>
+                    <Input
+                      id="witness_2_document"
+                      placeholder="Ex: 141.122.117-67"
+                      value={witness2Document}
+                      onChange={(e) => setWitness2Document(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button onClick={handleSaveSignatures} disabled={signaturesSaving}>
+                  <Save className="w-4 h-4 mr-2" />
+                  {signaturesSaving ? 'Salvando…' : 'Salvar Dados de Assinatura'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Template do Contrato de Locação</CardTitle>

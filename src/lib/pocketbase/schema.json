@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-25T18:40:53.068Z",
+  "generatedAt": "2026-08-25T19:14:07.820Z",
   "collections": [
     {
       "name": "users",
@@ -909,6 +909,42 @@
         {
           "name": "notification_templates",
           "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "landlord_rep_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "landlord_rep_document",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "witness_1_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "witness_1_document",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "witness_2_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "witness_2_document",
+          "type": "text",
           "required": false,
           "system": false
         }
