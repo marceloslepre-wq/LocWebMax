@@ -101,7 +101,9 @@ export default function Payments() {
     return getErrorMessage(err)
   }
 
-  const activeRentals = rentals.filter((r: any) => r.status === 'Ativo')
+  const selectableRentals = rentals.filter(
+    (r: any) => r.status === 'Ativo' || r.status === 'Atrasado',
+  )
 
   const getPublicPaymentUrl = (id: string) => `${window.location.origin}/pagar/${id}`
 
@@ -149,7 +151,7 @@ export default function Payments() {
     setDuplicatePayment(null)
 
     if (!rentalId) {
-      setFieldErrors({ rental_id: 'Selecione uma locação ativa.' })
+      setFieldErrors({ rental_id: 'Selecione uma locação ativa ou atrasada.' })
       setSubmitting(false)
       return
     }
@@ -534,7 +536,7 @@ export default function Payments() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-2">
               <Label className={cn(fieldErrors.rental_id && 'text-destructive')}>
-                Locação Ativa <span className="text-destructive">*</span>
+                Locação Ativa/Atrasada <span className="text-destructive">*</span>
               </Label>
               <Popover open={rentalOpen} onOpenChange={setRentalOpen}>
                 <PopoverTrigger asChild>
@@ -560,7 +562,7 @@ export default function Payments() {
                               r?.id?.substring(0, 8)
                             return c ? `${cnNum} - ${c.name}` : cnNum || 'Selecione...'
                           })()
-                        : 'Selecione uma locação ativa...'}
+                        : 'Selecione uma locação ativa ou atrasada...'}
                     </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
@@ -569,9 +571,9 @@ export default function Payments() {
                   <Command>
                     <CommandInput placeholder="Buscar locação..." />
                     <CommandList>
-                      <CommandEmpty>Nenhuma locação ativa encontrada.</CommandEmpty>
+                      <CommandEmpty>Nenhuma locação encontrada.</CommandEmpty>
                       <CommandGroup>
-                        {activeRentals.map((r: any) => {
+                        {selectableRentals.map((r: any) => {
                           const c = customers.find(
                             (x: any) => x.id === (r.customerId || (r as any).customer_id),
                           )
