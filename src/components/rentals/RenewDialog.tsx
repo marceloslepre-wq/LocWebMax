@@ -66,19 +66,31 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
     const contractReturn = rental.expectedReturnDate?.split('T')[0] || ''
     return rental.items
       .map((item: any, index: number) => {
-        if (item.itemId === 'freight') return null
-        const inv = inventory.find((i) => i.id === item.itemId)
+        const itemId = String(item.itemId || item.item_id || item.inventory_id || item.id || '')
+        if (itemId === 'freight' || !itemId.trim()) return null
+
+        const rawQty = item.qty ?? item.quantity ?? item.quantidade
+        const parsedQty = Number(rawQty !== undefined && rawQty !== null ? rawQty : 1)
+        const totalQty = Number.isFinite(parsedQty) && parsedQty >= 0 ? parsedQty : 1
+        const returnedQty = Number(item.returnedQty ?? item.returned_qty ?? 0)
+        const remainingQty = Math.max(0, totalQty - returnedQty)
+
+        // If the item has been fully returned (or 0 remaining), exclude it from renewal
+        if (remainingQty <= 0) return null
+
+        const inv = inventory.find((i) => i.id === itemId)
         const startDate = getItemStartDate(item, contractStart)
         const returnDate = getItemReturnDate(item, contractReturn)
         return {
           index,
-          itemId: item.itemId,
+          itemId,
           name: getItemName(item, inv),
           startDate,
           returnDate,
           remaining: getRemainingDays(returnDate),
           dailyPrice: getItemDailyPrice(item, inv),
-          qty: item.qty || 1,
+          qty: remainingQty,
+          returnedQty,
         }
       })
       .filter(Boolean) as Array<{
@@ -90,6 +102,7 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
       remaining: number
       dailyPrice: number
       qty: number
+      returnedQty: number
     }>
   }, [rental, inventory])
 
