@@ -103,10 +103,18 @@
     margin: 15mm;
   }
 
+  html,
   body {
     background-color: white !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   .print\:hidden {
@@ -114,20 +122,62 @@
   }
 
   #root,
+  #root > div,
+  [data-sidebar-wrapper],
+  .group\/sidebar-wrapper,
   main,
+  header,
+  section,
+  article,
   .flex-1 {
     display: block !important;
     padding: 0 !important;
     margin: 0 !important;
     overflow: visible !important;
     height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    position: static !important;
+    float: none !important;
+  }
+
+  .animate-fade-in-up,
+  .animate-fade-in {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
   }
 
   .print-contract-container {
     box-shadow: none !important;
     border: none !important;
     max-width: 100% !important;
+    width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    position: static !important;
+    page-break-after: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
   }
 }

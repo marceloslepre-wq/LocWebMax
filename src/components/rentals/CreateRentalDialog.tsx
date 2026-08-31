@@ -265,8 +265,6 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
 
     const newId = `LOC-${Math.floor(1000 + Math.random() * 9000)}`
 
-    const customHtml = generateContractHtml(finalTotal)
-
     const payloadItems = items.map((i) => ({
       itemId: i.itemId,
       qty: i.qty,
@@ -301,8 +299,6 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
         expected_return_date: endDates[endDates.length - 1],
         status: 'Ativo',
         total: finalTotal,
-        customContractHtml: customHtml,
-        custom_contract_html: customHtml,
         paymentMethod,
         payment_method: paymentMethod,
         userId: user?.id,

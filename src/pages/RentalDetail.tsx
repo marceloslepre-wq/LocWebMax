@@ -112,6 +112,8 @@ export default function RentalDetail() {
   const defaultContractText = useMemo(() => {
     if (!rental || !customer) return ''
 
+    const contractIdentifier = rental.contractNumber || (rental as any).contract_number || rental.id
+
     const cAddr = (customer.address as any) || {}
     const cStreet = cAddr.street
       ? `${cAddr.street}, ${cAddr.number || 'S/N'}${cAddr.complement ? ' - ' + cAddr.complement : ''}`
@@ -160,7 +162,7 @@ export default function RentalDetail() {
     text += `Local de Retirada/Entrega: ${pickupText}\n\n`
     text += `Locador: HOSPITAL HOME COM. ATAC. DE PROD. HOSPITALARES EM GERAL LTDA, R MANOEL VIVACQUA, 616, JABOUR, VITÓRIA– ES. CNPJ: 10.893.738/0006-93.\n\n`
 
-    text += `1 - Pelo presente instrumento o locador aluga à locatária o(s) equipamento(s) abaixo discriminado(s), e se obriga a locá-lo(s) nas condições estabelecidas neste contrato: “${rental.contractNumber || rental.id}”\n\n`
+    text += `1 - Pelo presente instrumento o locador aluga à locatária o(s) equipamento(s) abaixo discriminado(s), e se obriga a locá-lo(s) nas condições estabelecidas neste contrato: “${contractIdentifier}”\n\n`
 
     const regularItems = rental.items.filter((ri) => ri.itemId !== 'freight')
     const freightItem = rental.items.find((ri) => ri.itemId === 'freight')
@@ -265,11 +267,31 @@ export default function RentalDetail() {
   const generateContractHtml = () => {
     if (!rental) return null
 
-    // Prefer the stored custom_contract_html (preserves contracts generated at
-    // creation time, including old ones). Fall back to re-rendering the current
-    // settings template with the rental data.
+    const contractIdentifier = rental.contractNumber || (rental as any).contract_number || rental.id
+
+    // If customContractHtml exists and has a valid contract number (not empty string `""`), use it.
+    // If it has empty string `""` in place of the number, replace the empty quotes with the real contract number.
     if (rental.customContractHtml) {
-      return rental.customContractHtml
+      let html = rental.customContractHtml
+      if (
+        html.includes('contrato: <strong>""</strong>') ||
+        html.includes('contrato: <strong>"&quot;&quot;"</strong>') ||
+        html.includes('contrato: “undefined”') ||
+        html.includes('contrato: ""')
+      ) {
+        html = html
+          .replace(
+            /contrato:\s*<strong>""<\/strong>/g,
+            `contrato: <strong>"${contractIdentifier}"</strong>`,
+          )
+          .replace(
+            /contrato:\s*<strong>"&quot;&quot;"<\/strong>/g,
+            `contrato: <strong>"${contractIdentifier}"</strong>`,
+          )
+          .replace(/contrato:\s*“undefined”/g, `contrato: “${contractIdentifier}”`)
+          .replace(/contrato:\s*""/g, `contrato: "${contractIdentifier}"`)
+      }
+      return html
     }
 
     return renderContractHtml({
@@ -279,16 +301,16 @@ export default function RentalDetail() {
       inventory: inventory.map((i) => ({ ...i, sale_price: (i as any).salePrice })),
       settings,
       locaisList,
-      pickupLocationId: rental.pickupLocationId,
-      paymentMethod: rental.paymentMethod,
+      pickupLocationId: rental.pickupLocationId || (rental as any).pickup_location_id,
+      paymentMethod: rental.paymentMethod || (rental as any).payment_method,
       total: rental.total,
-      startDate: rental.startDate,
-      expectedReturnDate: rental.expectedReturnDate,
-      contractNumber: rental.contractNumber,
-      rentalId: rental.id,
+      startDate: rental.startDate || (rental as any).start_date,
+      expectedReturnDate: rental.expectedReturnDate || (rental as any).expected_return_date,
+      contractNumber: contractIdentifier,
+      rentalId: contractIdentifier,
       rentalStatus: rental.status,
       rentalType: 'Locação',
-      trackingCode: rental.trackingCode,
+      trackingCode: rental.trackingCode || (rental as any).tracking_code,
     })
   }
 
@@ -451,6 +473,8 @@ export default function RentalDetail() {
   const handleSave = async () => {
     if (!rental || !currentUser) return
 
+    const contractIdentifier = rental.contractNumber || (rental as any).contract_number || rental.id
+
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const startD = new Date(editStartDate + 'T00:00:00')
@@ -523,10 +547,34 @@ export default function RentalDetail() {
         custom_contract_text: (oldRecord as any).custom_contract_text || '',
       }
 
+      // If custom_contract_html exists, regenerate or fix any empty contract number in it
+      let updatedHtml = (oldRecord as any).custom_contract_html || rental.customContractHtml || ''
+      if (updatedHtml) {
+        if (
+          updatedHtml.includes('contrato: <strong>""</strong>') ||
+          updatedHtml.includes('contrato: <strong>"&quot;&quot;"</strong>') ||
+          updatedHtml.includes('contrato: “undefined”') ||
+          updatedHtml.includes('contrato: ""')
+        ) {
+          updatedHtml = updatedHtml
+            .replace(
+              /contrato:\s*<strong>""<\/strong>/g,
+              `contrato: <strong>"${contractIdentifier}"</strong>`,
+            )
+            .replace(
+              /contrato:\s*<strong>"&quot;&quot;"<\/strong>/g,
+              `contrato: <strong>"${contractIdentifier}"</strong>`,
+            )
+            .replace(/contrato:\s*“undefined”/g, `contrato: “${contractIdentifier}”`)
+            .replace(/contrato:\s*""/g, `contrato: "${contractIdentifier}"`)
+        }
+      }
+
       await pb.collection('rentals').update(rental.id, {
         start_date: editStartDate,
         expected_return_date: editReturnDate,
         custom_contract_text: contractText,
+        ...(updatedHtml ? { custom_contract_html: updatedHtml } : {}),
       })
 
       await pb.collection('auditoria_contratos').create({
@@ -554,6 +602,9 @@ export default function RentalDetail() {
       startDate: editStartDate,
       expectedReturnDate: editReturnDate,
       customContractText: contractText,
+      ...(rental.customContractHtml
+        ? { customContractHtml: generateContractHtml() || undefined }
+        : {}),
     })
 
     setIsEditing(false)

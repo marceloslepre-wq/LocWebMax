@@ -450,7 +450,7 @@ export function renderContractHtml(params: RenderContractParams): string {
     0,
   )
 
-  const rentalIdStr = params.contractNumber || params.rentalId || ''
+  const rentalIdStr = params.contractNumber || params.rentalId || 'LOC-00000'
   const duration = getDurationDays(params.startDate, params.expectedReturnDate)
 
   let itemsListHtml = regularItems
