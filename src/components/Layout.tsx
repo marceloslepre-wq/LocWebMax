@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
+import { isSameDay, parseISO } from 'date-fns'
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from './AppSidebar'
 import { Bell, Search, UserCircle } from 'lucide-react'
@@ -33,17 +34,51 @@ export default function Layout() {
     return null
   }
 
-  const today = new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+  const isDateToday = (dateStr?: string) => {
+    if (!dateStr) return false
+    const raw = dateStr.trim().replace(' ', 'T')
+    const cleanDatePart = raw.split('T')[0]
+    if (cleanDatePart === todayStr) return true
+
+    const parts = cleanDatePart.split('-')
+    if (parts.length === 3) {
+      const year = Number(parts[0])
+      const month = Number(parts[1]) - 1
+      const day = Number(parts[2])
+      const targetDate = new Date(year, month, day)
+      if (!isNaN(targetDate.getTime()) && isSameDay(targetDate, now)) {
+        return true
+      }
+    }
+
+    try {
+      const parsed = parseISO(raw)
+      if (!isNaN(parsed.getTime()) && isSameDay(parsed, now)) {
+        return true
+      }
+    } catch {
+      // ignore
+    }
+    return false
+  }
+
   const overdue = rentals.filter((r) => r.status === 'Atrasado')
-  const dueToday = rentals.filter((r) => r.status === 'Ativo' && r.expectedReturnDate === today)
+  const dueToday = rentals.filter((r) => {
+    if (!r || r.status !== 'Ativo') return false
+    const expDate = (r as any).expectedReturnDate || (r as any).expected_return_date
+    return isDateToday(expDate)
+  })
   const notifsCount = overdue.length + dueToday.length
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background overflow-hidden">
+      <div className="flex h-screen w-full bg-background overflow-hidden">
         <AppSidebar />
-        <div className="flex-1 flex flex-col min-w-0 h-screen">
-          <header className="h-16 border-b bg-card flex items-center justify-between px-4 sticky top-0 z-10 shadow-sm print:hidden">
+        <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+          <header className="h-16 border-b bg-card flex items-center justify-between px-4 sticky top-0 z-10 shadow-sm print:hidden flex-shrink-0">
             <div className="flex items-center gap-4 flex-1">
               <SidebarTrigger />
               <div className="relative max-w-md hidden sm:block w-full">
@@ -120,7 +155,7 @@ export default function Layout() {
               </div>
             </div>
           </header>
-          <main className="flex-1 p-6 overflow-y-auto animate-fade-in-up pb-20 print:p-0 print:overflow-visible print:h-auto">
+          <main className="flex-1 p-6 overflow-y-auto min-h-0 animate-fade-in-up pb-24 print:p-0 print:overflow-visible print:h-auto">
             <Outlet />
           </main>
         </div>

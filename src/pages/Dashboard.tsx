@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { isSameDay, parseISO } from 'date-fns'
 import useMainStore, { Rental } from '@/stores/main'
 import { useAuth } from '@/hooks/use-auth'
 import { useStoreRealtime } from '@/hooks/use-store-realtime'
@@ -56,9 +57,39 @@ export default function Dashboard() {
     const d = String(now.getDate()).padStart(2, '0')
     const todayStr = `${y}-${m}-${d}`
 
-    const dueTodayRentals = rentals.filter(
-      (r) => r?.status === 'Ativo' && r?.expectedReturnDate?.split('T')[0] === todayStr,
-    )
+    const isDateToday = (dateStr?: string) => {
+      if (!dateStr) return false
+      const raw = dateStr.trim().replace(' ', 'T')
+      const cleanDatePart = raw.split('T')[0]
+      if (cleanDatePart === todayStr) return true
+
+      const parts = cleanDatePart.split('-')
+      if (parts.length === 3) {
+        const year = Number(parts[0])
+        const month = Number(parts[1]) - 1
+        const day = Number(parts[2])
+        const targetDate = new Date(year, month, day)
+        if (!isNaN(targetDate.getTime()) && isSameDay(targetDate, now)) {
+          return true
+        }
+      }
+
+      try {
+        const parsed = parseISO(raw)
+        if (!isNaN(parsed.getTime()) && isSameDay(parsed, now)) {
+          return true
+        }
+      } catch {
+        // ignore
+      }
+      return false
+    }
+
+    const dueTodayRentals = rentals.filter((r) => {
+      if (!r || r.status !== 'Ativo') return false
+      const expDate = (r as any).expectedReturnDate || (r as any).expected_return_date
+      return isDateToday(expDate)
+    })
     const dueToday = dueTodayRentals.length
 
     return {
