@@ -129,13 +129,23 @@
   header,
   section,
   article,
+  .flex-1,
+  div {
+    overflow: visible !important;
+  }
+
+  #root,
+  #root > div,
+  [data-sidebar-wrapper],
+  .group\/sidebar-wrapper,
+  main,
   .flex-1 {
     display: block !important;
     padding: 0 !important;
     margin: 0 !important;
     overflow: visible !important;
     height: auto !important;
-    min-height: auto !important;
+    min-height: 0 !important;
     max-height: none !important;
     position: static !important;
     float: none !important;
@@ -157,11 +167,16 @@
     padding: 0 !important;
     overflow: visible !important;
     height: auto !important;
-    min-height: auto !important;
+    min-height: 0 !important;
     max-height: none !important;
     position: static !important;
+    display: block !important;
     page-break-after: auto !important;
     page-break-inside: auto !important;
+  }
+
+  .print-contract-container * {
+    max-height: none !important;
   }
 
   table {

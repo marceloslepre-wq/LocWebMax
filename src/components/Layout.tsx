@@ -39,18 +39,33 @@ export default function Layout() {
 
   const isDateToday = (dateStr?: string) => {
     if (!dateStr) return false
-    const raw = dateStr.trim().replace(' ', 'T')
-    const cleanDatePart = raw.split('T')[0]
-    if (cleanDatePart === todayStr) return true
+    const raw = String(dateStr).trim()
+    if (!raw) return false
 
-    const parts = cleanDatePart.split('-')
-    if (parts.length === 3) {
-      const year = Number(parts[0])
-      const month = Number(parts[1]) - 1
-      const day = Number(parts[2])
-      const targetDate = new Date(year, month, day)
-      if (!isNaN(targetDate.getTime()) && isSameDay(targetDate, now)) {
-        return true
+    const datePart = raw.replace(' ', 'T').split('T')[0]
+    if (datePart === todayStr) return true
+
+    if (datePart.includes('-')) {
+      const parts = datePart.split('-')
+      if (parts.length === 3) {
+        const year = Number(parts[0])
+        const month = Number(parts[1]) - 1
+        const day = Number(parts[2])
+        const targetDate = new Date(year, month, day, 12, 0, 0)
+        if (!isNaN(targetDate.getTime()) && isSameDay(targetDate, now)) {
+          return true
+        }
+      }
+    } else if (datePart.includes('/')) {
+      const parts = datePart.split('/')
+      if (parts.length === 3) {
+        const day = Number(parts[0])
+        const month = Number(parts[1]) - 1
+        const year = Number(parts[2])
+        const targetDate = new Date(year, month, day, 12, 0, 0)
+        if (!isNaN(targetDate.getTime()) && isSameDay(targetDate, now)) {
+          return true
+        }
       }
     }
 
@@ -62,22 +77,33 @@ export default function Layout() {
     } catch {
       // ignore
     }
+
+    try {
+      const parsed = new Date(raw)
+      if (!isNaN(parsed.getTime()) && isSameDay(parsed, now)) {
+        return true
+      }
+    } catch {
+      // ignore
+    }
+
     return false
   }
 
   const overdue = rentals.filter((r) => r.status === 'Atrasado')
   const dueToday = rentals.filter((r) => {
     if (!r || r.status !== 'Ativo') return false
+    if ((r as any).actualReturnDate || (r as any).actual_return_date) return false
     const expDate = (r as any).expectedReturnDate || (r as any).expected_return_date
     return isDateToday(expDate)
   })
   const notifsCount = overdue.length + dueToday.length
 
   return (
-    <SidebarProvider>
-      <div className="flex h-screen w-full bg-background overflow-hidden">
+    <SidebarProvider className="print:!block print:!h-auto print:!min-h-0 print:!overflow-visible print:!static">
+      <div className="flex h-screen w-full bg-background overflow-hidden print:!block print:!h-auto print:!min-h-0 print:!overflow-visible print:!static">
         <AppSidebar />
-        <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden print:!block print:!h-auto print:!min-h-0 print:!overflow-visible print:!static">
           <header className="h-16 border-b bg-card flex items-center justify-between px-4 sticky top-0 z-10 shadow-sm print:hidden flex-shrink-0">
             <div className="flex items-center gap-4 flex-1">
               <SidebarTrigger />
@@ -155,7 +181,7 @@ export default function Layout() {
               </div>
             </div>
           </header>
-          <main className="flex-1 p-6 overflow-y-auto min-h-0 animate-fade-in-up pb-24 print:p-0 print:overflow-visible print:h-auto">
+          <main className="flex-1 p-6 overflow-y-auto min-h-0 animate-fade-in-up pb-24 print:!p-0 print:!m-0 print:!overflow-visible print:!h-auto print:!min-h-0 print:!block print:!static">
             <Outlet />
           </main>
         </div>

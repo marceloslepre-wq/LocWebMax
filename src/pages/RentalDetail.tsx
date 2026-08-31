@@ -264,6 +264,42 @@ export default function RentalDetail() {
     }
   }, [docType, rental?.id])
 
+  const repairContractHtml = (rawHtml: string, contractIdentifier: string): string => {
+    if (!rawHtml) return rawHtml
+    let html = rawHtml
+
+    // 1. Matches empty or undefined or placeholder contract numbers in clause 1:
+    // e.g.:
+    // contrato: ""
+    // contrato: "   "
+    // contrato: “undefined”
+    // contrato: "undefined"
+    // contrato: “null”
+    // contrato: <strong>""</strong>
+    // contrato: <strong>"&quot;&quot;"</strong>
+    // contrato: <strong>“undefined”</strong>
+    // contrato: <strong>{{rentalId}}</strong>
+    html = html
+      .replace(
+        /contrato:\s*<strong>\s*(?:["“'”]|&quot;)?\s*(?:undefined|null|&quot;&quot;|""|''|\{\{\s*rentalId\s*\}\}|)\s*(?:["“'”]|&quot;)?\s*<\/strong>/gi,
+        `contrato: <strong>"${contractIdentifier}"</strong>`,
+      )
+      .replace(
+        /contrato:\s*(?:["“'”]|&quot;)\s*(?:undefined|null|&quot;&quot;|""|''|\{\{\s*rentalId\s*\}\}|)\s*(?:["“'”]|&quot;)/gi,
+        `contrato: "${contractIdentifier}"`,
+      )
+      .replace(
+        /contrato:\s*(?:undefined|null|\{\{\s*rentalId\s*\}\})/gi,
+        `contrato: "${contractIdentifier}"`,
+      )
+      .replace(
+        /Contrato Nº:\s*(?:""|''|“undefined”|"undefined"|undefined|null|\{\{\s*rentalId\s*\}\}|<strong><\/strong>)/gi,
+        `Contrato Nº: ${contractIdentifier}`,
+      )
+
+    return html
+  }
+
   const generateContractHtml = () => {
     if (!rental) return null
 
@@ -272,26 +308,7 @@ export default function RentalDetail() {
     // If customContractHtml exists and has a valid contract number (not empty string `""`), use it.
     // If it has empty string `""` in place of the number, replace the empty quotes with the real contract number.
     if (rental.customContractHtml) {
-      let html = rental.customContractHtml
-      if (
-        html.includes('contrato: <strong>""</strong>') ||
-        html.includes('contrato: <strong>"&quot;&quot;"</strong>') ||
-        html.includes('contrato: “undefined”') ||
-        html.includes('contrato: ""')
-      ) {
-        html = html
-          .replace(
-            /contrato:\s*<strong>""<\/strong>/g,
-            `contrato: <strong>"${contractIdentifier}"</strong>`,
-          )
-          .replace(
-            /contrato:\s*<strong>"&quot;&quot;"<\/strong>/g,
-            `contrato: <strong>"${contractIdentifier}"</strong>`,
-          )
-          .replace(/contrato:\s*“undefined”/g, `contrato: “${contractIdentifier}”`)
-          .replace(/contrato:\s*""/g, `contrato: "${contractIdentifier}"`)
-      }
-      return html
+      return repairContractHtml(rental.customContractHtml, contractIdentifier)
     }
 
     return renderContractHtml({
@@ -550,24 +567,7 @@ export default function RentalDetail() {
       // If custom_contract_html exists, regenerate or fix any empty contract number in it
       let updatedHtml = (oldRecord as any).custom_contract_html || rental.customContractHtml || ''
       if (updatedHtml) {
-        if (
-          updatedHtml.includes('contrato: <strong>""</strong>') ||
-          updatedHtml.includes('contrato: <strong>"&quot;&quot;"</strong>') ||
-          updatedHtml.includes('contrato: “undefined”') ||
-          updatedHtml.includes('contrato: ""')
-        ) {
-          updatedHtml = updatedHtml
-            .replace(
-              /contrato:\s*<strong>""<\/strong>/g,
-              `contrato: <strong>"${contractIdentifier}"</strong>`,
-            )
-            .replace(
-              /contrato:\s*<strong>"&quot;&quot;"<\/strong>/g,
-              `contrato: <strong>"${contractIdentifier}"</strong>`,
-            )
-            .replace(/contrato:\s*“undefined”/g, `contrato: “${contractIdentifier}”`)
-            .replace(/contrato:\s*""/g, `contrato: "${contractIdentifier}"`)
-        }
+        updatedHtml = repairContractHtml(updatedHtml, contractIdentifier)
       }
 
       await pb.collection('rentals').update(rental.id, {

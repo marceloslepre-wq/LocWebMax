@@ -59,21 +59,39 @@ export default function Dashboard() {
 
     const isDateToday = (dateStr?: string) => {
       if (!dateStr) return false
-      const raw = dateStr.trim().replace(' ', 'T')
-      const cleanDatePart = raw.split('T')[0]
-      if (cleanDatePart === todayStr) return true
+      const raw = String(dateStr).trim()
+      if (!raw) return false
 
-      const parts = cleanDatePart.split('-')
-      if (parts.length === 3) {
-        const year = Number(parts[0])
-        const month = Number(parts[1]) - 1
-        const day = Number(parts[2])
-        const targetDate = new Date(year, month, day)
-        if (!isNaN(targetDate.getTime()) && isSameDay(targetDate, now)) {
-          return true
+      // 1. Direct string match on YYYY-MM-DD
+      const datePart = raw.replace(' ', 'T').split('T')[0]
+      if (datePart === todayStr) return true
+
+      // 2. YYYY-MM-DD or DD/MM/YYYY manual parse to avoid UTC/local offset distortion
+      if (datePart.includes('-')) {
+        const parts = datePart.split('-')
+        if (parts.length === 3) {
+          const year = Number(parts[0])
+          const month = Number(parts[1]) - 1
+          const day = Number(parts[2])
+          const targetDate = new Date(year, month, day, 12, 0, 0)
+          if (!isNaN(targetDate.getTime()) && isSameDay(targetDate, now)) {
+            return true
+          }
+        }
+      } else if (datePart.includes('/')) {
+        const parts = datePart.split('/')
+        if (parts.length === 3) {
+          const day = Number(parts[0])
+          const month = Number(parts[1]) - 1
+          const year = Number(parts[2])
+          const targetDate = new Date(year, month, day, 12, 0, 0)
+          if (!isNaN(targetDate.getTime()) && isSameDay(targetDate, now)) {
+            return true
+          }
         }
       }
 
+      // 3. Fallback date-fns parseISO
       try {
         const parsed = parseISO(raw)
         if (!isNaN(parsed.getTime()) && isSameDay(parsed, now)) {
@@ -82,11 +100,23 @@ export default function Dashboard() {
       } catch {
         // ignore
       }
+
+      // 4. Fallback new Date(raw)
+      try {
+        const parsed = new Date(raw)
+        if (!isNaN(parsed.getTime()) && isSameDay(parsed, now)) {
+          return true
+        }
+      } catch {
+        // ignore
+      }
+
       return false
     }
 
     const dueTodayRentals = rentals.filter((r) => {
       if (!r || r.status !== 'Ativo') return false
+      if ((r as any).actualReturnDate || (r as any).actual_return_date) return false
       const expDate = (r as any).expectedReturnDate || (r as any).expected_return_date
       return isDateToday(expDate)
     })
