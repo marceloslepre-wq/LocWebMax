@@ -104,6 +104,9 @@ export default function Rentals() {
     const toReturnedIds: string[] = []
 
     rentals.forEach((r) => {
+      // Final status Vendido must never be touched or recalculated
+      if (r.status === 'Vendido') return
+
       const actualReturn = rentalField(r, 'actualReturnDate', 'actual_return_date')
       if (actualReturn && actualReturn.trim() !== '') {
         if (r.status !== 'Devolvido') {
@@ -301,6 +304,7 @@ export default function Rentals() {
               <SelectItem value="Ativo">Ativos</SelectItem>
               <SelectItem value="Atrasado">Atrasados</SelectItem>
               <SelectItem value="Devolvido">Devolvidos</SelectItem>
+              <SelectItem value="Vendido">Vendidos</SelectItem>
               <SelectItem value="A auditorar">A auditorar (Temporário)</SelectItem>
             </SelectContent>
           </Select>

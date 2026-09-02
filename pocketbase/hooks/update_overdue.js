@@ -9,9 +9,14 @@ routerAdd(
 
     try {
       // 1. Convert Ativo -> Atrasado if expected_return_date < today (and no actual_return_date)
+      // Never touch final statuses like Vendido or Devolvido
       const activeRentals = $app.findRecordsByFilter('rentals', 'status = "Ativo"', '', 0, 0)
       for (let i = 0; i < activeRentals.length; i++) {
         var rental = activeRentals[i]
+        var currentStatus = rental.getString('status')
+        if (currentStatus === 'Vendido' || currentStatus === 'Devolvido') {
+          continue
+        }
         var actualReturn = rental.getString('actual_return_date')
         if (actualReturn && actualReturn.trim() !== '') {
           rental.set('status', 'Devolvido')
@@ -30,9 +35,14 @@ routerAdd(
 
       // 2. Convert Atrasado -> Ativo if expected_return_date >= today (and no actual_return_date)
       // or -> Devolvido if actual_return_date is present
+      // Never touch final statuses like Vendido or Devolvido
       const overdueRentals = $app.findRecordsByFilter('rentals', 'status = "Atrasado"', '', 0, 0)
       for (let j = 0; j < overdueRentals.length; j++) {
         var overdueRental = overdueRentals[j]
+        var currentOverdueStatus = overdueRental.getString('status')
+        if (currentOverdueStatus === 'Vendido' || currentOverdueStatus === 'Devolvido') {
+          continue
+        }
         var actualReturnOverdue = overdueRental.getString('actual_return_date')
         if (actualReturnOverdue && actualReturnOverdue.trim() !== '') {
           overdueRental.set('status', 'Devolvido')

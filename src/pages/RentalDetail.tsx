@@ -64,6 +64,9 @@ export default function RentalDetail() {
   useEffect(() => {
     if (!rental) return
 
+    // Final statuses like Vendido or Devolvido should never be recalculated or reverted
+    if (rental.status === 'Vendido') return
+
     if (rental.actualReturnDate && rental.actualReturnDate.trim() !== '') {
       if (rental.status !== 'Devolvido') {
         rentalsService
@@ -77,6 +80,8 @@ export default function RentalDetail() {
       }
       return
     }
+
+    if (rental.status !== 'Ativo' && rental.status !== 'Atrasado') return
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)

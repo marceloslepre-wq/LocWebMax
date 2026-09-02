@@ -149,6 +149,7 @@ function normalizeStatus(val: string): string {
   if (lower === 'ativo' || lower === 'active') return 'Ativo'
   if (lower === 'atrasado' || lower === 'late' || lower === 'overdue') return 'Atrasado'
   if (lower === 'devolvido' || lower === 'returned' || lower === 'finalizado') return 'Devolvido'
+  if (lower === 'vendido' || lower === 'sold') return 'Vendido'
   return val || 'Ativo'
 }
 

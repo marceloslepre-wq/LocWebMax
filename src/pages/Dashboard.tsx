@@ -315,7 +315,14 @@ export default function Dashboard() {
                               ? 'default'
                               : rental.status === 'Atrasado'
                                 ? 'destructive'
-                                : 'secondary'
+                                : rental.status === 'Vendido'
+                                  ? 'default'
+                                  : 'secondary'
+                          }
+                          className={
+                            rental.status === 'Vendido'
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              : ''
                           }
                         >
                           {rental.status}
