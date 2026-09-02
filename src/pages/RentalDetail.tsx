@@ -45,21 +45,33 @@ export default function RentalDetail() {
   const customer = customers.find((c) => c?.id === rental?.customerId)
 
   useEffect(() => {
-    if (rental && rental.status === 'Ativo' && !rental.actualReturnDate) {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const dateStr = rental.expectedReturnDate.split('T')[0].split(' ')[0]
-      const returnDate = new Date(dateStr + 'T00:00:00')
-      if (returnDate < today) {
-        rentalsService
-          .updateOverdue()
-          .then(() => {
-            if (updateRental) {
-              updateRental(rental.id, { status: 'Atrasado' })
-            }
-          })
-          .catch(console.error)
-      }
+    if (!rental || rental.actualReturnDate) return
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const rawDate = rental.expectedReturnDate || ''
+    const dateStr = rawDate.split('T')[0].split(' ')[0]
+    if (!dateStr) return
+    const returnDate = new Date(dateStr + 'T00:00:00')
+
+    if (rental.status === 'Ativo' && returnDate < today) {
+      rentalsService
+        .updateOverdue()
+        .then(() => {
+          if (updateRental) {
+            updateRental(rental.id, { status: 'Atrasado' })
+          }
+        })
+        .catch(console.error)
+    } else if (rental.status === 'Atrasado' && returnDate >= today) {
+      rentalsService
+        .updateOverdue()
+        .then(() => {
+          if (updateRental) {
+            updateRental(rental.id, { status: 'Ativo' })
+          }
+        })
+        .catch(console.error)
     }
   }, [
     rental?.id,
