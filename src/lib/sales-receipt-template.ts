@@ -207,31 +207,23 @@ export function renderSalesReceiptHtml(params: RenderSalesReceiptParams): string
 
   const getItemId = (ri: any) => ri.itemId || ri.item_id || ri.inventory_id || ri.id || ''
   const regularItems = items.filter((ri: any) => getItemId(ri) !== 'freight')
-  const freightItem = items.find((ri: any) => getItemId(ri) === 'freight')
-  const freightValue = freightItem
-    ? Number(freightItem.totalPrice || freightItem.total_price || 0)
-    : 0
 
   const itemsTotal = regularItems.reduce((acc: number, ri: any) => {
     const itemId = getItemId(ri)
     const item = inventory.find((i: any) => i.id === itemId)
-    const price = Number(
-      ri.salePrice ??
-        ri.sale_price ??
-        item?.salePrice ??
-        item?.sale_price ??
-        ri.totalPrice ??
-        ri.total_price ??
-        0,
-    )
     const qty = Number(ri.qty ?? ri.quantity ?? 1)
-    return acc + price * (ri.salePrice !== undefined || item?.salePrice !== undefined ? qty : 1)
+    const unitSalePrice = Number(
+      item?.salePrice ?? item?.sale_price ?? ri.salePrice ?? ri.sale_price ?? 0,
+    )
+    const lineTotal =
+      unitSalePrice > 0 ? unitSalePrice * qty : Number(ri.totalPrice || ri.total_price || 0)
+    return acc + lineTotal
   }, 0)
 
   const rentalIdStr = params.contractNumber || params.rentalId || 'LOC-00000'
   const warrantyPeriodStr = params.warrantyPeriod || '90 (noventa) dias'
 
-  let itemsListHtml = regularItems
+  const itemsListHtml = regularItems
     .map((ri: any) => {
       const itemId = getItemId(ri)
       const item = inventory.find((i: any) => i.id === itemId)
@@ -252,15 +244,7 @@ export function renderSalesReceiptHtml(params: RenderSalesReceiptParams): string
     })
     .join('')
 
-  if (freightValue > 0) {
-    itemsListHtml += `<tr>
-      <td colspan="3" style="border: 1px solid #9ca3af; padding: 8px; text-align: right; font-weight: bold;">Frete / Entrega</td>
-      <td style="border: 1px solid #9ca3af; padding: 8px; text-align: right; font-weight: 500;">${formatBRL(freightValue)}</td>
-    </tr>`
-  }
-
-  const calculatedTotal =
-    params.total !== undefined && params.total !== null ? params.total : itemsTotal + freightValue
+  const calculatedTotal = itemsTotal
 
   html = html.replace(
     /{{companyName}}/g,
