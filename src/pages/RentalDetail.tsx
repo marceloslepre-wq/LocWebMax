@@ -45,7 +45,21 @@ export default function RentalDetail() {
   const customer = customers.find((c) => c?.id === rental?.customerId)
 
   useEffect(() => {
-    if (!rental || rental.actualReturnDate) return
+    if (!rental) return
+
+    if (rental.actualReturnDate && rental.actualReturnDate.trim() !== '') {
+      if (rental.status !== 'Devolvido') {
+        rentalsService
+          .updateOverdue()
+          .then(() => {
+            if (updateRental) {
+              updateRental(rental.id, { status: 'Devolvido' })
+            }
+          })
+          .catch(console.error)
+      }
+      return
+    }
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)

@@ -101,9 +101,17 @@ export default function Rentals() {
     const toOverdueIds: string[] = []
     const toActiveIds: string[] = []
 
+    const toReturnedIds: string[] = []
+
     rentals.forEach((r) => {
       const actualReturn = rentalField(r, 'actualReturnDate', 'actual_return_date')
-      if (actualReturn) return
+      if (actualReturn && actualReturn.trim() !== '') {
+        if (r.status !== 'Devolvido') {
+          needsSync = true
+          toReturnedIds.push(r.id)
+        }
+        return
+      }
 
       const dateStr = rentalField(r, 'expectedReturnDate', 'expected_return_date')
         .replace(' ', 'T')
@@ -125,6 +133,9 @@ export default function Rentals() {
         .updateOverdue()
         .then(() => {
           if (updateRental) {
+            toReturnedIds.forEach((id) => {
+              updateRental(id, { status: 'Devolvido' })
+            })
             toOverdueIds.forEach((id) => {
               updateRental(id, { status: 'Atrasado' })
             })
