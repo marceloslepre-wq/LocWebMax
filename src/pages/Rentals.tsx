@@ -413,7 +413,14 @@ export default function Rentals() {
                               ? 'default'
                               : rental.status === 'Atrasado'
                                 ? 'destructive'
-                                : 'secondary'
+                                : rental.status === 'Vendido'
+                                  ? 'default'
+                                  : 'secondary'
+                          }
+                          className={
+                            rental.status === 'Vendido'
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              : ''
                           }
                         >
                           {rental.status}
@@ -476,7 +483,7 @@ export default function Rentals() {
                           >
                             <Receipt className="h-4 w-4" />
                           </Button>
-                          {rental.status !== 'Devolvido' && (
+                          {rental.status !== 'Devolvido' && rental.status !== 'Vendido' && (
                             <>
                               {rental.status === 'Ativo' && (
                                 <Button

@@ -62,10 +62,12 @@ export type Rental = {
   startDate: string
   expectedReturnDate: string
   actualReturnDate?: string
-  status: 'Ativo' | 'Atrasado' | 'Devolvido' | 'Cancelado'
+  status: 'Ativo' | 'Atrasado' | 'Devolvido' | 'Cancelado' | 'Vendido'
   total: number
   customContractText?: string
   customContractHtml?: string
+  customSalesReceiptHtml?: string
+  warrantyPeriod?: string
   userId?: string
   pickupLocationId?: string
   localRetiradaId?: string
@@ -102,6 +104,7 @@ export type Settings = {
   logoUrl: string | null
   contractFileName: string | null
   contractTemplateHtml: string | null
+  salesReceiptTemplateHtml?: string | null
   lateFeeType: 'daily' | 'fixed'
   lateFeeValue: number
   companyName: string
@@ -176,6 +179,8 @@ function mapRentalRow(row: any): Rental {
     total: Number(row.total) || 0,
     customContractText: row.custom_contract_text,
     customContractHtml: row.custom_contract_html,
+    customSalesReceiptHtml: row.custom_sales_receipt_html,
+    warrantyPeriod: row.warranty_period,
     userId: row.user_id,
     pickupLocationId: row.pickup_location_id,
     localRetiradaId: row.local_retirada_id || '',
@@ -215,6 +220,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     logoUrl: null,
     contractFileName: null,
     contractTemplateHtml: null,
+    salesReceiptTemplateHtml: null,
     lateFeeType: 'daily',
     lateFeeValue: 2,
     companyName: 'LocaWeb Gestão de Ativos LTDA',
@@ -308,6 +314,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             logoUrl: (setData as any).logo_url,
             contractFileName: (setData as any).contract_file_name,
             contractTemplateHtml: (setData as any).contract_template_html,
+            salesReceiptTemplateHtml: (setData as any).sales_receipt_template_html,
             lateFeeType: ((setData as any).late_fee_type as Settings['lateFeeType']) || 'daily',
             lateFeeValue: Number((setData as any).late_fee_value) || 2,
             companyName: (setData as any).company_name || '',
@@ -518,6 +525,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       dbUpdate.custom_contract_text = updateData.customContractText
     if (updateData.customContractHtml !== undefined)
       dbUpdate.custom_contract_html = updateData.customContractHtml
+    if (updateData.customSalesReceiptHtml !== undefined)
+      dbUpdate.custom_sales_receipt_html = updateData.customSalesReceiptHtml
+    if (updateData.warrantyPeriod !== undefined)
+      dbUpdate.warranty_period = updateData.warrantyPeriod
 
     if (Object.keys(dbUpdate).length > 0) {
       try {
@@ -632,6 +643,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if ('contractFileName' in data) updateData.contract_file_name = data.contractFileName
     if ('contractTemplateHtml' in data)
       updateData.contract_template_html = data.contractTemplateHtml
+    if ('salesReceiptTemplateHtml' in data)
+      updateData.sales_receipt_template_html = data.salesReceiptTemplateHtml
     if ('lateFeeType' in data) updateData.late_fee_type = data.lateFeeType
     if ('lateFeeValue' in data) updateData.late_fee_value = data.lateFeeValue
     if ('companyName' in data) updateData.company_name = data.companyName

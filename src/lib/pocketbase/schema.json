@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-02T11:18:32.344Z",
+  "generatedAt": "2026-09-02T12:19:03.922Z",
   "collections": [
     {
       "name": "users",
@@ -515,6 +515,18 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "custom_sales_receipt_html",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "warranty_period",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -944,6 +956,12 @@
         },
         {
           "name": "witness_2_document",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "sales_receipt_template_html",
           "type": "text",
           "required": false,
           "system": false

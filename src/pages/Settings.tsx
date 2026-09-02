@@ -50,6 +50,10 @@ import pb from '@/lib/pocketbase/client'
 import { refreshLocations } from '@/hooks/use-locations'
 import { NotificationTemplates } from '@/components/settings/NotificationTemplates'
 import { CONTRACT_VARIABLES, DEFAULT_CONTRACT_TEMPLATE_HTML } from '@/lib/contract-template'
+import {
+  SALES_RECEIPT_VARIABLES,
+  DEFAULT_SALES_RECEIPT_TEMPLATE_HTML,
+} from '@/lib/sales-receipt-template'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -103,6 +107,16 @@ export default function Settings() {
   const [contractVarSearch, setContractVarSearch] = useState('')
   const [showContractVarList, setShowContractVarList] = useState(true)
 
+  const [salesReceiptHtml, setSalesReceiptHtml] = useState('')
+  const [salesReceiptSaving, setSalesReceiptSaving] = useState(false)
+  const [showSalesReceiptPreview, setShowSalesReceiptPreview] = useState(false)
+  const [salesReceiptDirty, setSalesReceiptDirty] = useState(false)
+  const salesReceiptLoadedRef = useRef('')
+  const salesReceiptTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const salesReceiptLastSavedRef = useRef('')
+  const [salesReceiptVarSearch, setSalesReceiptVarSearch] = useState('')
+  const [showSalesReceiptVarList, setShowSalesReceiptVarList] = useState(true)
+
   const [landlordRepName, setLandlordRepName] = useState(
     settings?.landlordRepName || 'Marcelo da Silveira Lepre',
   )
@@ -149,6 +163,79 @@ export default function Settings() {
       setContractDirty(false)
     }
   }, [settings?.contractTemplateHtml])
+
+  useEffect(() => {
+    const current = settings?.salesReceiptTemplateHtml ?? ''
+    if (current !== salesReceiptLoadedRef.current) {
+      salesReceiptLoadedRef.current = current
+      setSalesReceiptHtml(current)
+      salesReceiptLastSavedRef.current = current
+      setSalesReceiptDirty(false)
+    }
+  }, [settings?.salesReceiptTemplateHtml])
+
+  const handleSaveSalesReceipt = async () => {
+    if (salesReceiptSaving) return
+    setSalesReceiptSaving(true)
+    try {
+      const ok = await updateSettings({ salesReceiptTemplateHtml: salesReceiptHtml })
+      if (ok) {
+        salesReceiptLastSavedRef.current = salesReceiptHtml
+        setSalesReceiptDirty(false)
+        toast({
+          title: 'Template salvo',
+          description: 'O template do Recibo de Venda foi salvo com sucesso.',
+        })
+      } else {
+        toast({
+          title: 'Erro ao salvar',
+          description: 'Não foi possível salvar o template. Verifique sua conexão.',
+          variant: 'destructive',
+        })
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao salvar',
+        description: err?.message || 'Ocorreu um erro inesperado.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSalesReceiptSaving(false)
+    }
+  }
+
+  const handleResetSalesReceipt = () => {
+    setSalesReceiptHtml(DEFAULT_SALES_RECEIPT_TEMPLATE_HTML)
+    setSalesReceiptDirty(true)
+    toast({
+      title: 'Template padrão carregado',
+      description: 'Revise e clique em Salvar para aplicar o template padrão do Recibo de Venda.',
+    })
+  }
+
+  const handleSalesReceiptChange = (value: string) => {
+    setSalesReceiptHtml(value)
+    setSalesReceiptDirty(value !== salesReceiptLastSavedRef.current)
+  }
+
+  const insertSalesReceiptVariableAtCursor = (variable: string) => {
+    const textarea = salesReceiptTextareaRef.current
+    if (!textarea) {
+      setSalesReceiptHtml((prev) => prev + variable)
+      setSalesReceiptDirty(true)
+      return
+    }
+    const start = textarea.selectionStart ?? salesReceiptHtml.length
+    const end = textarea.selectionEnd ?? salesReceiptHtml.length
+    const newValue = salesReceiptHtml.slice(0, start) + variable + salesReceiptHtml.slice(end)
+    setSalesReceiptHtml(newValue)
+    setSalesReceiptDirty(newValue !== salesReceiptLastSavedRef.current)
+    requestAnimationFrame(() => {
+      const newPos = start + variable.length
+      textarea.focus()
+      textarea.setSelectionRange(newPos, newPos)
+    })
+  }
 
   const handleSaveContract = async () => {
     if (contractSaving) return
@@ -509,6 +596,9 @@ export default function Settings() {
           </TabsTrigger>
           <TabsTrigger value="contrato" className="text-base h-full flex-1">
             Contrato
+          </TabsTrigger>
+          <TabsTrigger value="recibo-venda" className="text-base h-full flex-1">
+            Recibo de Venda
           </TabsTrigger>
         </TabsList>
 
@@ -1104,6 +1194,160 @@ export default function Settings() {
 
         <TabsContent value="notificacoes" className="space-y-6">
           <NotificationTemplates />
+        </TabsContent>
+
+        <TabsContent value="recibo-venda" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Template do Recibo de Venda</CardTitle>
+              <CardDescription>
+                Edite o HTML do Recibo de Venda emitido para o cliente. Use as variáveis disponíveis
+                ao lado para preencher dados dinâmicos da venda e garantia.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-3 mb-4 flex-wrap items-stretch sm:flex-row sm:items-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetSalesReceipt}
+                  title="Carregar o template padrão (modelo Hospital Home)"
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Carregar template padrão
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSalesReceiptPreview((v) => !v)}
+                  title="Pré-visualizar o HTML do template"
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  {showSalesReceiptPreview ? 'Ocultar pré-visualização' : 'Pré-visualizar'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSalesReceiptVarList((v) => !v)}
+                >
+                  {showSalesReceiptVarList ? 'Ocultar variáveis' : 'Mostrar variáveis'}
+                </Button>
+                <div className="flex-1" />
+                <Button
+                  onClick={handleSaveSalesReceipt}
+                  disabled={salesReceiptSaving || !salesReceiptDirty}
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {salesReceiptSaving
+                    ? 'Salvando…'
+                    : salesReceiptDirty
+                      ? 'Salvar template'
+                      : 'Salvo'}
+                </Button>
+              </div>
+
+              {showSalesReceiptPreview && (
+                <div className="mb-4 border rounded-md">
+                  <div className="bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground border-b">
+                    Pré-visualização (estrutura do template — as variáveis aparecem como
+                    <code className="mx-1 px-1 py-0.5 bg-background rounded">{`{{nome}}`}</code>)
+                  </div>
+                  <div
+                    className="preview-content max-h-[400px] overflow-auto bg-white"
+                    dangerouslySetInnerHTML={{
+                      __html: salesReceiptHtml || DEFAULT_SALES_RECEIPT_TEMPLATE_HTML,
+                    }}
+                  />
+                </div>
+              )}
+
+              <div className="flex flex-col lg:flex-row gap-4">
+                <div className="flex-1 min-w-0">
+                  <Label className="mb-2 block">HTML do Template</Label>
+                  <Textarea
+                    ref={salesReceiptTextareaRef}
+                    value={salesReceiptHtml}
+                    onChange={(e) => handleSalesReceiptChange(e.target.value)}
+                    placeholder="Cole aqui o HTML do recibo de venda. Use variáveis como {{customerName}} para preencher dados dinâmicos."
+                    className="font-mono text-xs min-h-[500px] resize-y"
+                    spellCheck={false}
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Dica: use variáveis entre chaves duplas (ex.:{' '}
+                    <code>{`{{warrantyPeriod}}`}</code>
+                    ). Elas serão substituídas automaticamente ao gerar o recibo. Clique em uma
+                    variável na lista ao lado para inseri-la no cursor.
+                  </p>
+                </div>
+
+                {showSalesReceiptVarList && (
+                  <div className="lg:w-80 flex-shrink-0">
+                    <Label className="mb-2 block">Variáveis disponíveis</Label>
+                    <Input
+                      placeholder="Buscar variável…"
+                      value={salesReceiptVarSearch}
+                      onChange={(e) => setSalesReceiptVarSearch(e.target.value)}
+                      className="mb-2 h-8"
+                    />
+                    <ScrollArea className="h-[500px] rounded-md border">
+                      <div className="p-2">
+                        {SALES_RECEIPT_VARIABLES.filter(
+                          (v) =>
+                            v.var.toLowerCase().includes(salesReceiptVarSearch.toLowerCase()) ||
+                            v.desc.toLowerCase().includes(salesReceiptVarSearch.toLowerCase()),
+                        ).length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            Nenhuma variável encontrada.
+                          </p>
+                        ) : (
+                          <TooltipProvider delayDuration={150}>
+                            <ul className="space-y-1">
+                              {SALES_RECEIPT_VARIABLES.filter(
+                                (v) =>
+                                  v.var
+                                    .toLowerCase()
+                                    .includes(salesReceiptVarSearch.toLowerCase()) ||
+                                  v.desc
+                                    .toLowerCase()
+                                    .includes(salesReceiptVarSearch.toLowerCase()),
+                              ).map((v) => (
+                                <li key={v.var}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        type="button"
+                                        onClick={() => insertSalesReceiptVariableAtCursor(v.var)}
+                                        className="w-full text-left rounded px-2 py-1 hover:bg-accent transition-colors"
+                                      >
+                                        <code className="text-xs font-mono text-primary">
+                                          {v.var}
+                                        </code>
+                                        <span className="block text-xs text-muted-foreground mt-0.5">
+                                          {v.desc}
+                                        </span>
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="max-w-xs">
+                                      <p className="text-xs">
+                                        <code>{v.var}</code> — {v.desc}
+                                      </p>
+                                      <p className="text-[10px] mt-1 opacity-70">
+                                        Clique para inserir no cursor.
+                                      </p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </li>
+                              ))}
+                            </ul>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="contrato" className="space-y-6">

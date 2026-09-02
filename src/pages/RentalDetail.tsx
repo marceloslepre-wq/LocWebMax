@@ -28,6 +28,16 @@ import {
   findFreightItem,
 } from '@/lib/rental-items'
 import { renderContractHtml } from '@/lib/contract-template'
+import { renderSalesReceiptHtml } from '@/lib/sales-receipt-template'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { CheckCircle2, ShoppingCart } from 'lucide-react'
 
 export default function RentalDetail() {
   const { id } = useParams()
@@ -38,8 +48,15 @@ export default function RentalDetail() {
   const { locations: locaisList } = useLocations()
 
   const [isEditing, setIsEditing] = useState(false)
-  const [docType, setDocType] = useState<'contract' | 'delivery' | 'return' | 'history'>('contract')
+  const [docType, setDocType] = useState<
+    'contract' | 'delivery' | 'return' | 'sales_receipt' | 'history'
+  >('contract')
   const [audits, setAudits] = useState<any[]>([])
+
+  // State for Sales Receipt / Warranty Period Dialog
+  const [warrantyModalOpen, setWarrantyModalOpen] = useState(false)
+  const [warrantyInput, setWarrantyInput] = useState('90 (noventa) dias')
+  const [isSelling, setIsSelling] = useState(false)
 
   const rental = rentals.find((r) => r.id === id)
   const customer = customers.find((c) => c?.id === rental?.customerId)
@@ -358,6 +375,78 @@ export default function RentalDetail() {
   }
 
   const finalHtml = useMemo(generateContractHtml, [rental, settings, customer, inventory])
+
+  const salesReceiptHtml = useMemo(() => {
+    if (!rental) return ''
+    const contractIdentifier = rental.contractNumber || (rental as any).contract_number || rental.id
+    if (rental.customSalesReceiptHtml) {
+      return rental.customSalesReceiptHtml
+    }
+    return renderSalesReceiptHtml({
+      templateHtml: settings?.salesReceiptTemplateHtml,
+      customer,
+      items: rental.items,
+      inventory: inventory.map((i) => ({ ...i, sale_price: (i as any).salePrice })),
+      settings,
+      locaisList,
+      pickupLocationId: rental.pickupLocationId || (rental as any).pickup_location_id,
+      paymentMethod: rental.paymentMethod || (rental as any).payment_method,
+      total: rental.total,
+      contractNumber: contractIdentifier,
+      rentalId: contractIdentifier,
+      warrantyPeriod: rental.warrantyPeriod || warrantyInput || '90 (noventa) dias',
+    })
+  }, [rental, settings, customer, inventory, locaisList, warrantyInput])
+
+  const handleConfirmSale = async () => {
+    if (!rental || isSelling) return
+    setIsSelling(true)
+    try {
+      const generatedHtml = renderSalesReceiptHtml({
+        templateHtml: settings?.salesReceiptTemplateHtml,
+        customer,
+        items: rental.items,
+        inventory: inventory.map((i) => ({ ...i, sale_price: (i as any).salePrice })),
+        settings,
+        locaisList,
+        pickupLocationId: rental.pickupLocationId || (rental as any).pickup_location_id,
+        paymentMethod: rental.paymentMethod || (rental as any).payment_method,
+        total: rental.total,
+        contractNumber: rental.contractNumber || (rental as any).contract_number || rental.id,
+        rentalId: rental.contractNumber || (rental as any).contract_number || rental.id,
+        warrantyPeriod: warrantyInput || '90 (noventa) dias',
+      })
+
+      await pb.send(`/backend/v1/rentals/${rental.id}/sell`, {
+        method: 'POST',
+        body: JSON.stringify({
+          warranty_period: warrantyInput || '90 (noventa) dias',
+          custom_sales_receipt_html: generatedHtml,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      updateRental(rental.id, {
+        status: 'Vendido',
+        warrantyPeriod: warrantyInput || '90 (noventa) dias',
+        customSalesReceiptHtml: generatedHtml,
+      })
+
+      setWarrantyModalOpen(false)
+      toast({
+        title: 'Venda Emitida com Sucesso',
+        description: 'Status atualizado para "Vendido" e estoque baixado.',
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao emitir venda',
+        description: err?.message || 'Falha ao processar venda no estoque.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSelling(false)
+    }
+  }
   const getReturnReceipt = () => {
     // Somente os itens efetivamente devolvidos (returnedQty > 0).
     const returnedItems = getReturnedRentalItems(rental?.items || [])
@@ -707,6 +796,12 @@ export default function RentalDetail() {
           Recibo Devolução
         </Button>
         <Button
+          variant={docType === 'sales_receipt' ? 'default' : 'outline'}
+          onClick={() => setDocType('sales_receipt')}
+        >
+          Recibo de Venda
+        </Button>
+        <Button
           variant={docType === 'history' ? 'default' : 'outline'}
           onClick={() => setDocType('history')}
         >
@@ -772,7 +867,12 @@ export default function RentalDetail() {
                 ? 'default'
                 : rental.status === 'Atrasado'
                   ? 'destructive'
-                  : 'secondary'
+                  : rental.status === 'Vendido'
+                    ? 'default'
+                    : 'secondary'
+            }
+            className={
+              rental.status === 'Vendido' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''
             }
           >
             {rental.status}
@@ -782,6 +882,16 @@ export default function RentalDetail() {
               <Button variant="outline" size="sm" onClick={handleCopyLink}>
                 <LinkIcon className="w-4 h-4 mr-2" /> Copiar Link
               </Button>
+              {docType === 'sales_receipt' && rental.status !== 'Vendido' && (
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={() => setWarrantyModalOpen(true)}
+                >
+                  <ShoppingCart className="w-4 h-4 mr-2" /> Emitir Venda
+                </Button>
+              )}
               <Button size="sm" onClick={() => window.print()}>
                 <Printer className="w-4 h-4 mr-2" /> Imprimir
               </Button>
@@ -992,11 +1102,72 @@ export default function RentalDetail() {
             </>
           ) : docType === 'return' ? (
             <div dangerouslySetInnerHTML={{ __html: getReturnReceipt() }} />
+          ) : docType === 'sales_receipt' ? (
+            <div dangerouslySetInnerHTML={{ __html: salesReceiptHtml }} />
           ) : (
             <div dangerouslySetInnerHTML={{ __html: getDeliveryReceipt() }} />
           )}
         </div>
       )}
+
+      {/* Modal para emissão do Recibo de Venda com Prazo de Garantia */}
+      <Dialog open={warrantyModalOpen} onOpenChange={setWarrantyModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5 text-emerald-600" />
+              Emitir Recibo de Venda
+            </DialogTitle>
+            <DialogDescription>
+              Ao confirmar a emissão, o sistema irá:
+              <ul className="list-disc list-inside mt-2 space-y-1 text-xs text-foreground/80">
+                <li>
+                  Dar <strong>baixa automática</strong> dos itens no estoque (reduzir quantidade).
+                </li>
+                <li>
+                  Marcar o status desta locação como <strong>&quot;Vendido&quot;</strong>.
+                </li>
+                <li>
+                  Gerar o recibo oficial de venda e termo de garantia com os dados informados.
+                </li>
+              </ul>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="warranty_period_field">Prazo de Garantia</Label>
+              <Input
+                id="warranty_period_field"
+                placeholder="Ex: 90 (noventa) dias, 1 (um) ano, 30 dias"
+                value={warrantyInput}
+                onChange={(e) => setWarrantyInput(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Informe o prazo de garantia que constará no documento impresso.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setWarrantyModalOpen(false)}
+              disabled={isSelling}
+            >
+              Cancelar
+            </Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={handleConfirmSale}
+              disabled={isSelling}
+            >
+              <CheckCircle2 className="w-4 h-4 mr-2" />
+              {isSelling ? 'Processando baixa...' : 'Confirmar Venda e Baixar Estoque'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
