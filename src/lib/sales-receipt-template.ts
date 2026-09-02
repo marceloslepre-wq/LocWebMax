@@ -42,6 +42,8 @@ export const SALES_RECEIPT_VARIABLES: { var: string; desc: string }[] = [
   { var: '{{companyName}}', desc: 'Razão social da empresa (vendedor)' },
   { var: '{{companyDocument}}', desc: 'CNPJ da empresa' },
   { var: '{{companyAddress}}', desc: 'Endereço da empresa' },
+  { var: '{{landlordRepName}}', desc: 'Nome do representante da empresa' },
+  { var: '{{landlordRepDocument}}', desc: 'CPF/Documento do representante' },
 ]
 
 function formatBRL(value: number): string {
@@ -150,7 +152,7 @@ export const DEFAULT_SALES_RECEIPT_TEMPLATE_HTML = `<style>
       <!-- VENDEDOR -->
       <td style="width: 46%; text-align: center; vertical-align: bottom; padding: 0 10px;">
         <div class="signature-handwriting" style="font-family: 'Dancing Script', cursive, sans-serif; font-size: 22px; font-weight: 700; color: #1e3a8a; margin-bottom: 4px; min-height: 28px;">
-          {{companyName}}
+          {{landlordRepName}}
         </div>
         <div style="border-bottom: 1px solid #000; margin-bottom: 6px;"></div>
         <div style="font-size: 12px; font-weight: bold;">{{companyName}}</div>
@@ -267,6 +269,14 @@ export function renderSalesReceiptHtml(params: RenderSalesReceiptParams): string
   html = html.replace(/{{paymentMethod}}/g, params.paymentMethod || 'À Vista / PIX')
   html = html.replace(/{{warrantyPeriod}}/g, warrantyPeriodStr)
   html = html.replace(/{{currentDateFull}}/g, currentDateFull)
+  html = html.replace(
+    /{{landlordRepName}}/g,
+    settings?.landlordRepName || settings?.landlord_rep_name || 'Marcelo da Silveira Lepre',
+  )
+  html = html.replace(
+    /{{landlordRepDocument}}/g,
+    settings?.landlordRepDocument || settings?.landlord_rep_document || '022.862.567-05',
+  )
 
   // Also support bracket style placeholders just in case
   html = html.replace(/\[NOMECLIENTE\]/gi, customer?.name || 'Cliente')
