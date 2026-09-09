@@ -159,3 +159,61 @@ export function getInPossessionRentalItems(items: any[]): NormalizedRentalItem[]
 export function sumItemsTotal(items: any[]): number {
   return items.reduce((acc, it) => acc + Number(it.totalPrice || it.total_price || 0), 0)
 }
+
+/**
+ * Retorna o endereço formatado de entrega/retirada do cliente.
+ * Usa `customer.deliveryAddress` quando `customer.hasDifferentDeliveryAddress` está true e a rua estiver preenchida;
+ * senão usa `customer.address`; retorna "Não informado" se vazio.
+ * Formato: `Rua X, Nº, complemento, Bairro, Cidade/UF, CEP`.
+ */
+export function getDeliveryAddressText(customer?: any | null): string {
+  if (!customer) return 'Não informado'
+
+  const useDelivery =
+    Boolean(customer.hasDifferentDeliveryAddress) &&
+    Boolean(customer.deliveryAddress?.street && customer.deliveryAddress.street.trim() !== '')
+
+  const addr = useDelivery ? customer.deliveryAddress : customer.address
+  if (!addr || !addr.street || !addr.street.trim()) {
+    return 'Não informado'
+  }
+
+  const street = addr.street.trim()
+  const number = addr.number && addr.number.trim() !== '' ? addr.number.trim() : 'S/N'
+  const complement = addr.complement && addr.complement.trim() !== '' ? addr.complement.trim() : ''
+  const neighborhood =
+    addr.neighborhood && addr.neighborhood.trim() !== '' ? addr.neighborhood.trim() : ''
+  const city = addr.city && addr.city.trim() !== '' ? addr.city.trim() : ''
+  const state = addr.state && addr.state.trim() !== '' ? addr.state.trim() : ''
+  const zipCode = addr.zipCode && addr.zipCode.trim() !== '' ? addr.zipCode.trim() : ''
+
+  const parts: string[] = []
+  // Rua X, Nº
+  parts.push(`${street}, ${number}`)
+
+  // complemento
+  if (complement) {
+    parts.push(complement)
+  }
+
+  // Bairro
+  if (neighborhood) {
+    parts.push(neighborhood)
+  }
+
+  // Cidade/UF
+  if (city && state) {
+    parts.push(`${city}/${state}`)
+  } else if (city) {
+    parts.push(city)
+  } else if (state) {
+    parts.push(state)
+  }
+
+  // CEP
+  if (zipCode) {
+    parts.push(zipCode.toUpperCase().startsWith('CEP') ? zipCode : `CEP ${zipCode}`)
+  }
+
+  return parts.length > 0 ? parts.join(', ') : 'Não informado'
+}

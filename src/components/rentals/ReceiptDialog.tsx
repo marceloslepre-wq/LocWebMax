@@ -15,6 +15,7 @@ import {
   sumItemsTotal,
   normalizeRentalItem,
   type NormalizedRentalItem,
+  getDeliveryAddressText,
 } from '@/lib/rental-items'
 import { Printer, MessageCircle, Mail, Link as LinkIcon } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
@@ -103,6 +104,7 @@ export function ReceiptDialog({
     if (customer?.document) {
       text += `*CPF/CNPJ:* ${customer.document}\n`
     }
+    text += `*Endereço de Entrega/Retirada:* ${getDeliveryAddressText(customer)}\n`
     text += `*Contrato:* ${rental.contractNumber || rental.id}\n\n`
 
     if (type === 'late_fee' && renewalInfo) {
@@ -330,6 +332,10 @@ export function ReceiptDialog({
               <div>
                 <span className="font-semibold">Emissão:</span>{' '}
                 {formatDateStr(new Date().toISOString())}
+              </div>
+              <div className="col-span-2">
+                <span className="font-semibold">Endereço de Entrega/Retirada:</span>{' '}
+                {getDeliveryAddressText(customer)}
               </div>
               <div className="col-span-2 pt-1 border-t mt-1">
                 <span className="font-semibold">Forma de Pagamento:</span>{' '}

@@ -26,6 +26,7 @@ import {
   getInPossessionRentalItems,
   sumItemsTotal,
   findFreightItem,
+  getDeliveryAddressText,
 } from '@/lib/rental-items'
 import { renderContractHtml } from '@/lib/contract-template'
 import { renderSalesReceiptHtml } from '@/lib/sales-receipt-template'
@@ -468,6 +469,7 @@ export default function RentalDetail() {
           <p><strong>LOCADOR:</strong> ${settings.companyName || 'Lojas Hospital Home'}</p>
           <p><strong>LOCATÁRIO:</strong> ${customer?.name}</p>
           <p><strong>CPF/CNPJ:</strong> ${customer?.document}</p>
+          <p><strong>Endereço de Entrega/Retirada:</strong> ${getDeliveryAddressText(customer)}</p>
           <p><strong>Data de Devolução:</strong> ${rental?.actualReturnDate ? rental.actualReturnDate.split('T')[0].split(' ')[0].split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}</p>
         </div>
 
@@ -553,6 +555,7 @@ export default function RentalDetail() {
           <p><strong>LOCADOR:</strong> ${settings.companyName || 'Lojas Hospital Home'}</p>
           <p><strong>LOCATÁRIO:</strong> ${customer?.name}</p>
           <p><strong>CPF/CNPJ:</strong> ${customer?.document}</p>
+          <p><strong>Endereço de Entrega/Retirada:</strong> ${getDeliveryAddressText(customer)}</p>
           <p><strong>Data de Retirada:</strong> ${rental?.startDate ? rental.startDate.split('T')[0].split(' ')[0].split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}</p>
         </div>
 
