@@ -11,6 +11,7 @@ import {
   Trash2,
   AlertTriangle,
   X,
+  Search,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -90,6 +91,8 @@ export default function Payments() {
   const [deleting, setDeleting] = useState(false)
   const submitLockRef = useRef(false)
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState('Todos')
 
   const extractApiError = (err: any): string => {
     if (err?.response?.error && typeof err.response.error === 'string') {
@@ -455,12 +458,79 @@ export default function Payments() {
   const getRentalLabel = (payment: any) => {
     const rental = payment.expand?.rental_id
     if (rental) {
-      const contractNum = rental.contract_number || rental.id?.substring(0, 8)
-      const customer = customers.find((c: any) => c.id === rental.customer_id)
+      const contractNum =
+        rental.contractNumber || rental.contract_number || rental.id?.substring(0, 8)
+      const customer = customers.find(
+        (c: any) => c.id === (rental.customerId || rental.customer_id),
+      )
       return customer ? `${contractNum} - ${customer.name}` : contractNum
     }
     return payment.rental_id?.substring(0, 8) || '-'
   }
+
+  const normalizeText = (text: string) => {
+    return (text || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim()
+  }
+
+  const matchesStatus = (paymentStatus: string, filter: string) => {
+    if (filter === 'Todos') return true
+    const s = (paymentStatus || '').toLowerCase().trim()
+
+    if (filter === 'Aprovado') {
+      return s === 'aprovado' || s === 'approved'
+    }
+    if (filter === 'Pendente') {
+      return s === 'pendente' || s === 'pending' || s === 'in_process' || s === ''
+    }
+    if (filter === 'Falhou') {
+      return (
+        s === 'falhou' ||
+        s === 'failed' ||
+        s === 'rejeitado' ||
+        s === 'rejected' ||
+        s === 'recusado' ||
+        s === 'cancelled' ||
+        s === 'cancelado'
+      )
+    }
+    return true
+  }
+
+  const filteredPayments = payments.filter((payment) => {
+    if (!matchesStatus(payment.status, statusFilter)) {
+      return false
+    }
+
+    if (searchQuery.trim()) {
+      const query = normalizeText(searchQuery)
+      const label = normalizeText(getRentalLabel(payment))
+      const desc = normalizeText(payment.description || '')
+      const id = normalizeText(payment.id || '')
+      const rentalId = normalizeText(payment.rental_id || '')
+      const contractNum = normalizeText(
+        payment.expand?.rental_id?.contractNumber ||
+          payment.expand?.rental_id?.contract_number ||
+          '',
+      )
+      const customerName = normalizeText(getCustomerName(payment))
+
+      const matches =
+        label.includes(query) ||
+        desc.includes(query) ||
+        id.includes(query) ||
+        rentalId.includes(query) ||
+        contractNum.includes(query) ||
+        customerName.includes(query)
+
+      if (!matches) return false
+    }
+
+    return true
+  })
 
   return (
     <div className="space-y-6">
@@ -683,6 +753,40 @@ export default function Payments() {
       </Card>
 
       <Card>
+        <div className="p-4 border-b flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-muted/20">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por cliente ou locação..."
+              className="pl-9 bg-background"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1 h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={() => setSearchQuery('')}
+                title="Limpar busca"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full sm:w-[180px] bg-background">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Todos">Todos os Status</SelectItem>
+              <SelectItem value="Aprovado">Aprovado</SelectItem>
+              <SelectItem value="Pendente">Pendente</SelectItem>
+              <SelectItem value="Falhou">Falhou</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -709,8 +813,14 @@ export default function Payments() {
                     Nenhum pagamento gerado ainda.
                   </TableCell>
                 </TableRow>
+              ) : filteredPayments.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                    Nenhum pagamento encontrado.
+                  </TableCell>
+                </TableRow>
               ) : (
-                payments.map((payment) => (
+                filteredPayments.map((payment) => (
                   <TableRow key={payment.id} className="hover:bg-muted/30">
                     <TableCell className="font-medium">{getRentalLabel(payment)}</TableCell>
                     <TableCell className="text-muted-foreground">
