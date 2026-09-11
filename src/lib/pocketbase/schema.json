@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-11T14:59:23.557Z",
+  "generatedAt": "2026-09-11T15:27:15.564Z",
   "collections": [
     {
       "name": "users",
@@ -1164,6 +1164,86 @@
         }
       ],
       "indexes": ["CREATE INDEX idx_whatsapp_conversations_phone ON whatsapp_conversations (phone)"]
+    },
+    {
+      "name": "rental_snapshots",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "rental_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "rentals"
+        },
+        {
+          "name": "action_type",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "rental_state",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "inventory_state",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created_payment_ids",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "extra_data",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_rental_snapshots_rental ON rental_snapshots (rental_id, created DESC)"
+      ]
     }
   ]
 }

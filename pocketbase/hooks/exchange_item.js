@@ -59,6 +59,56 @@ routerAdd(
       }
     }
 
+    // Capturar estado anterior do contrato e dos itens de estoque envolvidos
+    var preRentalState = {
+      status: rental.getString('status'),
+      start_date: rental.getString('start_date'),
+      expected_return_date: rental.getString('expected_return_date'),
+      actual_return_date: rental.getString('actual_return_date'),
+      items: JSON.parse(JSON.stringify(items)),
+      total: rental.get('total') || 0,
+      local_retirada_id: rental.getString('local_retirada_id'),
+      local_devolucao_id: rental.getString('local_devolucao_id'),
+      pickup_location_id: rental.getString('pickup_location_id'),
+      custom_contract_text: rental.getString('custom_contract_text'),
+      custom_contract_html: rental.getString('custom_contract_html'),
+    }
+
+    var preInventoryState = []
+    var involvedIds = [oldInvId, newInvId]
+    for (var invIdx = 0; invIdx < involvedIds.length; invIdx++) {
+      var targetId = involvedIds[invIdx]
+      try {
+        var targetInv = $app.findRecordById('inventory', targetId)
+        var targetLocStocks = []
+        try {
+          var foundStocks = $app.findRecordsByFilter(
+            'estoque_por_local',
+            'inventory_id = "' + targetId + '"',
+            '',
+            0,
+            0,
+          )
+          for (var fsIdx = 0; fsIdx < foundStocks.length; fsIdx++) {
+            targetLocStocks.push({
+              id: foundStocks[fsIdx].id,
+              local_id: foundStocks[fsIdx].getString('local_id'),
+              quantidade_total: foundStocks[fsIdx].getInt('quantidade_total'),
+              quantidade_locada: foundStocks[fsIdx].getInt('quantidade_locada'),
+            })
+          }
+        } catch (_) {}
+
+        preInventoryState.push({
+          id: targetInv.id,
+          total_qty: targetInv.getInt('total_qty'),
+          available_qty: targetInv.getInt('available_qty'),
+          rented_qty: targetInv.getInt('rented_qty'),
+          stocks: targetLocStocks,
+        })
+      } catch (_) {}
+    }
+
     if (localId) {
       try {
         var oldStocks = $app.findRecordsByFilter(
@@ -97,6 +147,7 @@ routerAdd(
       rental.set('expected_return_date', body.new_expected_return_date)
     $app.save(rental)
 
+    var createdExchangeRecordId = null
     try {
       const exCol = $app.findCollectionByNameOrId('exchange_history')
       const ex = new Record(exCol)
@@ -111,10 +162,12 @@ routerAdd(
       ex.set('difference_to_pay', body.difference_to_pay || 0)
       ex.set('exchange_date', new Date().toISOString().split('T')[0])
       $app.save(ex)
+      createdExchangeRecordId = ex.id
     } catch (err) {
       $app.logger().error('exchange history creation failed', 'err', err.message)
     }
 
+    var createdPaymentId = null
     if ((body.difference_to_pay || 0) > 0) {
       try {
         const paymentsCol = $app.findCollectionByNameOrId('payments')
@@ -124,9 +177,48 @@ routerAdd(
         pay.set('payment_method', rental.getString('payment_method') || 'PIX')
         pay.set('status', 'pending')
         $app.save(pay)
+        createdPaymentId = pay.id
       } catch (err) {
         $app.logger().error('exchange payment creation failed', 'err', err.message)
       }
+    }
+
+    // Salvar snapshot da troca
+    try {
+      var oldSnapshots = $app.findRecordsByFilter(
+        'rental_snapshots',
+        'rental_id = "' + rentalId + '"',
+        '-created',
+        0,
+        0,
+      )
+      for (var sIdx = 0; sIdx < oldSnapshots.length; sIdx++) {
+        try {
+          $app.delete(oldSnapshots[sIdx])
+        } catch (_) {}
+      }
+
+      var snapCol = $app.findCollectionByNameOrId('rental_snapshots')
+      var snapshot = new Record(snapCol)
+      snapshot.set('rental_id', rentalId)
+      snapshot.set('action_type', 'troca')
+      snapshot.set('description', 'Troca de produto realizada')
+      snapshot.set('rental_state', preRentalState)
+      snapshot.set('inventory_state', preInventoryState)
+      snapshot.set('created_payment_ids', createdPaymentId ? [createdPaymentId] : [])
+      snapshot.set('extra_data', {
+        old_inventory_id: oldInvId,
+        new_inventory_id: newInvId,
+        quantity: quantity,
+        exchange_history_id: createdExchangeRecordId,
+        difference_to_pay: body.difference_to_pay || 0,
+      })
+      if (e.auth && e.auth.id) {
+        snapshot.set('user_id', e.auth.id)
+      }
+      $app.save(snapshot)
+    } catch (snapErr) {
+      $app.logger().error('failed to save exchange snapshot', 'err', snapErr.message)
     }
 
     return e.json(200, { success: true })

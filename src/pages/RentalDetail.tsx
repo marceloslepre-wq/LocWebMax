@@ -13,7 +13,10 @@ import {
   Link as LinkIcon,
   History,
   AlertTriangle,
+  Undo2,
+  Loader2,
 } from 'lucide-react'
+import { refreshStoreInventory } from '@/lib/inventory-refresh'
 import { useState, useMemo, useEffect } from 'react'
 import { useToast } from '@/hooks/use-toast'
 import { usePermissions } from '@/hooks/use-permissions'
@@ -58,6 +61,11 @@ export default function RentalDetail() {
   const [warrantyModalOpen, setWarrantyModalOpen] = useState(false)
   const [warrantyInput, setWarrantyInput] = useState('90 (noventa) dias')
   const [isSelling, setIsSelling] = useState(false)
+
+  // State for "Desfazer Última Ação"
+  const [latestSnapshot, setLatestSnapshot] = useState<any>(null)
+  const [undoModalOpen, setUndoModalOpen] = useState(false)
+  const [isUndoing, setIsUndoing] = useState(false)
 
   const rental = rentals.find((r) => r.id === id)
   const customer = customers.find((c) => c?.id === rental?.customerId)
@@ -309,6 +317,22 @@ export default function RentalDetail() {
       /* ignore */
     }
   }
+
+  const fetchLatestSnapshot = async () => {
+    if (!rental) return
+    try {
+      const snap = await rentalsService.getLatestSnapshot(rental.id)
+      setLatestSnapshot(snap)
+    } catch {
+      setLatestSnapshot(null)
+    }
+  }
+
+  useEffect(() => {
+    if (rental?.id) {
+      fetchLatestSnapshot()
+    }
+  }, [rental?.id, rental?.status, (rental as any)?.updated])
 
   useEffect(() => {
     if (docType === 'history') {
@@ -748,6 +772,45 @@ export default function RentalDetail() {
     })
   }
 
+  const handleUndoLastAction = async () => {
+    if (!rental || !latestSnapshot || isUndoing) return
+    setIsUndoing(true)
+    try {
+      const res: any = await rentalsService.undoLastAction(rental.id)
+      const restored = res?.rental
+      if (restored) {
+        updateRental(rental.id, {
+          status: restored.status,
+          startDate: restored.start_date,
+          expectedReturnDate: restored.expected_return_date,
+          actualReturnDate: restored.actual_return_date || undefined,
+          total: restored.total,
+          items: restored.items,
+          localRetiradaId: restored.local_retirada_id,
+          localDevolucaoId: restored.local_devolucao_id,
+        })
+      }
+      refreshStoreInventory()
+      setLatestSnapshot(null)
+      setUndoModalOpen(false)
+      toast({
+        title: 'Ação desfeita com sucesso',
+        description: res?.message || 'O contrato e o estoque foram restaurados ao estado anterior.',
+      })
+      if (docType === 'history') {
+        fetchAudits()
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao desfazer ação',
+        description: err?.message || 'Não foi possível reverter a última ação.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsUndoing(false)
+    }
+  }
+
   const handleRestoreStatus = async (newStatus: 'Ativo' | 'Atrasado') => {
     if (!rental || !currentUser) return
 
@@ -906,6 +969,17 @@ export default function RentalDetail() {
               <Button size="sm" onClick={() => window.print()}>
                 <Printer className="w-4 h-4 mr-2" /> Imprimir
               </Button>
+              {latestSnapshot && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-amber-500 text-amber-700 hover:bg-amber-50 font-medium"
+                  onClick={() => setUndoModalOpen(true)}
+                  title="Desfazer última ação realizada neste contrato"
+                >
+                  <Undo2 className="w-4 h-4 mr-2 text-amber-600" /> Desfazer última ação
+                </Button>
+              )}
               {(can('rentals:manage') || can('editar_contratos')) && docType === 'contract' && (
                 <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
                   <Edit2 className="w-4 h-4 mr-2" /> Editar
@@ -1175,6 +1249,64 @@ export default function RentalDetail() {
             >
               <CheckCircle2 className="w-4 h-4 mr-2" />
               {isSelling ? 'Processando baixa...' : 'Confirmar Venda e Baixar Estoque'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Confirmação para Desfazer Última Ação */}
+      <Dialog open={undoModalOpen} onOpenChange={setUndoModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-800">
+              <Undo2 className="w-5 h-5 text-amber-600" />
+              Desfazer Última Ação
+            </DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja cancelar a última ação executada neste contrato e restaurá-lo
+              ao status exatamente como estava antes?
+            </DialogDescription>
+          </DialogHeader>
+
+          {latestSnapshot && (
+            <div className="space-y-3 py-2 text-sm bg-amber-50/70 border border-amber-200 rounded-lg p-3 text-amber-900">
+              <div>
+                <span className="font-semibold block text-xs uppercase tracking-wide text-amber-700">
+                  Ação a ser desfeita:
+                </span>
+                <span className="font-medium">
+                  {latestSnapshot.description || latestSnapshot.action_type || 'Ação anterior'}
+                </span>
+              </div>
+              <div className="text-xs text-amber-800 space-y-1 border-t border-amber-200 pt-2">
+                <p>
+                  • <strong>Status, datas e itens:</strong> retornarão ao estado antes desta ação.
+                </p>
+                <p>
+                  • <strong>Estoque:</strong> quantidades alocadas ou devolvidas serão revertidas.
+                </p>
+                <p>
+                  • <strong>Cobranças geradas:</strong> cobranças/multas criadas por esta ação serão
+                  canceladas.
+                </p>
+                <p className="text-muted-foreground italic pt-1">
+                  Pagamentos ou recibos consolidados anteriormente não serão tocados.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setUndoModalOpen(false)} disabled={isUndoing}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={handleUndoLastAction}
+              disabled={isUndoing}
+            >
+              {isUndoing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {isUndoing ? 'Restaurando...' : 'Confirmar e Reverter'}
             </Button>
           </DialogFooter>
         </DialogContent>

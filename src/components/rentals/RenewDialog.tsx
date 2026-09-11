@@ -24,6 +24,7 @@ import {
 import { rentalsService } from '@/services/rentals'
 import { paymentsService } from '@/services/payments'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { pb } from '@/lib/pocketbase/client'
 
 interface RenewDialogProps {
   rental: Rental | null
@@ -178,12 +179,41 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
     const newExpectedReturn = allDates.sort().pop() || endDate
     const newTotal = rental.total + finalTotal
 
+    let createdPaymentId: string | null = null
+    if (generatePayment) {
+      try {
+        const charge = await paymentsService.createCharge({
+          rental_id: rental.id,
+          amount: finalTotal,
+          payment_type: 'pix',
+          description: `Renovação - Locação ${(rental as any).contractNumber || (rental as any).contract_number || rental.id.substring(0, 8)}`,
+        })
+        if (charge && charge.id) {
+          createdPaymentId = charge.id
+        }
+        if (charge.payment_url) {
+          window.open(charge.payment_url, '_blank')
+        }
+        toast({
+          title: 'Cobrança Gerada',
+          description: 'Link de pagamento aberto em nova aba.',
+        })
+      } catch (payErr) {
+        toast({
+          title: 'Erro ao gerar pagamento',
+          description: getErrorMessage(payErr),
+          variant: 'destructive',
+        })
+      }
+    }
+
     try {
-      await rentalsService.update(rental.id, {
+      await rentalsService.renew(rental.id, {
         expected_return_date: newExpectedReturn,
         status: 'Ativo',
         total: newTotal,
         items: updatedItems,
+        added_total: finalTotal,
       })
     } catch (err) {
       setSaving(false)
@@ -215,29 +245,21 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
         },
       )
     }
-    if (generatePayment) {
+    // Se um pagamento foi gerado antes do renew, vinculá-lo ao snapshot para reversão
+    if (createdPaymentId) {
       try {
-        const charge = await paymentsService.createCharge({
-          rental_id: rental.id,
-          amount: finalTotal,
-          payment_type: 'pix',
-          description: `Renovação - Locação ${(rental as any).contractNumber || (rental as any).contract_number || rental.id.substring(0, 8)}`,
-        })
-        if (charge.payment_url) {
-          window.open(charge.payment_url, '_blank')
+        const snap = await rentalsService.getLatestSnapshot(rental.id)
+        if (snap) {
+          const existingIds = (snap as any).created_payment_ids || []
+          await pb.collection('rental_snapshots').update(snap.id, {
+            created_payment_ids: [...existingIds, createdPaymentId],
+          })
         }
-        toast({
-          title: 'Cobrança Gerada',
-          description: 'Link de pagamento aberto em nova aba.',
-        })
-      } catch (payErr) {
-        toast({
-          title: 'Erro ao gerar pagamento',
-          description: getErrorMessage(payErr),
-          variant: 'destructive',
-        })
+      } catch {
+        /* intentionally ignored */
       }
     }
+
     setSaving(false)
     onOpenChange(false)
   }
