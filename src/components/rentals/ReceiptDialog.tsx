@@ -114,6 +114,7 @@ export function ReceiptDialog({
       text += `*Devolução Efetiva:* ${lf.actualDate ? formatDateStr(lf.actualDate) : formatDateStr(rental.actualReturnDate)}\n`
       text += `*Dias de Atraso:* ${lf.days}\n`
       if (lf.breakdown && lf.breakdown.length > 0) {
+        text += `*Taxa Diária:* R$ ${(lf.lateFeeValue || 0).toFixed(2)}\n`
         text += `*Detalhamento:*\n`
         lf.breakdown.forEach((b: any) => {
           text += `- ${b.itemName}: ${b.qty}x R$ ${b.dailyRate.toFixed(2)}/dia x ${b.days} dias = R$ ${b.subtotal.toFixed(2)}\n`
@@ -156,13 +157,12 @@ export function ReceiptDialog({
       if (typeof lf.days === 'number' && typeof lf.total === 'number' && lf.total > 0) {
         text += `\n*MULTA POR ATRASO*\n`
         text += `*Dias de Atraso:* ${lf.days} dia(s)\n`
-        if (lf.breakdown && lf.breakdown.length > 0) {
+        text += `*Taxa Diária:* R$ ${(lf.lateFeeValue || 0).toFixed(2)}\n`
+        if (lf.breakdown && lf.breakdown.length > 0 && lf.breakdown.length > 1) {
           text += `*Detalhamento:*\n`
           lf.breakdown.forEach((b: any) => {
             text += `- ${b.itemName}: ${b.qty}x R$ ${b.dailyRate.toFixed(2)}/dia x ${b.days} dias = R$ ${b.subtotal.toFixed(2)}\n`
           })
-        } else {
-          text += `*Taxa Diária:* R$ ${(lf.lateFeeValue || 0).toFixed(2)}\n`
         }
         text += `*Total da Multa:* R$ ${lf.total.toFixed(2)}\n`
         text += `*Total Geral (Itens Devolvidos + Multa):* R$ ${(receiptTotal + lf.total).toFixed(2)}\n`
@@ -368,9 +368,13 @@ export function ReceiptDialog({
                   <span className="font-semibold">Dias de Atraso:</span>
                   <span>{(renewalInfo as any).days} dia(s)</span>
                 </div>
-                {(renewalInfo as any).breakdown?.length > 0 ? (
-                  <div className="pt-2 space-y-1">
-                    <span className="font-semibold">Detalhamento da Multa:</span>
+                <div className="flex justify-between">
+                  <span className="font-semibold">Taxa Diária:</span>
+                  <span>R$ {((renewalInfo as any).lateFeeValue || 0).toFixed(2)}</span>
+                </div>
+                {(renewalInfo as any).breakdown?.length > 1 && (
+                  <div className="pt-2 space-y-1 border-t border-dashed">
+                    <span className="font-semibold text-xs">Detalhamento por Item:</span>
                     {(renewalInfo as any).breakdown.map((b: any, i: number) => (
                       <div key={i} className="flex justify-between text-xs">
                         <span>
@@ -380,11 +384,6 @@ export function ReceiptDialog({
                         <span>R$ {b.subtotal.toFixed(2)}</span>
                       </div>
                     ))}
-                  </div>
-                ) : (
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Taxa Diária:</span>
-                    <span>R$ {(renewalInfo as any).lateFeeValue?.toFixed(2) || '0,00'}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-base font-bold pt-2 text-pink-700">
@@ -464,8 +463,12 @@ export function ReceiptDialog({
                     <span>Multa por Atraso:</span>
                     <span>{(renewalInfo as any).days} dia(s)</span>
                   </div>
-                  {(renewalInfo as any).breakdown?.length > 0 ? (
-                    <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-pink-700">
+                    <span>Taxa Diária:</span>
+                    <span>R$ {((renewalInfo as any).lateFeeValue || 0).toFixed(2)}</span>
+                  </div>
+                  {(renewalInfo as any).breakdown?.length > 1 && (
+                    <div className="space-y-1 border-t border-dashed border-pink-200 pt-1">
                       {(renewalInfo as any).breakdown.map((b: any, i: number) => (
                         <div key={i} className="flex justify-between text-xs text-pink-700">
                           <span>
@@ -474,11 +477,6 @@ export function ReceiptDialog({
                           <span>R$ {b.subtotal.toFixed(2)}</span>
                         </div>
                       ))}
-                    </div>
-                  ) : (
-                    <div className="flex justify-between text-xs text-pink-700">
-                      <span>Taxa Diária:</span>
-                      <span>R$ {((renewalInfo as any).lateFeeValue || 0).toFixed(2)}</span>
                     </div>
                   )}
                   <div className="flex justify-between font-bold text-pink-700">

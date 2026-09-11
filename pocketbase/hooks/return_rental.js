@@ -129,14 +129,14 @@ routerAdd(
         var delayDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
 
         if (delayDays > 0) {
-          var lateFeeType = 'fixed_daily'
+          var lateFeeType = 'daily'
           var lateFeeValue = 0
 
           try {
             var settingsRecords = $app.findRecordsByFilter('settings', "id != ''", '', 1, 0)
             if (settingsRecords.length > 0) {
               var settingsRecord = settingsRecords[0]
-              lateFeeType = settingsRecord.getString('late_fee_type') || 'fixed_daily'
+              lateFeeType = settingsRecord.getString('late_fee_type') || 'daily'
               lateFeeValue = Number(settingsRecord.get('late_fee_value') || 0)
             }
           } catch (_) {}
@@ -144,31 +144,60 @@ routerAdd(
           var lateFeeTotal = 0
           var breakdown = []
 
-          if (lateFeeType === 'daily_price') {
+          if (lateFeeType === 'fixed') {
+            lateFeeTotal = lateFeeValue * delayDays
+          } else {
+            // Padrão: calcular com base no valor diário (daily_price) do item de estoque / contrato
             for (var k = 0; k < items.length; k++) {
-              if (items[k].itemId === 'freight') continue
+              var itId = String(
+                items[k].itemId || items[k].item_id || items[k].inventory_id || items[k].id || '',
+              )
+              if (itId === 'freight') continue
+
+              var dailyPrice = Number(items[k].dailyPrice || items[k].daily_price || 0)
+              var itemName =
+                items[k].name || items[k].productName || items[k].product_name || 'Item'
+
               var invRecord = null
               try {
-                invRecord = $app.findRecordById('inventory', items[k].itemId)
+                invRecord = $app.findRecordById('inventory', itId)
               } catch (_) {}
+
               if (invRecord) {
-                var dailyPrice = Number(invRecord.get('daily_price') || 0)
-                var qty = items[k].qty || 0
-                if (dailyPrice > 0 && qty > 0) {
-                  var subtotal = dailyPrice * qty * delayDays
-                  lateFeeTotal += subtotal
-                  breakdown.push({
-                    itemName: invRecord.getString('name'),
-                    dailyRate: dailyPrice,
-                    qty: qty,
-                    days: delayDays,
-                    subtotal: subtotal,
-                  })
-                }
+                var invDaily = Number(invRecord.get('daily_price') || 0)
+                if (invDaily > 0) dailyPrice = invDaily
+                var invName = invRecord.getString('name')
+                if (invName) itemName = invName
+              }
+
+              var rawQty = items[k].qty ?? items[k].quantity ?? items[k].quantidade ?? 1
+              var qty = Number(rawQty) > 0 ? Number(rawQty) : 1
+
+              if (dailyPrice > 0 && qty > 0) {
+                var subtotal = dailyPrice * qty * delayDays
+                lateFeeTotal += subtotal
+                breakdown.push({
+                  itemName: itemName,
+                  dailyRate: dailyPrice,
+                  qty: qty,
+                  days: delayDays,
+                  subtotal: subtotal,
+                })
               }
             }
-          } else {
-            lateFeeTotal = lateFeeValue * delayDays
+
+            if (lateFeeTotal === 0 && lateFeeValue > 0) {
+              lateFeeTotal = lateFeeValue * delayDays
+            }
+          }
+
+          var effectiveDailyRate = lateFeeValue
+          if (breakdown.length > 0) {
+            var sumRates = 0
+            for (var bIdx = 0; bIdx < breakdown.length; bIdx++) {
+              sumRates += breakdown[bIdx].dailyRate * breakdown[bIdx].qty
+            }
+            effectiveDailyRate = sumRates
           }
 
           if (lateFeeTotal > 0) {
@@ -197,7 +226,7 @@ routerAdd(
               total: lateFeeTotal,
               breakdown: breakdown,
               lateFeeType: lateFeeType,
-              lateFeeValue: lateFeeValue,
+              lateFeeValue: effectiveDailyRate,
               expectedDate: expectedDateStr,
               actualDate: actualDateStr,
             }

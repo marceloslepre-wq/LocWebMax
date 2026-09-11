@@ -399,6 +399,12 @@ export function ReturnDialog({
                   <span className="font-semibold">{delay} dia(s)</span>
                 </div>
                 <div className="flex justify-between">
+                  <span>Taxa Diária:</span>
+                  <span className="font-semibold">
+                    R$ {(lateFeeResult.lateFeeValue || 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
                   <span>Data de fechamento do contrato:</span>
                   <span className="font-semibold">{returnDateFormatted}</span>
                 </div>
@@ -409,7 +415,7 @@ export function ReturnDialog({
                   </span>
                 </div>
               </div>
-              {lateFeeResult.breakdown.length > 0 && (
+              {lateFeeResult.breakdown.length > 1 && (
                 <div className="mt-2 pt-2 border-t border-pink-200 text-xs space-y-1">
                   {lateFeeResult.breakdown.map((b, i) => (
                     <div key={i} className="flex justify-between text-pink-700">
