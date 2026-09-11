@@ -104,6 +104,9 @@ export function ReceiptDialog({
     if (customer?.document) {
       text += `*CPF/CNPJ:* ${customer.document}\n`
     }
+    if (customerPhone) {
+      text += `*Celular:* ${customerPhone}\n`
+    }
     text += `*Endereço de Entrega/Retirada:* ${getDeliveryAddressText(customer)}\n`
     text += `*Contrato:* ${rental.contractNumber || rental.id}\n\n`
 
@@ -271,6 +274,26 @@ export function ReceiptDialog({
     })
   }
 
+  const customerPhone = useMemo(() => {
+    if (!customer) return null
+    const rawPhone =
+      customer.phone_cell ||
+      (customer as any).phoneCell ||
+      customer.phone_res ||
+      (customer as any).phoneRes ||
+      customer.phone_com ||
+      (customer as any).phoneCom ||
+      customer.phone
+    if (!rawPhone) return null
+    const cleaned = rawPhone.replace(/\D/g, '')
+    if (cleaned.length === 11) {
+      return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7, 11)}`
+    } else if (cleaned.length === 10) {
+      return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6, 10)}`
+    }
+    return rawPhone
+  }, [customer])
+
   const companyDocument =
     (settings as any)?.companyDocument || (settings as any)?.company_document || ''
 
@@ -333,6 +356,11 @@ export function ReceiptDialog({
                 <span className="font-semibold">Emissão:</span>{' '}
                 {formatDateStr(new Date().toISOString())}
               </div>
+              {customerPhone && (
+                <div className="col-span-2">
+                  <span className="font-semibold">Celular:</span> {customerPhone}
+                </div>
+              )}
               <div className="col-span-2">
                 <span className="font-semibold">Endereço de Entrega/Retirada:</span>{' '}
                 {getDeliveryAddressText(customer)}

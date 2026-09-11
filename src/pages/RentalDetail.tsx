@@ -147,7 +147,10 @@ export default function RentalDetail() {
       customer.phone_cell ||
       (customer as any).phoneCell ||
       customer.phone_res ||
-      (customer as any).phoneRes
+      (customer as any).phoneRes ||
+      customer.phone_com ||
+      (customer as any).phoneCom ||
+      customer.phone
     if (!rawPhone) return null
     const cleaned = rawPhone.replace(/\D/g, '')
     if (cleaned.length === 11) {
@@ -469,6 +472,7 @@ export default function RentalDetail() {
           <p><strong>LOCADOR:</strong> ${settings.companyName || 'Lojas Hospital Home'}</p>
           <p><strong>LOCATÁRIO:</strong> ${customer?.name}</p>
           <p><strong>CPF/CNPJ:</strong> ${customer?.document}</p>
+          ${customerPhone ? `<p><strong>Celular:</strong> ${customerPhone}</p>` : ''}
           <p><strong>Endereço de Entrega/Retirada:</strong> ${getDeliveryAddressText(customer)}</p>
           <p><strong>Data de Devolução:</strong> ${rental?.actualReturnDate ? rental.actualReturnDate.split('T')[0].split(' ')[0].split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}</p>
         </div>
@@ -555,6 +559,7 @@ export default function RentalDetail() {
           <p><strong>LOCADOR:</strong> ${settings.companyName || 'Lojas Hospital Home'}</p>
           <p><strong>LOCATÁRIO:</strong> ${customer?.name}</p>
           <p><strong>CPF/CNPJ:</strong> ${customer?.document}</p>
+          ${customerPhone ? `<p><strong>Celular:</strong> ${customerPhone}</p>` : ''}
           <p><strong>Endereço de Entrega/Retirada:</strong> ${getDeliveryAddressText(customer)}</p>
           <p><strong>Data de Retirada:</strong> ${rental?.startDate ? rental.startDate.split('T')[0].split(' ')[0].split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}</p>
         </div>
