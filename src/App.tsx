@@ -25,22 +25,14 @@ import PublicPayment from './pages/PublicPayment'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import { useEffect } from 'react'
-import pb from '@/lib/pocketbase/client'
+import { rentalsService } from '@/services/rentals'
 import { RouteErrorBoundary, ErrorBoundaryOutlet } from '@/components/RouteErrorBoundary'
 import { PublicErrorBoundary } from '@/components/PublicErrorBoundary'
 
 const OverdueChecker = () => {
   useEffect(() => {
-    const checkOverdue = async () => {
-      try {
-        await pb.send('/backend/v1/rentals/update-overdue', { method: 'POST' })
-      } catch (error) {
-        console.error('Erro ao atualizar locações atrasadas:', error)
-      }
-    }
-
-    // Run once on app initialization
-    checkOverdue()
+    // Non-blocking background sync with throttle and auth check
+    rentalsService.updateOverdue().catch(() => {})
   }, [])
   return null
 }

@@ -132,22 +132,21 @@ export default function Rentals() {
     })
 
     if (needsSync) {
-      rentalsService
-        .updateOverdue()
-        .then(() => {
-          if (updateRental) {
-            toReturnedIds.forEach((id) => {
-              updateRental(id, { status: 'Devolvido' })
-            })
-            toOverdueIds.forEach((id) => {
-              updateRental(id, { status: 'Atrasado' })
-            })
-            toActiveIds.forEach((id) => {
-              updateRental(id, { status: 'Ativo' })
-            })
-          }
+      // Optimistically update local store immediately so UI doesn't lag or freeze
+      if (updateRental) {
+        toReturnedIds.forEach((id) => {
+          updateRental(id, { status: 'Devolvido' })
         })
-        .catch(console.error)
+        toOverdueIds.forEach((id) => {
+          updateRental(id, { status: 'Atrasado' })
+        })
+        toActiveIds.forEach((id) => {
+          updateRental(id, { status: 'Ativo' })
+        })
+      }
+
+      // Non-blocking background call (fire-and-forget with silent catch)
+      rentalsService.updateOverdue().catch(() => {})
     }
   }, [rentals, updateRental])
 

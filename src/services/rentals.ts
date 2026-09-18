@@ -58,7 +58,39 @@ export const rentalsService = {
   delete(id: string) {
     return pb.collection('rentals').delete(id)
   },
-  updateOverdue() {
-    return pb.send('/backend/v1/rentals/update-overdue', { method: 'POST' })
+  _lastUpdateOverduePromise: null as Promise<any> | null,
+  _lastUpdateOverdueTime: 0,
+  updateOverdue(options?: { force?: boolean }) {
+    // 1. Guard against unauthenticated calls (avoids HTTP 401 in background)
+    if (!pb.authStore.isValid) {
+      return Promise.resolve({ skipped: true, reason: 'unauthenticated' })
+    }
+
+    const now = Date.now()
+    const minIntervalMs = 5 * 60 * 1000 // 5 minutes throttle per browser session
+
+    // If already in flight, reuse the running promise
+    if (this._lastUpdateOverduePromise) {
+      return this._lastUpdateOverduePromise
+    }
+
+    // If called recently without force, throttle
+    if (!options?.force && now - this._lastUpdateOverdueTime < minIntervalMs) {
+      return Promise.resolve({ skipped: true, reason: 'throttled' })
+    }
+
+    this._lastUpdateOverdueTime = now
+    this._lastUpdateOverduePromise = pb
+      .send('/backend/v1/rentals/update-overdue', { method: 'POST' })
+      .catch((err) => {
+        // Silently catch to avoid crashing callers
+        console.warn('updateOverdue background sync failed or throttled:', err?.message || err)
+        return { error: err }
+      })
+      .finally(() => {
+        this._lastUpdateOverduePromise = null
+      })
+
+    return this._lastUpdateOverduePromise
   },
 }

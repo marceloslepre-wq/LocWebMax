@@ -78,14 +78,10 @@ export default function RentalDetail() {
 
     if (rental.actualReturnDate && rental.actualReturnDate.trim() !== '') {
       if (rental.status !== 'Devolvido') {
-        rentalsService
-          .updateOverdue()
-          .then(() => {
-            if (updateRental) {
-              updateRental(rental.id, { status: 'Devolvido' })
-            }
-          })
-          .catch(console.error)
+        if (updateRental) {
+          updateRental(rental.id, { status: 'Devolvido' })
+        }
+        rentalsService.updateOverdue().catch(() => {})
       }
       return
     }
@@ -100,23 +96,15 @@ export default function RentalDetail() {
     const returnDate = new Date(dateStr + 'T00:00:00')
 
     if (rental.status === 'Ativo' && returnDate < today) {
-      rentalsService
-        .updateOverdue()
-        .then(() => {
-          if (updateRental) {
-            updateRental(rental.id, { status: 'Atrasado' })
-          }
-        })
-        .catch(console.error)
+      if (updateRental) {
+        updateRental(rental.id, { status: 'Atrasado' })
+      }
+      rentalsService.updateOverdue().catch(() => {})
     } else if (rental.status === 'Atrasado' && returnDate >= today) {
-      rentalsService
-        .updateOverdue()
-        .then(() => {
-          if (updateRental) {
-            updateRental(rental.id, { status: 'Ativo' })
-          }
-        })
-        .catch(console.error)
+      if (updateRental) {
+        updateRental(rental.id, { status: 'Ativo' })
+      }
+      rentalsService.updateOverdue().catch(() => {})
     }
   }, [
     rental?.id,

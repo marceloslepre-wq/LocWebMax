@@ -24,7 +24,7 @@ import {
 import { rentalsService } from '@/services/rentals'
 import { paymentsService } from '@/services/payments'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
-import { pb } from '@/lib/pocketbase/client'
+import pb from '@/lib/pocketbase/client'
 
 interface RenewDialogProps {
   rental: Rental | null
