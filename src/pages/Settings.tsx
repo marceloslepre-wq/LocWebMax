@@ -648,6 +648,38 @@ export default function Settings() {
 
           <Card>
             <CardHeader>
+              <CardTitle>Atendimento e Devoluções (Agente Helena)</CardTitle>
+              <CardDescription>
+                Defina a pessoa responsável pelo recebimento e conferência de devoluções, citada
+                pela Helena nas conversas do WhatsApp.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2 max-w-md">
+                <Label htmlFor="return-resp">Responsável pelas devoluções</Label>
+                <Input
+                  id="return-resp"
+                  placeholder="Ex: Cristiani / Dalila / a pessoa responsável pela devolução"
+                  defaultValue={settings.returnResponsibleName || ''}
+                  onChange={(e) => updateSettings({ returnResponsibleName: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Se deixado em branco, a Helena usará automaticamente "a pessoa responsável pela
+                  devolução".
+                </p>
+              </div>
+              <Button
+                onClick={() =>
+                  toast({ title: 'Salvo', description: 'Responsável pelas devoluções atualizado.' })
+                }
+              >
+                Salvar Responsável
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Dados da Empresa</CardTitle>
               <CardDescription>
                 Informações que aparecerão nos contratos e recibos gerados.

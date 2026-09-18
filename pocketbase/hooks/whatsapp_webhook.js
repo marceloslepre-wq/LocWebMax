@@ -133,6 +133,116 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
   const responseText = agentResult.content || 'Desculpe, não consegui processar sua mensagem.'
   const newConversationId = agentResult.conversation_id || conversationId
 
+  // Automatic detection of store escalation (Devolução or Cartão de Crédito)
+  try {
+    const lowerIncoming = String(messageText).toLowerCase()
+    const lowerOutgoing = String(responseText).toLowerCase()
+
+    let detectedType = null
+    let detectedDesc = ''
+
+    if (
+      lowerIncoming.includes('devolver') ||
+      lowerIncoming.includes('devolução') ||
+      lowerIncoming.includes('devolucao') ||
+      lowerIncoming.includes('entregar de volta') ||
+      lowerIncoming.includes('buscar o') ||
+      lowerIncoming.includes('buscar a') ||
+      lowerIncoming.includes('retirar o') ||
+      lowerIncoming.includes('retirar a')
+    ) {
+      detectedType = 'devolucao'
+      detectedDesc = 'Cliente solicitou devolução do equipamento.'
+    } else if (
+      lowerIncoming.includes('cartao') ||
+      lowerIncoming.includes('cartão') ||
+      lowerIncoming.includes('crédito') ||
+      lowerIncoming.includes('credito') ||
+      lowerIncoming.includes('cristiani')
+    ) {
+      detectedType = 'cartao_credito'
+      detectedDesc = 'Cliente solicitou pagamento em cartão de crédito (repassar à Cristiani).'
+    }
+
+    if (detectedType) {
+      let cust = null
+      let rentalRec = null
+      let custName = 'Cliente WhatsApp (' + phone + ')'
+
+      // Match customer by phone
+      const phoneDigits = phone.replace(/^55/, '')
+      try {
+        const custs = $app.findRecordsByFilter(
+          'customers',
+          'phone_cell ~ "' +
+            phoneDigits +
+            '" || phone_res ~ "' +
+            phoneDigits +
+            '" || phone_com ~ "' +
+            phoneDigits +
+            '"',
+          '-created',
+          1,
+          0,
+        )
+        if (custs.length > 0) {
+          cust = custs[0]
+          custName = cust.getString('name')
+          const rents = $app.findRecordsByFilter(
+            'rentals',
+            'customer_id = "' + cust.id + '" && (status = "Ativo" || status = "Atrasado")',
+            '-created',
+            1,
+            0,
+          )
+          if (rents.length > 0) {
+            rentalRec = rents[0]
+          }
+        }
+      } catch (_) {}
+
+      // Avoid creating duplicate pending for same phone and type today
+      const todayStr = new Date().toISOString().split('T')[0]
+      const existing = $app.findRecordsByFilter(
+        'helena_pendencias',
+        'phone = "' + phone + '" && type = "' + detectedType + '" && status = "pendente"',
+        '-created',
+        1,
+        0,
+      )
+
+      if (existing.length === 0) {
+        const pendCol = $app.findCollectionByNameOrId('helena_pendencias')
+        const pRecord = new Record(pendCol)
+        if (cust) pRecord.set('customer_id', cust.id)
+        if (rentalRec) {
+          pRecord.set('rental_id', rentalRec.id)
+          pRecord.set('contract_number', rentalRec.getString('contract_number') || rentalRec.id)
+        }
+        pRecord.set('customer_name', custName)
+        pRecord.set('phone', phone)
+        pRecord.set('type', detectedType)
+        pRecord.set('status', 'pendente')
+        pRecord.set(
+          'description',
+          detectedDesc + ' Mensagem: "' + messageText.substring(0, 300) + '"',
+        )
+        $app.save(pRecord)
+        $app
+          .logger()
+          .info('whatsapp_webhook: helena_pendencia created', 'type', detectedType, 'phone', phone)
+      }
+    }
+  } catch (errDet) {
+    $app
+      .logger()
+      .error(
+        'whatsapp_webhook: failed auto-detecting pendencia',
+        'err',
+        errDet.message || String(errDet),
+      )
+  }
+
   try {
     if (conversation) {
       conversation.set('conversation_id', newConversationId)

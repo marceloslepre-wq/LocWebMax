@@ -110,6 +110,7 @@ export type Settings = {
   companyName: string
   companyDocument: string
   companyAddress: string
+  returnResponsibleName?: string
   landlordRepName?: string
   landlordRepDocument?: string
   witness1Name?: string
@@ -226,6 +227,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     companyName: 'LocaWeb Gestão de Ativos LTDA',
     companyDocument: '00.000.000/0001-00',
     companyAddress: 'Av. Central, 1000 - Centro, São Paulo/SP',
+    returnResponsibleName: '',
     landlordRepName: 'Marcelo da Silveira Lepre',
     landlordRepDocument: '022.862.567-05',
     witness1Name: 'Cristiani Aparecida de Fretais Pereira Gomes',
@@ -320,6 +322,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             companyName: (setData as any).company_name || '',
             companyDocument: (setData as any).company_document || '',
             companyAddress: (setData as any).company_address || '',
+            returnResponsibleName: (setData as any).return_responsible_name || '',
             landlordRepName: (setData as any).landlord_rep_name || 'Marcelo da Silveira Lepre',
             landlordRepDocument: (setData as any).landlord_rep_document || '022.862.567-05',
             witness1Name:
@@ -650,6 +653,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if ('companyName' in data) updateData.company_name = data.companyName
     if ('companyDocument' in data) updateData.company_document = data.companyDocument
     if ('companyAddress' in data) updateData.company_address = data.companyAddress
+    if ('returnResponsibleName' in data)
+      updateData.return_responsible_name = data.returnResponsibleName
     if ('landlordRepName' in data) updateData.landlord_rep_name = data.landlordRepName
     if ('landlordRepDocument' in data) updateData.landlord_rep_document = data.landlordRepDocument
     if ('witness1Name' in data) updateData.witness_1_name = data.witness1Name

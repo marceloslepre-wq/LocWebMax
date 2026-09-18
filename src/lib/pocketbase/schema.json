@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-18T18:34:31.965Z",
+  "generatedAt": "2026-09-18T19:33:10.209Z",
   "collections": [
     {
       "name": "users",
@@ -965,6 +965,12 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "return_responsible_name",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
@@ -1243,6 +1249,190 @@
       ],
       "indexes": [
         "CREATE INDEX idx_rental_snapshots_rental ON rental_snapshots (rental_id, created DESC)"
+      ]
+    },
+    {
+      "name": "helena_cobranca",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "rental_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "rentals"
+        },
+        {
+          "name": "customer_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "customers"
+        },
+        {
+          "name": "contract_number",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "stage",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "last_contact_date",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "message_sent",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_helena_cobranca_rental ON helena_cobranca (rental_id)",
+        "CREATE INDEX idx_helena_cobranca_last_date ON helena_cobranca (last_contact_date)",
+        "CREATE INDEX idx_helena_cobranca_stage ON helena_cobranca (stage)"
+      ]
+    },
+    {
+      "name": "helena_pendencias",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "customer_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "customers"
+        },
+        {
+          "name": "rental_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "rentals"
+        },
+        {
+          "name": "customer_name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "contract_number",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "type",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["devolucao", "cartao_credito", "outro"]
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["pendente", "em_atendimento", "resolvido"]
+        },
+        {
+          "name": "resolved_at",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "resolved_by",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_helena_pendencias_status ON helena_pendencias (status)",
+        "CREATE INDEX idx_helena_pendencias_type ON helena_pendencias (type)"
       ]
     }
   ]

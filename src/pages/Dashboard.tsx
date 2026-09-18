@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { isSameDay, parseISO } from 'date-fns'
 import useMainStore, { Rental } from '@/stores/main'
 import { useAuth } from '@/hooks/use-auth'
@@ -14,7 +14,13 @@ import {
   MessageCircle,
   Calendar,
   ExternalLink,
+  Bot,
+  CreditCard,
+  RotateCcw,
+  Check,
 } from 'lucide-react'
+import pb from '@/lib/pocketbase/client'
+import { useToast } from '@/hooks/use-toast'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -42,6 +48,50 @@ export default function Dashboard() {
   const customers = store?.customers || []
   const globalSearch = store?.globalSearch || ''
   const [modalType, setModalType] = useState<'dueToday' | 'overdue' | null>(null)
+  const { toast } = useToast()
+
+  const [pendencias, setPendencias] = useState<any[]>([])
+  const [loadingPendencias, setLoadingPendencias] = useState(false)
+
+  const loadPendencias = async () => {
+    try {
+      setLoadingPendencias(true)
+      const records = await pb.collection('helena_pendencias').getFullList({
+        filter: 'status != "resolvido"',
+        sort: '-created',
+      })
+      setPendencias(records)
+    } catch (_) {
+      // ignore
+    } finally {
+      setLoadingPendencias(false)
+    }
+  }
+
+  useEffect(() => {
+    loadPendencias()
+  }, [])
+
+  const handleResolvePendencia = async (id: string) => {
+    try {
+      await pb.collection('helena_pendencias').update(id, {
+        status: 'resolvido',
+        resolved_at: new Date().toISOString(),
+        resolved_by: user?.id || null,
+      })
+      setPendencias((prev) => prev.filter((p) => p.id !== id))
+      toast({
+        title: 'Pendência resolvida',
+        description: 'Registro marcado como atendido com sucesso.',
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao resolver',
+        description: err?.message || 'Falha ao atualizar pendência.',
+        variant: 'destructive',
+      })
+    }
+  }
 
   useStoreRealtime()
 
@@ -278,6 +328,102 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {pendencias.length > 0 && (
+        <Card className="shadow-sm border-blue-200 dark:border-blue-900/60 bg-blue-50/40 dark:bg-blue-950/20">
+          <CardHeader className="py-3 px-4 flex flex-row items-center justify-between border-b border-blue-100 dark:border-blue-900/40">
+            <div className="flex items-center gap-2">
+              <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <CardTitle className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                Pendências de Atendimento da Helena ({pendencias.length})
+              </CardTitle>
+            </div>
+            <Badge
+              variant="secondary"
+              className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200 text-xs"
+            >
+              Ação Requerida da Loja
+            </Badge>
+          </CardHeader>
+          <CardContent className="p-0 divide-y divide-blue-100/70 dark:divide-blue-900/40">
+            {pendencias.map((item) => (
+              <div
+                key={item.id}
+                className="p-3 px-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-sm"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    {item.type === 'devolucao' ? (
+                      <Badge
+                        variant="outline"
+                        className="text-amber-600 border-amber-300 dark:border-amber-700 flex items-center gap-1 text-xs"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Devolução Solicitada
+                      </Badge>
+                    ) : item.type === 'cartao_credito' ? (
+                      <Badge
+                        variant="outline"
+                        className="text-purple-600 border-purple-300 dark:border-purple-700 flex items-center gap-1 text-xs"
+                      >
+                        <CreditCard className="w-3 h-3" /> Cartão de Crédito (Cristiani)
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="text-red-600 border-red-300 dark:border-red-700 flex items-center gap-1 text-xs"
+                      >
+                        <AlertTriangle className="w-3 h-3" /> Cobrança Esgotada (+7d)
+                      </Badge>
+                    )}
+                    <span className="font-medium text-foreground">{item.customer_name}</span>
+                    {item.contract_number && (
+                      <span className="text-xs text-muted-foreground font-mono">
+                        ({item.contract_number})
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {item.description || 'Cliente necessita de contato e alinhamento com a equipe.'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 self-end md:self-center">
+                  {item.phone && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+                      asChild
+                    >
+                      <a
+                        href={`https://wa.me/${String(item.phone).replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <MessageCircle className="w-3 h-3 mr-1" />
+                        WhatsApp
+                      </a>
+                    </Button>
+                  )}
+                  {item.rental_id && (
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
+                      <Link to={`/rentals/${item.rental_id}`}>Ver Contrato</Link>
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs bg-white dark:bg-background hover:bg-emerald-50 hover:text-emerald-700 border-gray-200"
+                    onClick={() => handleResolvePendencia(item.id)}
+                  >
+                    <Check className="w-3 h-3 mr-1" />
+                    Marcar Resolvido
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
         <Card className="lg:col-span-4 shadow-sm">
