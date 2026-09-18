@@ -953,8 +953,24 @@ export default function Settings() {
                                   try {
                                     await pb.collection('users').delete(u.id)
                                     deleteUser(u.id)
-                                    toast({ title: 'Excluído' })
+                                    toast({ title: 'Membro removido.' })
                                   } catch (err: any) {
+                                    const status = err?.status ?? err?.response?.status ?? 0
+                                    const isNotFound =
+                                      status === 404 ||
+                                      err?.message?.includes("wasn't found") ||
+                                      err?.response?.message?.includes("wasn't found")
+
+                                    if (isNotFound) {
+                                      deleteUser(u.id)
+                                      toast({
+                                        title: 'Membro removido.',
+                                        description:
+                                          'Este usuário já não existe e foi removido da lista.',
+                                      })
+                                      return
+                                    }
+
                                     const isRelationError =
                                       err?.message?.includes(
                                         'Failed to delete record. Make sure that the record is not part of a required relation reference.',
