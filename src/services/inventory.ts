@@ -148,9 +148,12 @@ export const inventoryService = {
       throw error
     }
   },
-  async getStockByLocation(inventoryId: string) {
+  async getStockByLocation(inventoryId: string, tenantId?: string | null) {
+    const tenantFilter = tenantId
+      ? `tenant_id = "${tenantId}"`
+      : `(tenant_id = "" || tenant_id = null)`
     return pb.collection('estoque_por_local').getFullList({
-      filter: `inventory_id = "${inventoryId}"`,
+      filter: `inventory_id = "${inventoryId}" && (${tenantFilter})`,
     })
   },
   async upsertStock(
@@ -160,8 +163,11 @@ export const inventoryService = {
     locada: number,
     tenantId?: string | null,
   ) {
+    const tenantFilter = tenantId
+      ? `tenant_id = "${tenantId}"`
+      : `(tenant_id = "" || tenant_id = null)`
     const existing = await pb.collection('estoque_por_local').getFullList({
-      filter: `inventory_id = "${inventoryId}" && local_id = "${localId}"`,
+      filter: `inventory_id = "${inventoryId}" && local_id = "${localId}" && (${tenantFilter})`,
     })
     if (existing.length > 0) {
       return pb.collection('estoque_por_local').update(existing[0].id, {

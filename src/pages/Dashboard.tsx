@@ -53,7 +53,14 @@ export default function Dashboard() {
   const [pendencias, setPendencias] = useState<any[]>([])
   const [loadingPendencias, setLoadingPendencias] = useState(false)
 
+  const { activeTenantId, isTenantUser } = useMainStore()
+
   const loadPendencias = async () => {
+    // Helena opera exclusivamente na operação principal da Hospital Home
+    if (activeTenantId || isTenantUser) {
+      setPendencias([])
+      return
+    }
     try {
       setLoadingPendencias(true)
       const records = await pb.collection('helena_pendencias').getFullList({
@@ -70,7 +77,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadPendencias()
-  }, [])
+  }, [activeTenantId, isTenantUser])
 
   const handleResolvePendencia = async (id: string) => {
     try {

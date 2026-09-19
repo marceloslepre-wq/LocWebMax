@@ -7,24 +7,35 @@ import { Search } from 'lucide-react'
 import { useLocations } from '@/hooks/use-locations'
 import { useRealtime } from '@/hooks/use-realtime'
 
+import useMainStore from '@/stores/main'
+
 export default function StockLocations() {
-  const { locations: locais } = useLocations()
+  const { activeTenantId } = useMainStore()
+  const { locations: locais } = useLocations(activeTenantId)
   const [inventory, setInventory] = useState<any[]>([])
   const [estoque, setEstoque] = useState<any[]>([])
   const [search, setSearch] = useState('')
 
   const loadData = useCallback(async () => {
     try {
+      const tenantFilter = activeTenantId
+        ? `tenant_id = "${activeTenantId}"`
+        : `(tenant_id = "" || tenant_id = null)`
       const [invData, estData] = await Promise.all([
-        pb.collection('inventory').getFullList({ sort: 'name' }),
-        pb.collection('estoque_por_local').getFullList(),
+        pb.collection('inventory').getFullList({
+          filter: tenantFilter,
+          sort: 'name',
+        }),
+        pb.collection('estoque_por_local').getFullList({
+          filter: tenantFilter,
+        }),
       ])
       setInventory(invData as any[])
       setEstoque(estData as any[])
     } catch (error) {
       console.error('Error fetching data:', error)
     }
-  }, [])
+  }, [activeTenantId])
 
   useEffect(() => {
     loadData()

@@ -9,9 +9,12 @@ export const paymentsService = {
       expand: 'rental_id',
     })
   },
-  getByRental(rentalId: string) {
+  getByRental(rentalId: string, tenantId?: string | null) {
+    const tenantFilter = tenantId
+      ? `tenant_id = "${tenantId}"`
+      : `(tenant_id = "" || tenant_id = null)`
     return pb.collection('payments').getFullList({
-      filter: `rental_id = "${rentalId}"`,
+      filter: `rental_id = "${rentalId}" && (${tenantFilter})`,
       sort: '-created',
     })
   },

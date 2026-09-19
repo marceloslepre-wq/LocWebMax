@@ -56,7 +56,7 @@ export type Patrimonio = {
 export default function Assets() {
   const { user, loading } = useAuth()
   const { toast } = useToast()
-  const { inventory, updateInventoryItem, settings } = useMainStore()
+  const { inventory, updateInventoryItem, settings, activeTenantId } = useMainStore()
   const locations = settings?.locations || []
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
   const [selectedModel, setSelectedModel] = useState<string>('all')
@@ -66,18 +66,14 @@ export default function Assets() {
     return uniqueItems.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
   }, [inventory])
 
-  const fetchedAllRef = useRef(false)
   const [allPatrimonios, setAllPatrimonios] = useState<
     { id: string; inventory_id: string; numero_patrimonio: string }[]
   >([])
 
   useEffect(() => {
-    if (fetchedAllRef.current) return
-    fetchedAllRef.current = true
-
     const fetchAll = async () => {
       try {
-        const data = await patrimonioService.getAll()
+        const data = await patrimonioService.getAll(activeTenantId)
         setAllPatrimonios(
           data.map((p: any) => ({
             id: p.id,
@@ -90,7 +86,7 @@ export default function Assets() {
       }
     }
     fetchAll()
-  }, [])
+  }, [activeTenantId])
 
   const patrimonioCounts = useMemo(() => {
     const counts: Record<string, number> = {}
@@ -121,7 +117,7 @@ export default function Assets() {
 
       const fetchPatrimonios = async () => {
         try {
-          const data = await patrimonioService.getByInventory(selectedItem.id)
+          const data = await patrimonioService.getByInventory(selectedItem.id, activeTenantId)
           setPatrimonios(data as unknown as Patrimonio[])
         } catch (error) {
           console.error('Error fetching patrimonios:', error)
@@ -136,7 +132,7 @@ export default function Assets() {
       setPatrimonios([])
       setIsAdding(false)
     }
-  }, [selectedItem?.id])
+  }, [selectedItem?.id, activeTenantId])
 
   const handleAddClick = () => {
     setNewAsset({
@@ -161,14 +157,17 @@ export default function Assets() {
     }
 
     try {
-      const data = await patrimonioService.create({
-        inventory_id: selectedItem.id,
-        numero_patrimonio: newAsset.numero_patrimonio.trim(),
-        estado: newAsset.estado as any,
-        data_aquisicao: newAsset.data_aquisicao,
-        localizacao: newAsset.localizacao || null,
-        fornecedor: newAsset.fornecedor || null,
-      } as any)
+      const data = await patrimonioService.create(
+        {
+          inventory_id: selectedItem.id,
+          numero_patrimonio: newAsset.numero_patrimonio.trim(),
+          estado: newAsset.estado as any,
+          data_aquisicao: newAsset.data_aquisicao,
+          localizacao: newAsset.localizacao || null,
+          fornecedor: newAsset.fornecedor || null,
+        } as any,
+        activeTenantId,
+      )
       toast({ title: 'Sucesso', description: 'Patrimônio adicionado com sucesso.' })
       const newRecord = data as unknown as Patrimonio
       setPatrimonios([...patrimonios, newRecord])
@@ -352,7 +351,7 @@ export default function Assets() {
 
   const handleExportAssets = async (format: 'csv' | 'excel' | 'pdf') => {
     try {
-      const data = await patrimonioService.getAllWithInventory()
+      const data = await patrimonioService.getAllWithInventory(activeTenantId)
 
       const headers = [
         'Nº Patrimônio',

@@ -155,6 +155,7 @@ interface MainStore {
   refreshCustomers: () => void
   deleteRental: (id: string) => Promise<void>
   loadItemAssets: (id: string) => Promise<Asset[]>
+  refreshUsers: () => Promise<void>
 }
 
 function mapInventoryRow(row: any): InventoryItem {
@@ -294,8 +295,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const loadItemAssets = async (id: string): Promise<Asset[]> => {
     try {
+      const tenantFilter = activeTenantId
+        ? `tenant_id = "${activeTenantId}"`
+        : `(tenant_id = "" || tenant_id = null)`
       const data = await pb.collection('patrimonio').getFullList({
-        filter: `inventory_id = "${id}"`,
+        filter: `inventory_id = "${id}" && (${tenantFilter})`,
       })
       const fetchedAssets: Asset[] = (data || []).map((p: any) => ({
         id: p.id,
@@ -401,14 +405,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
         let mappedUsers: User[] = []
         try {
-          const usersData = await pb.send('/backend/v1/users', { method: 'GET' })
+          const usersData = await usersService.getAll(activeTenantId)
           if (Array.isArray(usersData)) {
             mappedUsers = usersData.map(mapUserRow)
-            // Se for tenant user ou visualizando tenant, filtrar usuários do tenant
             if (activeTenantId) {
               setUsers(mappedUsers.filter((u) => u.tenant_id === activeTenantId))
             } else {
-              setUsers(mappedUsers)
+              setUsers(mappedUsers.filter((u) => !u.tenant_id))
             }
           }
         } catch (err) {
@@ -786,6 +789,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const refreshUsers = async () => {
+    try {
+      const usersData = await usersService.getAll(activeTenantId)
+      if (Array.isArray(usersData)) {
+        const mapped = usersData.map(mapUserRow)
+        if (activeTenantId) {
+          setUsers(mapped.filter((u) => u.tenant_id === activeTenantId))
+        } else {
+          setUsers(mapped.filter((u) => !u.tenant_id))
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing users:', err)
+    }
+  }
+
   const deleteUser = async (id: string) => {
     setUsers((prev) => prev.filter((u) => u.id !== id))
     try {
@@ -827,6 +846,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         refreshCustomers,
         deleteRental,
         loadItemAssets,
+        refreshUsers,
       },
     },
     children,

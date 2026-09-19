@@ -33,7 +33,7 @@ export function AppSidebar() {
   const { signOut, user, profile } = useAuth()
 
   // Marcelo (usuário sem tenant_id fixo) vê a aba de Gestão de Tenants
-  const showTenantsTab = !isTenantUser
+  const showTenantsTab = !isTenantUser && !profile?.tenant_id && !user?.tenant_id
 
   const navItems = [
     { title: 'Painel', url: '/dashboard', icon: LayoutDashboard, show: true },

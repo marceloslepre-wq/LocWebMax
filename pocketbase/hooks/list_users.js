@@ -9,9 +9,14 @@ routerAdd(
       }
     } catch (_) {}
 
+    var requestedTenantId = e.request?.url?.query?.tenant_id || ''
     var filter = '1=1'
     if (callerTenantId) {
+      // Usuário de tenant fica estritamente travado no seu próprio tenant_id
       filter = 'tenant_id = "' + callerTenantId + '"'
+    } else if (requestedTenantId) {
+      // Admin geral inspecionando tenant específico
+      filter = 'tenant_id = "' + requestedTenantId + '"'
     }
 
     const users = $app.findRecordsByFilter('users', filter, 'created', 0, 0)

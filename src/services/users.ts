@@ -1,9 +1,10 @@
 import pb from '@/lib/pocketbase/client'
 
 export const usersService = {
-  async getAll(): Promise<any[]> {
+  async getAll(tenantId?: string | null): Promise<any[]> {
     try {
-      return await pb.send('/backend/v1/users', { method: 'GET' })
+      const query = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : ''
+      return await pb.send(`/backend/v1/users${query}`, { method: 'GET' })
     } catch {
       return []
     }
@@ -11,7 +12,7 @@ export const usersService = {
   create(data: any, tenantId?: string | null) {
     return pb.collection('users').create({
       ...data,
-      tenant_id: tenantId !== undefined ? tenantId : data.tenant_id || '',
+      tenant_id: tenantId !== undefined ? tenantId || '' : data.tenant_id || '',
     })
   },
   update(id: string, data: any) {

@@ -12,9 +12,12 @@ export interface PatrimonioCreateData {
 }
 
 export const patrimonioService = {
-  getByInventory(inventoryId: string) {
+  getByInventory(inventoryId: string, tenantId?: string | null) {
+    const tenantFilter = tenantId
+      ? `tenant_id = "${tenantId}"`
+      : `(tenant_id = "" || tenant_id = null)`
     return pb.collection('patrimonio').getFullList({
-      filter: `inventory_id = "${inventoryId}"`,
+      filter: `inventory_id = "${inventoryId}" && (${tenantFilter})`,
       sort: 'created',
     })
   },

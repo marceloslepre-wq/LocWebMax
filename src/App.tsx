@@ -16,6 +16,7 @@ import Rentals from './pages/Rentals'
 import RentalDetail from './pages/RentalDetail'
 import Payments from './pages/Payments'
 import Settings from './pages/Settings'
+import TenantsManagement from './pages/TenantsManagement'
 import Guide from './pages/Guide'
 import NotFound from './pages/NotFound'
 import PublicCustomerForm from './pages/PublicCustomerForm'
@@ -106,6 +107,7 @@ const App = () => (
                   <Route path="/rentals" element={<Rentals />} />
                   <Route path="/rentals/:id" element={<RentalDetail />} />
                   <Route path="/payments" element={<Payments />} />
+                  <Route path="/tenants" element={<TenantsManagement />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/guide" element={<Guide />} />
                 </Route>

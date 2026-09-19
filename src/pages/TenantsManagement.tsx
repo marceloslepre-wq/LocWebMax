@@ -43,6 +43,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Label } from '@/components/ui/label'
+import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/hooks/use-toast'
 import useMainStore from '@/stores/main'
 import { tenantService, Tenant } from '@/services/tenants'
@@ -51,6 +52,7 @@ import pb from '@/lib/pocketbase/client'
 
 export function TenantsManagement() {
   const { toast } = useToast()
+  const navigate = useNavigate()
   const { activeTenantId, setActiveTenantId, isTenantUser } = useMainStore()
 
   const [tenants, setTenants] = useState<Tenant[]>([])
@@ -359,7 +361,13 @@ export function TenantsManagement() {
                               variant="outline"
                               size="sm"
                               className="text-xs h-8"
-                              onClick={() => setActiveTenantId(null)}
+                              onClick={() => {
+                                setActiveTenantId(null)
+                                toast({
+                                  title: 'Ambiente restaurado',
+                                  description: 'Você voltou para a visão da Operação Principal.',
+                                })
+                              }}
                             >
                               Sair da Visão
                             </Button>
@@ -368,7 +376,15 @@ export function TenantsManagement() {
                               variant="secondary"
                               size="sm"
                               className="text-xs h-8 gap-1"
-                              onClick={() => setActiveTenantId(tenant.id)}
+                              onClick={() => {
+                                setActiveTenantId(tenant.id)
+                                toast({
+                                  title: `Visualizando ${tenant.name}`,
+                                  description:
+                                    'O painel agora exibe os dados filtrados deste tenant.',
+                                })
+                                navigate('/dashboard')
+                              }}
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
                               Ver Painel Deste Tenant

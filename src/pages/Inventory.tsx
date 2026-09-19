@@ -58,26 +58,29 @@ export default function Inventory() {
   const { inventory, globalSearch, deleteInventoryItem, settings } = useMainStore()
   const { can } = usePermissions()
   const { toast } = useToast()
-  const { locations } = useLocations()
-  const [search, setSearch] = useState('')
+  const { activeTenantId } = useMainStore()
+  const { locations } = useLocations(activeTenantId)
   const [categoryFilter, setCategoryFilter] = useState('Todas')
   const [statusFilter, setStatusFilter] = useState('Todos')
+  const [search, setSearch] = useState('')
   const [locationFilter, setLocationFilter] = useState('TODOS')
   const [locationsStock, setLocationsStock] = useState<any[]>([])
 
   const fetchLocations = useCallback(async () => {
     try {
-      const data = await pb.collection('estoque_por_local').getFullList()
+      const filter = activeTenantId
+        ? `tenant_id = "${activeTenantId}"`
+        : `(tenant_id = "" || tenant_id = null)`
+      const data = await pb.collection('estoque_por_local').getFullList({ filter })
       setLocationsStock(data)
     } catch (error) {
       console.error('Error fetching stock by location:', error)
     }
-  }, [])
+  }, [activeTenantId])
 
   useEffect(() => {
     fetchLocations()
   }, [fetchLocations])
-
   useStoreRealtime()
   useRealtime('estoque_por_local', () => {
     fetchLocations()

@@ -354,9 +354,17 @@ export default function Settings() {
     }))
     .filter((g) => g.vars.length > 0)
 
+  const { activeTenantId } = useMainStore()
+
   const fetchLocais = async () => {
     try {
-      const data = await pb.collection('locais').getFullList({ sort: 'nome' })
+      const tenantFilter = activeTenantId
+        ? `tenant_id = "${activeTenantId}"`
+        : `(tenant_id = "" || tenant_id = null)`
+      const data = await pb.collection('locais').getFullList({
+        filter: tenantFilter,
+        sort: 'nome',
+      })
       setLocationsList(data)
     } catch (error) {
       console.error('Error fetching locais:', error)
@@ -365,7 +373,7 @@ export default function Settings() {
 
   useEffect(() => {
     fetchLocais()
-  }, [])
+  }, [activeTenantId])
 
   const handleOpenLocForm = (loc?: any) => {
     if (loc) {
@@ -394,6 +402,7 @@ export default function Settings() {
         nome: editLocName,
         ativo: true,
         endereco: editLocAddress,
+        tenant_id: activeTenantId || '',
       })
     }
     refreshLocations()
@@ -531,6 +540,7 @@ export default function Settings() {
           name: userForm.name,
           role: userForm.role,
           active: true,
+          tenant_id: activeTenantId || '',
           permissions:
             userForm.role === 'Administrador'
               ? PERMISSION_OPTIONS.map((p) => p.id)

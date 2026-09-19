@@ -110,16 +110,18 @@ export default function Payments() {
 
   const getPublicPaymentUrl = (id: string) => `${window.location.origin}/pagar/${id}`
 
+  const { activeTenantId } = useMainStore()
+
   const loadPayments = useCallback(async () => {
     try {
-      const data = await paymentsService.getAll()
+      const data = await paymentsService.getAll(activeTenantId)
       setPayments(data)
     } catch {
       // silent
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [activeTenantId])
 
   useEffect(() => {
     loadPayments()
@@ -173,6 +175,7 @@ export default function Payments() {
         payment_type: paymentType,
         payer_email: payerEmail,
         description,
+        tenant_id: activeTenantId || undefined,
       })
 
       if (result.duplicate) {
