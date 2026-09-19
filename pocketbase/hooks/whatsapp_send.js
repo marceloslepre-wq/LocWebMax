@@ -27,21 +27,52 @@ routerAdd(
 
     var apiUrl = $secrets.get('EVOLUTION_API_URL') || ''
     var apiKey = $secrets.get('EVOLUTION_API_KEY') || ''
-    var instance = $secrets.get('EVOLUTION_INSTANCE') || ''
+    var defaultMasterInstance = $secrets.get('EVOLUTION_INSTANCE') || ''
 
-    if (!apiUrl || !apiKey || !instance) {
+    if (!apiUrl || !apiKey) {
       $app
         .logger()
-        .error(
-          'Evolution API secrets not configured',
-          'hasUrl',
-          !!apiUrl,
-          'hasKey',
-          !!apiKey,
-          'hasInstance',
-          !!instance,
-        )
+        .error('Evolution API secrets not configured', 'hasUrl', !!apiUrl, 'hasKey', !!apiKey)
       return e.json(500, { success: false, error: 'Evolution API secrets not configured' })
+    }
+
+    // Multi-tenant resolution:
+    // Determine tenant_id from body.tenant_id OR authenticated user's tenant_id
+    var authRecord = e.get('authRecord')
+    var resolvedTenantId = body.tenant_id || ''
+    if (!resolvedTenantId && authRecord) {
+      resolvedTenantId = authRecord.getString('tenant_id') || ''
+    }
+
+    var instance = defaultMasterInstance
+    if (resolvedTenantId) {
+      try {
+        var tRec = $app.findRecordById('tenants', resolvedTenantId)
+        if (tRec) {
+          var tInst = tRec.getString('whatsapp_instance_name')
+          var tStatus = tRec.getString('whatsapp_status')
+          // If tenant has instance configured and connected (or defined), use it!
+          if (tInst) {
+            instance = tInst
+          }
+        }
+      } catch (errT) {
+        $app
+          .logger()
+          .warn(
+            'whatsapp/send: tenant lookup failed, falling back to default instance',
+            'tenant_id',
+            resolvedTenantId,
+          )
+      }
+    }
+
+    if (!instance) {
+      instance = defaultMasterInstance
+    }
+
+    if (!instance) {
+      return e.json(500, { success: false, error: 'No WhatsApp instance available to send' })
     }
 
     var baseUrl = apiUrl.replace(/\/+$/, '')
@@ -96,6 +127,8 @@ routerAdd(
           errorText.substring(0, 500),
           'to',
           to,
+          'instance',
+          instance,
         )
       return e.json(502, { success: false, error: 'Evolution API error: ' + errorText })
     }
@@ -107,9 +140,19 @@ routerAdd(
       data = { raw: String(res.body || '') }
     }
 
-    $app.logger().info('WhatsApp message sent successfully', 'to', to, 'instance', instance)
+    $app
+      .logger()
+      .info(
+        'WhatsApp message sent successfully',
+        'to',
+        to,
+        'instance',
+        instance,
+        'tenant_id',
+        resolvedTenantId,
+      )
 
-    return e.json(200, { success: true, data: data })
+    return e.json(200, { success: true, data: data, instance: instance })
   },
   $apis.requireAuth(),
 )

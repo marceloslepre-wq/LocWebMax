@@ -175,9 +175,22 @@ cronAdd('notification_return_reminder', '0 9 * * *', () => {
       sanitized = '55' + sanitized
     }
 
+    // Multi-tenant instance resolution
+    var rentalInstance = instance
+    var tenantId = rental.getString('tenant_id') || ''
+    if (tenantId) {
+      try {
+        var tRec = $app.findRecordById('tenants', tenantId)
+        if (tRec) {
+          var tInst = tRec.getString('whatsapp_instance_name')
+          if (tInst) rentalInstance = tInst
+        }
+      } catch (_) {}
+    }
+
     try {
       $http.send({
-        url: apiUrl.replace(/\/+$/, '') + '/message/sendText/' + instance,
+        url: apiUrl.replace(/\/+$/, '') + '/message/sendText/' + rentalInstance,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: apiKey },
         body: JSON.stringify({ number: sanitized, text: msg }),

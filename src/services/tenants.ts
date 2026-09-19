@@ -25,6 +25,11 @@ export interface Tenant {
   start_date?: string
   expiration_date?: string
   history_notes?: TenantHistoryNote[]
+  whatsapp_instance_name?: string
+  whatsapp_status?: 'connected' | 'connecting' | 'disconnected'
+  whatsapp_number?: string
+  whatsapp_connected_at?: string
+  whatsapp_connected_by?: string
   created?: string
   updated?: string
 }

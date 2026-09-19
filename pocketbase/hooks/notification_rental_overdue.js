@@ -163,6 +163,18 @@ onRecordAfterUpdateSuccess((e) => {
   var apiKey = $secrets.get('EVOLUTION_API_KEY') || ''
   var instance = $secrets.get('EVOLUTION_INSTANCE') || ''
 
+  // Multi-tenant instance resolution
+  var tenantId = rental.getString('tenant_id') || ''
+  if (tenantId) {
+    try {
+      var tRec = $app.findRecordById('tenants', tenantId)
+      if (tRec) {
+        var tInst = tRec.getString('whatsapp_instance_name')
+        if (tInst) instance = tInst
+      }
+    } catch (_) {}
+  }
+
   if (!apiUrl || !apiKey || !instance) return e.next()
 
   try {

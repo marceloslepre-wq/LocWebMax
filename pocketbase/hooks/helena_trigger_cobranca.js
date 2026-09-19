@@ -421,8 +421,21 @@ routerAdd(
         var sendOk = false
         if (apiUrl && apiKey && instance) {
           try {
+            // Multi-tenant instance resolution
+            var targetInstance = instance
+            var rentalTenantId = rental.getString('tenant_id') || ''
+            if (rentalTenantId) {
+              try {
+                var tRec = $app.findRecordById('tenants', rentalTenantId)
+                if (tRec) {
+                  var tInst = tRec.getString('whatsapp_instance_name')
+                  if (tInst) targetInstance = tInst
+                }
+              } catch (_) {}
+            }
+
             var res = $http.send({
-              url: endpoint,
+              url: apiUrl.replace(/\/+$/, '') + '/message/sendText/' + targetInstance,
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',

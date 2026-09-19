@@ -113,7 +113,7 @@ const App = () => (
             />
             <Route element={<ProtectedRoute />}>
               <Route element={<ErrorBoundaryOutlet />}>
-                {/* Rota exclusiva do Painel Master Multi-Tenant (tela cheia com padrão CondPack) */}
+                {/* Rota exclusiva do Painel Master Multi-Tenant */}
                 <Route path="/master" element={<MasterPanel />} />
 
                 {/* Rotas protegidas com checagem de assinatura de tenant */}

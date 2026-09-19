@@ -49,6 +49,7 @@ import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
 import pb from '@/lib/pocketbase/client'
 import { refreshLocations } from '@/hooks/use-locations'
 import { NotificationTemplates } from '@/components/settings/NotificationTemplates'
+import { WhatsAppConnectionCard } from '@/components/settings/WhatsAppConnectionCard'
 import { CONTRACT_VARIABLES, DEFAULT_CONTRACT_TEMPLATE_HTML } from '@/lib/contract-template'
 import {
   SALES_RECEIPT_VARIABLES,
@@ -618,6 +619,17 @@ export default function Settings() {
         </TabsList>
 
         <TabsContent value="geral" className="space-y-6">
+          {/* Card WhatsApp / Conexão (exclusivo para Gestores, Administradores e Master) */}
+          {(currentUser?.role === 'Administrador' ||
+            currentUser?.role === 'Gestor' ||
+            currentUser?.role === 'Master' ||
+            currentUser?.email === 'marceloslepre@gmail.com') && (
+            <WhatsAppConnectionCard
+              tenantId={activeTenantId || currentUser?.tenant_id || ''}
+              canManage={true}
+            />
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Regras de Atraso e Multas</CardTitle>

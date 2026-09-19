@@ -427,8 +427,21 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         )
     }
 
+    // Multi-tenant instance resolution: check if rental belongs to specific tenant
+    var targetInstance = instance
+    var rentalTenantId = rental.getString('tenant_id') || ''
+    if (rentalTenantId) {
+      try {
+        var tRec = $app.findRecordById('tenants', rentalTenantId)
+        if (tRec) {
+          var tInst = tRec.getString('whatsapp_instance_name')
+          if (tInst) targetInstance = tInst
+        }
+      } catch (_) {}
+    }
+
     // Send WhatsApp via Evolution API
-    var endpoint = apiUrl.replace(/\/+$/, '') + '/message/sendText/' + instance
+    var endpoint = apiUrl.replace(/\/+$/, '') + '/message/sendText/' + targetInstance
     var sendOk = false
     try {
       var res = $http.send({

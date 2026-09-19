@@ -94,7 +94,7 @@ export default function MasterPanel() {
   // Filtros de tabela de licenças
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [activeTab, setActiveTab] = useState<'tenants' | 'plans'>('tenants')
+  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'whatsapp'>('tenants')
 
   // Gerador de Link
   const [selectedPlanForLink, setSelectedPlanForLink] = useState<string>('none')
@@ -894,7 +894,7 @@ export default function MasterPanel() {
         {/* 4. Abas: Licenças de Clientes (N) e Catálogo de Planos (N) */}
         <Tabs
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as 'tenants' | 'plans')}
+          onValueChange={(v) => setActiveTab(v as 'tenants' | 'plans' | 'whatsapp')}
           className="space-y-4"
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -912,7 +912,19 @@ export default function MasterPanel() {
                 <Users className="w-3.5 h-3.5" />
                 Licenças de Clientes ({tenants.length})
               </button>
-
+              <button
+                type="button"
+                onClick={() => setActiveTab('whatsapp')}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all shadow-sm ${
+                  activeTab === 'whatsapp'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                WhatsApp Multi-Instância (
+                {tenants.filter((t) => t.whatsapp_status === 'connected').length}/{tenants.length})
+              </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('plans')}
@@ -924,7 +936,7 @@ export default function MasterPanel() {
               >
                 <Layers className="w-3.5 h-3.5" />
                 Catálogo de Planos ({plans.length})
-              </button>
+              </button>{' '}
             </div>
 
             <div className="flex items-center gap-2">
@@ -1372,6 +1384,128 @@ export default function MasterPanel() {
                         )
                       })
                     )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* TAB: WHATSAPP MULTI-INSTÂNCIA */}
+          <TabsContent value="whatsapp" className="space-y-4 m-0">
+            <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm p-4 sm:p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                    <MessageCircle className="w-5 h-5 text-emerald-600" />
+                    Status das Instâncias WhatsApp por Cliente
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Visão unificada das instâncias Evolution API de todos os clientes cadastrados.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs"
+                  >
+                    {tenants.filter((t) => t.whatsapp_status === 'connected').length} Conectadas
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className="bg-slate-50 text-slate-600 border-slate-200 text-xs"
+                  >
+                    {tenants.filter((t) => t.whatsapp_status !== 'connected').length} Desconectadas
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 overflow-hidden bg-white">
+                <Table>
+                  <TableHeader className="bg-slate-50/80">
+                    <TableRow className="border-b border-slate-200 hover:bg-transparent">
+                      <TableHead className="text-slate-600 text-xs font-semibold py-3">
+                        Cliente / Tenant
+                      </TableHead>
+                      <TableHead className="text-slate-600 text-xs font-semibold py-3">
+                        Nome da Instância
+                      </TableHead>
+                      <TableHead className="text-slate-600 text-xs font-semibold py-3">
+                        Número Conectado
+                      </TableHead>
+                      <TableHead className="text-slate-600 text-xs font-semibold py-3">
+                        Status
+                      </TableHead>
+                      <TableHead className="text-slate-600 text-xs font-semibold py-3">
+                        Conectado Por
+                      </TableHead>
+                      <TableHead className="text-slate-600 text-xs font-semibold py-3 text-right">
+                        Ação
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tenants.map((t) => {
+                      const isConn = t.whatsapp_status === 'connected'
+                      const isConnecting = t.whatsapp_status === 'connecting'
+                      return (
+                        <TableRow
+                          key={t.id}
+                          className="border-b border-slate-100 hover:bg-slate-50/70"
+                        >
+                          <TableCell className="py-3">
+                            <div className="font-bold text-xs text-slate-800">{t.name}</div>
+                            <div className="text-[11px] text-slate-500 font-mono">ID: {t.id}</div>
+                          </TableCell>
+                          <TableCell className="py-3 font-mono text-xs text-slate-700">
+                            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[11px]">
+                              {t.whatsapp_instance_name || `tenant-${t.id}`}
+                            </span>
+                          </TableCell>
+                          <TableCell className="py-3 text-xs text-slate-700">
+                            {t.whatsapp_number ? (
+                              <span className="font-medium text-emerald-700 font-mono">
+                                {t.whatsapp_number}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">Não sincronizado</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-3">
+                            {isConn ? (
+                              <Badge className="bg-emerald-500 text-white text-[10px] font-semibold">
+                                Conectado
+                              </Badge>
+                            ) : isConnecting ? (
+                              <Badge className="bg-amber-500 text-white text-[10px] font-semibold">
+                                Conectando
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="bg-slate-50 text-slate-500 border-slate-200 text-[10px]"
+                              >
+                                Desconectado
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-3 text-xs text-slate-500">
+                            {t.whatsapp_connected_by || '—'}
+                          </TableCell>
+                          <TableCell className="text-right py-3">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleImpersonateTenant(t)}
+                              className="h-7 text-xs text-purple-700 border-purple-200 hover:bg-purple-50 gap-1"
+                              title="Acessar ambiente deste cliente para gerenciar ou conectar QR Code"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              Acessar
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </div>
