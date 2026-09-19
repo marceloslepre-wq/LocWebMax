@@ -32,31 +32,7 @@ import { rentalsService } from '@/services/rentals'
 import { RouteErrorBoundary, ErrorBoundaryOutlet } from '@/components/RouteErrorBoundary'
 import { PublicErrorBoundary } from '@/components/PublicErrorBoundary'
 import { TenantSubscriptionGuard } from '@/components/tenants/TenantSubscriptionGuard'
-import { onRateLimit } from '@/lib/pocketbase/client'
-import { useToast } from '@/hooks/use-toast'
-
 const RateLimitToastListener = () => {
-  const { toast } = useToast()
-
-  useEffect(() => {
-    let lastToastTime = 0
-    const unsubscribe = onRateLimit((retryAfterSeconds) => {
-      const now = Date.now()
-      // Throttle toasts to at most one every 8 seconds
-      if (now - lastToastTime > 8000) {
-        lastToastTime = now
-        toast({
-          title: 'Muitas requisições simultâneas',
-          description: `O sistema está aguardando ${retryAfterSeconds}s antes de sincronizar os dados. Evite manter múltiplas abas abertas desnecessariamente.`,
-          variant: 'destructive',
-        })
-      }
-    })
-    return () => {
-      unsubscribe()
-    }
-  }, [toast])
-
   return null
 }
 

@@ -38,6 +38,18 @@ export function AppSidebar() {
     profile?.role === 'Master' ||
     user?.email === 'marceloslepre@gmail.com'
 
+  const userRole = (user?.role || profile?.role || '').toLowerCase()
+  const userName = (user?.name || profile?.name || '').toLowerCase()
+
+  // Perfis com acesso à aba de Licenças e Planos: Master, Administrador ou Gestor
+  const canSeeLicensesAndPlans =
+    isMaster ||
+    userRole.includes('admin') ||
+    userRole.includes('gestor') ||
+    userName.includes('gestor') ||
+    can('settings:manage') ||
+    can('users:manage')
+
   const navItems = [
     { title: 'Painel', url: '/dashboard', icon: LayoutDashboard, show: true },
     { title: 'Estoque', url: '/inventory', icon: Package, show: true },
@@ -45,7 +57,12 @@ export function AppSidebar() {
     { title: 'Locações', url: '/rentals', icon: FileText, show: true },
     { title: 'Pagamentos', url: '/payments', icon: CreditCard, show: true },
     { title: 'Clientes', url: '/customers', icon: Users, show: true },
-    { title: 'Licenças e Planos', url: '/licencas-planos', icon: Award, show: isMaster },
+    {
+      title: 'Licenças e Planos',
+      url: '/licencas-planos',
+      icon: Award,
+      show: canSeeLicensesAndPlans,
+    },
     { title: 'Painel Master', url: '/master', icon: ShieldCheck, show: isMaster },
     { title: 'Guia de Uso', url: '/guide', icon: BookOpen, show: true },
     {

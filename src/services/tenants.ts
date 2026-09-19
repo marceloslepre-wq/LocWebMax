@@ -86,6 +86,48 @@ export const tenantService = {
     return pb.collection('tenants').update<Tenant>(id, data)
   },
 
+  async requestRenewal(
+    tenantId: string,
+    requestedBy: { name?: string; email?: string; role?: string },
+    notes?: string,
+  ): Promise<{ success: boolean; tenant: Tenant }> {
+    const tenant = await this.getOne(tenantId)
+    const history = tenant.history_notes ? [...tenant.history_notes] : []
+
+    const userLabel = requestedBy?.name || requestedBy?.email || 'Administrador do Cliente'
+    const noteText = notes?.trim()
+      ? `Solicitação de renovação enviada por ${userLabel}: "${notes.trim()}"`
+      : `Solicitação de renovação de plano/licença enviada por ${userLabel} via painel.`
+
+    history.push({
+      date: new Date().toISOString(),
+      action: 'Solicitação de Renovação',
+      notes: noteText,
+      user: userLabel,
+    })
+
+    const updated = await this.update(tenantId, {
+      history_notes: history,
+    })
+
+    // Registrar também como pendência para a equipe / Master se a coleção helena_pendencias estiver acessível
+    try {
+      await pb.collection('helena_pendencias').create({
+        customer_name: `[Renovação Tenant] ${tenant.name}`,
+        phone: tenant.contact || '',
+        contract_number: `LIC-${tenant.id.slice(0, 8).toUpperCase()}`,
+        type: 'outro',
+        description: `Solicitação de renovação do cliente ${tenant.name} (${tenant.plan_name || 'Plano Atual'}). Responsável: ${tenant.responsible_name} (${tenant.email || 'sem email'}). Contato: ${tenant.contact}. Mensagem: ${notes || 'Solicitação direta pelo portal.'}`,
+        status: 'pendente',
+      })
+    } catch (err) {
+      // helena_pendencias é opcional/auxiliar; o histórico do tenant já persiste a solicitação
+      console.warn('Não foi possível gravar na coleção helena_pendencias:', err)
+    }
+
+    return { success: true, tenant: updated }
+  },
+
   async delete(id: string): Promise<void> {
     await pb.collection('tenants').delete(id)
   },
