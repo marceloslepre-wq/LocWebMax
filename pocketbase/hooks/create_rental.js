@@ -94,6 +94,16 @@ routerAdd(
       contractNumber = 'LOC-' + String(maxNum + 1).padStart(5, '0')
     }
 
+    var callerTenantId = ''
+    try {
+      if (e.auth) {
+        callerTenantId = e.auth.getString('tenant_id') || ''
+      }
+    } catch (_) {}
+    if (!callerTenantId && body.tenant_id) {
+      callerTenantId = body.tenant_id
+    }
+
     const rentalsCol = $app.findCollectionByNameOrId('rentals')
     const rental = new Record(rentalsCol)
     rental.set('contract_number', contractNumber)
@@ -108,6 +118,7 @@ routerAdd(
     rental.set('custom_contract_html', body.custom_contract_html || '')
     rental.set('pickup_location_id', pickupLocationId)
     rental.set('is_imported', isImported)
+    if (callerTenantId) rental.set('tenant_id', callerTenantId)
     if (body.tracking_code) rental.set('tracking_code', body.tracking_code)
     if (localRetiradaId) rental.set('local_retirada_id', localRetiradaId)
     if (localDevolucaoId) rental.set('local_devolucao_id', localDevolucaoId)
@@ -121,6 +132,7 @@ routerAdd(
         payment.set('amount', body.total || 0)
         payment.set('payment_method', body.payment_method || 'PIX')
         payment.set('status', 'pending')
+        if (callerTenantId) payment.set('tenant_id', callerTenantId)
         $app.save(payment)
       } catch (err) {
         $app.logger().error('payment creation failed', 'err', err.message)

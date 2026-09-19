@@ -2,7 +2,19 @@ routerAdd(
   'GET',
   '/backend/v1/users',
   (e) => {
-    const users = $app.findRecordsByFilter('users', '1=1', 'created', 0, 0)
+    var callerTenantId = ''
+    try {
+      if (e.auth) {
+        callerTenantId = e.auth.getString('tenant_id') || ''
+      }
+    } catch (_) {}
+
+    var filter = '1=1'
+    if (callerTenantId) {
+      filter = 'tenant_id = "' + callerTenantId + '"'
+    }
+
+    const users = $app.findRecordsByFilter('users', filter, 'created', 0, 0)
     const result = []
     for (let i = 0; i < users.length; i++) {
       var u = users[i]
@@ -14,6 +26,7 @@ routerAdd(
         active: u.get('active') !== false,
         permissions: u.get('permissions') || [],
         created: u.getString('created'),
+        tenant_id: u.getString('tenant_id') || '',
       })
     }
     return e.json(200, result)

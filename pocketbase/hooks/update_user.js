@@ -29,6 +29,10 @@ routerAdd(
       targetRecord.set('role', body.role)
     }
 
+    if (body.tenant_id !== undefined) {
+      targetRecord.set('tenant_id', body.tenant_id || '')
+    }
+
     if (body.permissions !== undefined && body.permissions !== null) {
       targetRecord.set('permissions', body.permissions)
     }
@@ -50,6 +54,7 @@ routerAdd(
       role: targetRecord.getString('role'),
       active: targetRecord.getBool('active'),
       permissions: targetRecord.get('permissions'),
+      tenant_id: targetRecord.getString('tenant_id') || '',
     })
   },
   $apis.requireAuth(),

@@ -37,9 +37,10 @@ import {
 } from '@/components/ui/alert-dialog'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useToast } from '@/hooks/use-toast'
+import { TenantOnboardingDialog } from '@/components/tenants/TenantOnboardingDialog'
 
 export default function Customers() {
-  const { globalSearch, settings } = useMainStore()
+  const { globalSearch, settings, activeTenantId, isTenantUser } = useMainStore()
   const { can } = usePermissions()
   const { toast } = useToast()
   const [search, setSearch] = useState('')
@@ -49,7 +50,7 @@ export default function Customers() {
   const fetchCustomers = async () => {
     try {
       setLoading(true)
-      const data = await customerService.getCustomers()
+      const data = await customerService.getCustomers(activeTenantId)
       setCustomers(data)
     } catch (error) {
       toast({
@@ -64,7 +65,7 @@ export default function Customers() {
 
   useEffect(() => {
     fetchCustomers()
-  }, [])
+  }, [activeTenantId])
 
   const term = search || globalSearch
   const filtered = customers.filter(
@@ -174,6 +175,9 @@ export default function Customers() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          {!isTenantUser && !activeTenantId && (
+            <TenantOnboardingDialog onSuccess={fetchCustomers} />
+          )}
           <ShareCustomerLinkDialog />
           <ImportCustomersDialog onSuccess={fetchCustomers} />
           <CustomerFormDialog onSuccess={fetchCustomers} />

@@ -2,10 +2,17 @@ onRecordAfterCreateSuccess((e) => {
   const inv = e.record
   var originalTotal = inv.getInt('total_qty')
   var originalRented = inv.getInt('rented_qty')
+  var tenantId = inv.getString('tenant_id') || ''
 
   var locais = []
   try {
-    locais = $app.findRecordsByFilter('locais', 'ativo = true', 'nome', 0, 0)
+    var locFilter = 'ativo = true'
+    if (tenantId) {
+      locFilter += ' && tenant_id = "' + tenantId + '"'
+    } else {
+      locFilter += ' && (tenant_id = "" || tenant_id = null)'
+    }
+    locais = $app.findRecordsByFilter('locais', locFilter, 'nome', 0, 0)
   } catch (_) {}
 
   if (locais.length === 0) return e.next()
@@ -38,6 +45,7 @@ onRecordAfterCreateSuccess((e) => {
       newStock.set('local_id', locId)
       newStock.set('quantidade_total', 0)
       newStock.set('quantidade_locada', 0)
+      if (tenantId) newStock.set('tenant_id', tenantId)
       $app.save(newStock)
     }
   }

@@ -3,16 +3,45 @@ import { Outlet, useNavigate } from 'react-router-dom'
 import { isSameDay, parseISO } from 'date-fns'
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from './AppSidebar'
-import { Bell, Search, UserCircle } from 'lucide-react'
+import { useState, useEffect as useReactEffect } from 'react'
+import { Bell, Search, UserCircle, Building2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import useMainStore from '@/stores/main'
 import { hexToHSL } from '@/lib/utils'
+import { tenantService, Tenant } from '@/services/tenants'
 
 export default function Layout() {
   const navigate = useNavigate()
-  const { rentals, settings, currentUser, globalSearch, setGlobalSearch } = useMainStore()
+  const {
+    rentals,
+    settings,
+    currentUser,
+    globalSearch,
+    setGlobalSearch,
+    activeTenantId,
+    setActiveTenantId,
+    isTenantUser,
+  } = useMainStore()
+
+  const [tenantsList, setTenantsList] = useState<Tenant[]>([])
+
+  useReactEffect(() => {
+    if (!isTenantUser) {
+      tenantService
+        .getAll()
+        .then(setTenantsList)
+        .catch(() => {})
+    }
+  }, [isTenantUser])
 
   useEffect(() => {
     if (!currentUser) {
@@ -107,12 +136,51 @@ export default function Layout() {
           <header className="h-16 border-b bg-card flex items-center justify-between px-4 sticky top-0 z-10 shadow-sm print:hidden flex-shrink-0">
             <div className="flex items-center gap-4 flex-1">
               <SidebarTrigger />
-              <div className="relative max-w-md hidden sm:block w-full">
+              {/* Seletor de Tenant para o Marcelo (admin geral) */}
+              {!isTenantUser ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/60 border text-xs">
+                    <Building2 className="w-3.5 h-3.5 text-primary" />
+                    <span className="font-medium text-muted-foreground hidden sm:inline">
+                      Ambiente:
+                    </span>
+                    <Select
+                      value={activeTenantId || 'default'}
+                      onValueChange={(val) => {
+                        setActiveTenantId(val === 'default' ? null : val)
+                      }}
+                    >
+                      <SelectTrigger className="h-7 w-[180px] sm:w-[220px] text-xs font-semibold border-none bg-transparent shadow-none focus:ring-0 p-0">
+                        <SelectValue placeholder="Selecione o ambiente" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="default" className="text-xs font-semibold">
+                          Operação Principal (Hospital Home)
+                        </SelectItem>
+                        {tenantsList.map((t) => (
+                          <SelectItem key={t.id} value={t.id} className="text-xs">
+                            🏢 {t.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 font-medium">
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>
+                    Ambiente da Empresa: <strong>{settings.companyName || 'Meu Tenant'}</strong>
+                  </span>
+                </div>
+              )}
+
+              <div className="relative max-w-xs hidden md:block w-full">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="search"
-                  placeholder="Buscar locações, itens ou clientes..."
-                  className="pl-9 bg-muted/50 border-none w-full focus-visible:ring-1"
+                  placeholder="Buscar..."
+                  className="pl-9 h-8 bg-muted/50 border-none w-full focus-visible:ring-1 text-xs"
                   value={globalSearch}
                   onChange={(e) => setGlobalSearch(e.target.value)}
                 />

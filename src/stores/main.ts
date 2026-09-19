@@ -27,6 +27,7 @@ export type InventoryItem = {
   monthlyPrice?: number
   dailyPrice?: number
   salePrice?: number
+  tenantId?: string
 }
 
 export type Address = {
@@ -75,6 +76,7 @@ export type Rental = {
   paymentMethod?: string
   contractNumber?: string
   trackingCode?: string
+  tenantId?: string
 }
 
 export type User = {
@@ -85,6 +87,7 @@ export type User = {
   role: string
   active: boolean
   permissions: PermissionKey[]
+  tenant_id?: string
 }
 
 export type Location = {
@@ -120,11 +123,15 @@ export type Settings = {
   locations?: Location[]
   categories?: string[]
   notificationTemplates?: NotificationTemplate[]
+  tenantId?: string
 }
 
 interface MainStore {
   currentUser: User | null
   setCurrentUser: (user: User | null) => void
+  activeTenantId: string | null
+  setActiveTenantId: (tenantId: string | null) => void
+  isTenantUser: boolean
   globalSearch: string
   setGlobalSearch: (search: string) => void
   inventory: InventoryItem[]
@@ -166,6 +173,7 @@ function mapInventoryRow(row: any): InventoryItem {
     monthlyPrice: Number(row.monthly_price) || 0,
     dailyPrice: Number(row.daily_price) || 0,
     salePrice: Number(row.sale_price) || 0,
+    tenantId: row.tenant_id || undefined,
   }
 }
 
@@ -190,6 +198,7 @@ function mapRentalRow(row: any): Rental {
     contractNumber: row.contract_number,
     paymentMethod: row.payment_method,
     trackingCode: row.tracking_code,
+    tenantId: row.tenant_id || undefined,
   }
 }
 
@@ -202,6 +211,7 @@ function mapUserRow(row: any): User {
     role: row.role || '',
     active: row.active ?? true,
     permissions: row.permissions || [],
+    tenant_id: row.tenant_id || undefined,
   }
 }
 
@@ -210,6 +220,7 @@ const StoreContext = createContext<MainStore | null>(null)
 export function StoreProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null)
   const [globalSearch, setGlobalSearch] = useState('')
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -239,13 +250,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     notificationTemplates: [],
   })
 
+  // Determinar se o usuário logado pertence a um tenant (fixo) ou é admin geral
+  const userTenantId = (user as any)?.tenant_id || currentUser?.tenant_id || null
+  const isTenantUser = !!userTenantId
+
+  // activeTenantId efetivo: se o usuário logado for de um tenant, NUNCA pode sair dele.
+  // Se for admin geral (Marcelo), pode alternar entre null (operação Marcelo) e um tenant selecionado.
+  const activeTenantId = isTenantUser ? userTenantId : selectedTenantId
+
+  const getEffectiveTenantFilter = () => {
+    return activeTenantId
+      ? `tenant_id = "${activeTenantId}"`
+      : `(tenant_id = "" || tenant_id = null)`
+  }
+
   const refreshCustomers = () => {
-    customerService.getCustomers().then(setCustomers).catch(console.error)
+    customerService.getCustomers(activeTenantId).then(setCustomers).catch(console.error)
   }
 
   const refreshInventory = async () => {
     try {
-      const data = await pb.collection('inventory').getFullList({ sort: '-created' })
+      const filter = getEffectiveTenantFilter()
+      const data = await pb.collection('inventory').getFullList({ filter, sort: '-created' })
       setInventory(data.map(mapInventoryRow))
     } catch (err) {
       console.error('Error refreshing inventory:', err)
@@ -254,7 +280,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const refreshRentals = async () => {
     try {
-      const data = await pb.collection('rentals').getFullList({ sort: '-created' })
+      const filter = getEffectiveTenantFilter()
+      const data = await pb.collection('rentals').getFullList({ filter, sort: '-created' })
       setRentals(data.map(mapRentalRow))
     } catch (err) {
       console.error('Error refreshing rentals:', err)
@@ -300,10 +327,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const loadData = async () => {
       try {
+        const filter = activeTenantId
+          ? `tenant_id = "${activeTenantId}"`
+          : `(tenant_id = "" || tenant_id = null)`
+
         const [invData, settingsList, rentData] = await Promise.all([
-          pb.collection('inventory').getFullList({ sort: '-created' }),
-          pb.collection('settings').getFullList(),
-          pb.collection('rentals').getFullList({ sort: '-created' }),
+          pb.collection('inventory').getFullList({ filter, sort: '-created' }),
+          pb.collection('settings').getFullList({ filter }),
+          pb.collection('rentals').getFullList({ filter, sort: '-created' }),
         ])
 
         if (invData) setInventory(invData.map(mapInventoryRow))
@@ -338,6 +369,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ],
             locations: (setData as any).locations || [],
             notificationTemplates: (setData as any).notification_templates || [],
+            tenantId: (setData as any).tenant_id,
+          })
+        } else {
+          setSettingsId(null)
+          setSettings({
+            primaryColor: '#1e40af',
+            logoUrl: null,
+            contractFileName: null,
+            contractTemplateHtml: undefined,
+            salesReceiptTemplateHtml: undefined,
+            lateFeeType: 'daily',
+            lateFeeValue: 2,
+            companyName: 'LocaAção Equipamentos',
+            companyDocument: '12.345.678/0001-90',
+            companyAddress: 'Av. Industrial, 1500 - São Paulo, SP',
+            returnResponsibleName: '',
+            landlordRepName: 'Marcelo da Silveira Lepre',
+            landlordRepDocument: '022.862.567-05',
+            witness1Name: 'Cristiani Aparecida de Fretais Pereira Gomes',
+            witness1Document: '106.522.497-44',
+            witness2Name: 'Tatiane Cardoso Rodrigues',
+            witness2Document: '141.122.117-67',
+            categories: ['Ferramentas', 'Equipamentos Pesados', 'Acessórios', 'Geral'],
+            locations: [],
+            notificationTemplates: [],
           })
         }
 
@@ -348,7 +404,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const usersData = await pb.send('/backend/v1/users', { method: 'GET' })
           if (Array.isArray(usersData)) {
             mappedUsers = usersData.map(mapUserRow)
-            setUsers(mappedUsers)
+            // Se for tenant user ou visualizando tenant, filtrar usuários do tenant
+            if (activeTenantId) {
+              setUsers(mappedUsers.filter((u) => u.tenant_id === activeTenantId))
+            } else {
+              setUsers(mappedUsers)
+            }
           }
         } catch (err) {
           console.error('Error fetching users:', err)
@@ -365,6 +426,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             role: (user as any).role || '',
             active: (user as any).active ?? true,
             permissions: (user as any).permissions || [],
+            tenant_id: (user as any).tenant_id,
           })
         }
 
@@ -375,7 +437,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     loadData()
-  }, [user?.id])
+  }, [user?.id, activeTenantId])
 
   const addRental = async (rental: Rental): Promise<Rental | null> => {
     const tempId = rental.id || Math.random().toString()
@@ -416,6 +478,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           custom_contract_html: rental.customContractHtml || null,
           contract_number: null,
           tracking_code: rental.trackingCode || '',
+          tenant_id: activeTenantId || '',
         }),
         headers: { 'Content-Type': 'application/json' },
       })
@@ -561,6 +624,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         monthly_price: item.monthlyPrice,
         daily_price: item.dailyPrice,
         sale_price: item.salePrice,
+        tenant_id: activeTenantId || '',
       })
       if (data) {
         setInventory((prev) =>
@@ -621,7 +685,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addCustomer = async (c: Customer) => {
     setCustomers((prev) => [c, ...prev])
-    await customerService.createCustomer(c)
+    await customerService.createCustomer(c, activeTenantId)
     refreshCustomers()
   }
 
@@ -670,6 +734,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (settingsId) {
         await pb.collection('settings').update(settingsId, updateData)
       } else {
+        if (activeTenantId) {
+          updateData.tenant_id = activeTenantId
+        }
         const inserted = await pb.collection('settings').create(updateData)
         if (inserted) setSettingsId(inserted.id)
       }
@@ -693,6 +760,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         role: newUser.role,
         active: newUser.active,
         permissions: newUser.permissions,
+        tenant_id: activeTenantId || newUser.tenant_id || '',
       })
       if (data) {
         setUsers((prev) =>
@@ -733,6 +801,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       value: {
         currentUser,
         setCurrentUser,
+        activeTenantId,
+        setActiveTenantId: setSelectedTenantId,
+        isTenantUser,
         globalSearch,
         setGlobalSearch,
         inventory,

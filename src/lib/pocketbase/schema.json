@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-19T13:22:20.219Z",
+  "generatedAt": "2026-09-19T14:27:03.572Z",
   "collections": [
     {
       "name": "users",
@@ -55,6 +55,12 @@
           "type": "json",
           "required": false,
           "system": false
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -104,9 +110,18 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
-      "indexes": ["CREATE INDEX idx_locais_nome ON locais (nome)"]
+      "indexes": [
+        "CREATE INDEX idx_locais_nome ON locais (nome)",
+        "CREATE INDEX `idx_locais_tenant` ON `locais` (tenant_id)"
+      ]
     },
     {
       "name": "inventory",
@@ -216,11 +231,18 @@
           "type": "file",
           "required": false,
           "system": false
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE INDEX idx_inventory_code ON inventory (code)",
-        "CREATE INDEX idx_inventory_category ON inventory (category)"
+        "CREATE INDEX idx_inventory_category ON inventory (category)",
+        "CREATE INDEX `idx_inventory_tenant` ON `inventory` (tenant_id)"
       ]
     },
     {
@@ -337,12 +359,18 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE INDEX idx_customers_document ON customers (document)",
         "CREATE INDEX idx_customers_matricula ON customers (matricula)",
-        "CREATE UNIQUE INDEX `idx_customers_matricula_unique` ON `customers` (matricula)"
+        "CREATE INDEX `idx_customers_tenant` ON `customers` (tenant_id)"
       ]
     },
     {
@@ -381,9 +409,17 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
-      "indexes": []
+      "indexes": [
+        "CREATE INDEX `idx_customer_documents_tenant` ON `customer_documents` (tenant_id)"
+      ]
     },
     {
       "name": "rentals",
@@ -527,12 +563,19 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE INDEX idx_rentals_status ON rentals (status)",
         "CREATE INDEX idx_rentals_customer ON rentals (customer_id)",
-        "CREATE INDEX idx_rentals_created ON rentals (created DESC)"
+        "CREATE INDEX idx_rentals_created ON rentals (created DESC)",
+        "CREATE INDEX `idx_rentals_tenant` ON `rentals` (tenant_id)"
       ]
     },
     {
@@ -632,9 +675,18 @@
           "type": "date",
           "required": false,
           "system": false
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
-      "indexes": ["CREATE INDEX idx_payments_rental ON payments (rental_id)"]
+      "indexes": [
+        "CREATE INDEX idx_payments_rental ON payments (rental_id)",
+        "CREATE INDEX `idx_payments_tenant` ON `payments` (tenant_id)"
+      ]
     },
     {
       "name": "patrimonio",
@@ -715,9 +767,18 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
-      "indexes": ["CREATE INDEX idx_patrimonio_inventory ON patrimonio (inventory_id)"]
+      "indexes": [
+        "CREATE INDEX idx_patrimonio_inventory ON patrimonio (inventory_id)",
+        "CREATE INDEX `idx_patrimonio_tenant` ON `patrimonio` (tenant_id)"
+      ]
     },
     {
       "name": "estoque_por_local",
@@ -769,10 +830,17 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
-        "CREATE INDEX idx_estoque_inv_local ON estoque_por_local (inventory_id, local_id)"
+        "CREATE INDEX idx_estoque_inv_local ON estoque_por_local (inventory_id, local_id)",
+        "CREATE INDEX `idx_estoque_por_local_tenant` ON `estoque_por_local` (tenant_id)"
       ]
     },
     {
@@ -823,9 +891,18 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
-      "indexes": ["CREATE INDEX idx_transfers_created ON inventory_transfers (created DESC)"]
+      "indexes": [
+        "CREATE INDEX idx_transfers_created ON inventory_transfers (created DESC)",
+        "CREATE INDEX `idx_inventory_transfers_tenant` ON `inventory_transfers` (tenant_id)"
+      ]
     },
     {
       "name": "settings",
@@ -971,9 +1048,15 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
-      "indexes": []
+      "indexes": ["CREATE INDEX `idx_settings_tenant` ON `settings` (tenant_id)"]
     },
     {
       "name": "exchange_history",
@@ -1055,9 +1138,15 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
-      "indexes": []
+      "indexes": ["CREATE INDEX `idx_exchange_history_tenant` ON `exchange_history` (tenant_id)"]
     },
     {
       "name": "auditoria_contratos",
@@ -1121,9 +1210,18 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
-      "indexes": ["CREATE INDEX idx_auditoria_rental ON auditoria_contratos (rental_id)"]
+      "indexes": [
+        "CREATE INDEX idx_auditoria_rental ON auditoria_contratos (rental_id)",
+        "CREATE INDEX `idx_auditoria_contratos_tenant` ON `auditoria_contratos` (tenant_id)"
+      ]
     },
     {
       "name": "whatsapp_conversations",
@@ -1245,10 +1343,17 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
-        "CREATE INDEX idx_rental_snapshots_rental ON rental_snapshots (rental_id, created DESC)"
+        "CREATE INDEX idx_rental_snapshots_rental ON rental_snapshots (rental_id, created DESC)",
+        "CREATE INDEX `idx_rental_snapshots_tenant` ON `rental_snapshots` (tenant_id)"
       ]
     },
     {
@@ -1433,6 +1538,79 @@
       "indexes": [
         "CREATE INDEX idx_helena_pendencias_status ON helena_pendencias (status)",
         "CREATE INDEX idx_helena_pendencias_type ON helena_pendencias (type)"
+      ]
+    },
+    {
+      "name": "tenants",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "document",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "responsible_name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "contact",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_tenants_name ON tenants (name)",
+        "CREATE INDEX idx_tenants_status ON tenants (status)"
       ]
     }
   ]

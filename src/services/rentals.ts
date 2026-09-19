@@ -1,16 +1,21 @@
 import pb from '@/lib/pocketbase/client'
 
 export const rentalsService = {
-  getAll() {
-    return pb.collection('rentals').getFullList({ sort: '-created' })
+  getAll(tenantId?: string | null) {
+    const filter = tenantId ? `tenant_id = "${tenantId}"` : `(tenant_id = "" || tenant_id = null)`
+    return pb.collection('rentals').getFullList({ filter, sort: '-created' })
   },
   getOne(id: string) {
     return pb.collection('rentals').getOne(id)
   },
-  create(data: any) {
+  create(data: any, tenantId?: string | null) {
+    const payload = {
+      ...data,
+      tenant_id: tenantId || data.tenant_id || '',
+    }
     return pb.send('/backend/v1/rentals/create', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
       headers: { 'Content-Type': 'application/json' },
     })
   },

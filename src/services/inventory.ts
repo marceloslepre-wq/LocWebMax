@@ -50,8 +50,9 @@ function buildPlaceholder(category: string): string {
 }
 
 export const inventoryService = {
-  getAll() {
-    return pb.collection('inventory').getFullList({ sort: '-created' })
+  getAll(tenantId?: string | null) {
+    const filter = tenantId ? `tenant_id = "${tenantId}"` : `(tenant_id = "" || tenant_id = null)`
+    return pb.collection('inventory').getFullList({ filter, sort: '-created' })
   },
   getOne(id: string) {
     return pb.collection('inventory').getOne(id)
@@ -59,7 +60,7 @@ export const inventoryService = {
   create(data: any) {
     return pb.collection('inventory').create(data)
   },
-  async createItem(data: InventoryCreateData) {
+  async createItem(data: InventoryCreateData, tenantId?: string | null) {
     const formData = new FormData()
     formData.append('code', data.code)
     formData.append('name', data.name)
@@ -73,6 +74,7 @@ export const inventoryService = {
     formData.append('daily_price', String(data.dailyPrice))
     formData.append('sale_price', String(data.salePrice))
     formData.append('image', buildPlaceholder(data.category))
+    formData.append('tenant_id', tenantId || '')
     if (data.imageFile) {
       formData.append('image_file', data.imageFile)
     }
@@ -151,7 +153,13 @@ export const inventoryService = {
       filter: `inventory_id = "${inventoryId}"`,
     })
   },
-  async upsertStock(inventoryId: string, localId: string, total: number, locada: number) {
+  async upsertStock(
+    inventoryId: string,
+    localId: string,
+    total: number,
+    locada: number,
+    tenantId?: string | null,
+  ) {
     const existing = await pb.collection('estoque_por_local').getFullList({
       filter: `inventory_id = "${inventoryId}" && local_id = "${localId}"`,
     })
@@ -166,6 +174,7 @@ export const inventoryService = {
       local_id: localId,
       quantidade_total: total,
       quantidade_locada: locada,
+      tenant_id: tenantId || '',
     })
   },
 }

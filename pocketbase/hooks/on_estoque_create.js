@@ -3,6 +3,18 @@ onRecordAfterCreateSuccess((e) => {
   var invId = stock.getString('inventory_id')
   if (!invId) return e.next()
 
+  var tenantId = stock.getString('tenant_id') || ''
+  if (!tenantId) {
+    try {
+      var invRec = $app.findRecordById('inventory', invId)
+      var invTenant = invRec.getString('tenant_id') || ''
+      if (invTenant) {
+        stock.set('tenant_id', invTenant)
+        $app.save(stock)
+      }
+    } catch (_) {}
+  }
+
   try {
     var allStocks = $app.findRecordsByFilter(
       'estoque_por_local',

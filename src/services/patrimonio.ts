@@ -18,17 +18,27 @@ export const patrimonioService = {
       sort: 'created',
     })
   },
-  getAll() {
-    return pb.collection('patrimonio').getFullList({ sort: '-created' })
+  getAll(tenantId?: string | null) {
+    const filter = tenantId ? `tenant_id = "${tenantId}"` : `(tenant_id = "" || tenant_id = null)`
+    return pb.collection('patrimonio').getFullList({ filter, sort: '-created' })
   },
-  getAllWithInventory() {
+  getAllWithInventory(tenantId?: string | null) {
+    const filter = tenantId ? `tenant_id = "${tenantId}"` : `(tenant_id = "" || tenant_id = null)`
     return pb.collection('patrimonio').getFullList({
+      filter,
       sort: '-created',
       expand: 'inventory_id',
     })
   },
-  create(data: PatrimonioCreateData | FormData) {
-    return pb.collection('patrimonio').create(data)
+  create(data: PatrimonioCreateData | FormData, tenantId?: string | null) {
+    if (data instanceof FormData) {
+      if (tenantId) data.append('tenant_id', tenantId)
+      return pb.collection('patrimonio').create(data)
+    }
+    return pb.collection('patrimonio').create({
+      ...data,
+      tenant_id: tenantId || '',
+    })
   },
   update(id: string, data: any) {
     return pb.collection('patrimonio').update(id, data)

@@ -8,8 +8,11 @@ export const usersService = {
       return []
     }
   },
-  create(data: any) {
-    return pb.collection('users').create(data)
+  create(data: any, tenantId?: string | null) {
+    return pb.collection('users').create({
+      ...data,
+      tenant_id: tenantId !== undefined ? tenantId : data.tenant_id || '',
+    })
   },
   update(id: string, data: any) {
     return pb.send(`/backend/v1/users/${id}`, {

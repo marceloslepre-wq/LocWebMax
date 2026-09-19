@@ -9,6 +9,7 @@ import {
   LogOut,
   Briefcase,
   CreditCard,
+  Building2,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -27,9 +28,12 @@ import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
 export function AppSidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { settings, setCurrentUser } = useMainStore()
+  const { settings, setCurrentUser, isTenantUser, activeTenantId } = useMainStore()
   const { can } = usePermissions()
   const { signOut, user, profile } = useAuth()
+
+  // Marcelo (usuário sem tenant_id fixo) vê a aba de Gestão de Tenants
+  const showTenantsTab = !isTenantUser
 
   const navItems = [
     { title: 'Painel', url: '/dashboard', icon: LayoutDashboard, show: true },
@@ -38,6 +42,7 @@ export function AppSidebar() {
     { title: 'Locações', url: '/rentals', icon: FileText, show: true },
     { title: 'Pagamentos', url: '/payments', icon: CreditCard, show: true },
     { title: 'Clientes', url: '/customers', icon: Users, show: true },
+    { title: 'Empresas (Tenants)', url: '/tenants', icon: Building2, show: showTenantsTab },
     { title: 'Guia de Uso', url: '/guide', icon: BookOpen, show: true },
     {
       title: 'Configurações',

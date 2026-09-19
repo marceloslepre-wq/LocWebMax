@@ -79,7 +79,7 @@ const mapToDb = (customer: Partial<Customer>) => {
 }
 
 export const customerService = {
-  async checkDocumentExists(document: string, excludeId?: string) {
+  async checkDocumentExists(document: string, excludeId?: string, tenantId?: string | null) {
     const cleanDoc = document.replace(/\D/g, '')
     if (!cleanDoc) return false
 
@@ -97,7 +97,8 @@ export const customerService = {
     }
 
     try {
-      const all = await pb.collection('customers').getFullList()
+      const filter = tenantId ? `tenant_id = "${tenantId}"` : `(tenant_id = "" || tenant_id = null)`
+      const all = await pb.collection('customers').getFullList({ filter })
       return all.some(
         (c: any) => c.document && c.document.replace(/\D/g, '') === cleanDoc && c.id !== excludeId,
       )
@@ -106,8 +107,12 @@ export const customerService = {
     }
   },
 
-  async getCustomers() {
-    const data = await pb.collection('customers').getFullList({ sort: '-created' })
+  async getCustomers(tenantId?: string | null) {
+    const filter = tenantId ? `tenant_id = "${tenantId}"` : `(tenant_id = "" || tenant_id = null)`
+    const data = await pb.collection('customers').getFullList({
+      filter,
+      sort: '-created',
+    })
     const mapped = data.map(mapFromDb)
     mapped.sort((a, b) => {
       const numA = parseInt(a.matricula, 10)
@@ -119,24 +124,33 @@ export const customerService = {
     return mapped
   },
 
-  async checkMatriculaExists(matricula: string, excludeId?: string) {
+  async checkMatriculaExists(matricula: string, excludeId?: string, tenantId?: string | null) {
     if (!matricula) return false
     try {
-      const all = await pb.collection('customers').getFullList()
+      const filter = tenantId ? `tenant_id = "${tenantId}"` : `(tenant_id = "" || tenant_id = null)`
+      const all = await pb.collection('customers').getFullList({ filter })
       return all.some((c: any) => c.matricula === matricula && c.id !== excludeId)
     } catch {
       return false
     }
   },
 
-  async createCustomer(customer: Omit<Customer, 'id'>) {
+  async createCustomer(customer: Omit<Customer, 'id'>, tenantId?: string | null) {
     const dbPayload = mapToDb(customer)
+    if (tenantId) {
+      dbPayload.tenant_id = tenantId
+    } else {
+      dbPayload.tenant_id = ''
+    }
     if (!dbPayload.matricula || dbPayload.matricula === 'AUTO') {
       if (pb.authStore.isValid) {
-        dbPayload.matricula = await this.getNextMatricula()
+        dbPayload.matricula = await this.getNextMatricula(tenantId)
       }
     }
-    if (dbPayload.matricula && (await this.checkMatriculaExists(dbPayload.matricula))) {
+    if (
+      dbPayload.matricula &&
+      (await this.checkMatriculaExists(dbPayload.matricula, undefined, tenantId))
+    ) {
       throw new Error(`Matrícula ${dbPayload.matricula} já existe. Tente novamente.`)
     }
     const data = await pb.collection('customers').create(dbPayload)
@@ -152,7 +166,7 @@ export const customerService = {
     await pb.collection('customers').delete(id)
   },
 
-  async getNextMatricula() {
+  async getNextMatricula(tenantId?: string | null) {
     if (!pb.authStore.isValid) {
       try {
         const result = await pb.send('/backend/v1/public/next-matricula', { method: 'GET' })
@@ -163,7 +177,8 @@ export const customerService = {
     }
 
     try {
-      const data = await pb.collection('customers').getFullList()
+      const filter = tenantId ? `tenant_id = "${tenantId}"` : `(tenant_id = "" || tenant_id = null)`
+      const data = await pb.collection('customers').getFullList({ filter })
       let max = 0
       for (const record of data) {
         const num = parseInt(record.matricula, 10)
