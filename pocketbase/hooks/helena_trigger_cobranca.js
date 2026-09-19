@@ -2,10 +2,16 @@ routerAdd(
   'POST',
   '/backend/v1/helena/trigger-cobranca',
   (e) => {
-    var now = new Date()
-    var yyyy = now.getFullYear()
-    var mm = String(now.getMonth() + 1).padStart(2, '0')
-    var dd = String(now.getDate()).padStart(2, '0')
+    var getBrtDate = function () {
+      var d = new Date()
+      var brtMs = d.getTime() - 3 * 60 * 60 * 1000
+      return new Date(brtMs)
+    }
+
+    var nowBrt = getBrtDate()
+    var yyyy = nowBrt.getUTCFullYear()
+    var mm = String(nowBrt.getUTCMonth() + 1).padStart(2, '0')
+    var dd = String(nowBrt.getUTCDate()).padStart(2, '0')
     var todayStr = yyyy + '-' + mm + '-' + dd
 
     var body = e.requestInfo().body || {}
@@ -116,7 +122,7 @@ routerAdd(
       var m = parseInt(parts[1], 10) - 1
       var d = parseInt(parts[2], 10)
       var target = new Date(Date.UTC(y, m, d))
-      var current = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+      var current = new Date(Date.UTC(yyyy, parseInt(mm, 10) - 1, parseInt(dd, 10)))
       var diffMs = current.getTime() - target.getTime()
       return Math.floor(diffMs / (1000 * 60 * 60 * 24))
     }
