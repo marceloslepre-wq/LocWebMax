@@ -17,6 +17,7 @@ import RentalDetail from './pages/RentalDetail'
 import Payments from './pages/Payments'
 import Settings from './pages/Settings'
 import MasterPanel from './pages/MasterPanel'
+import LicencasPlanos from './pages/LicencasPlanos'
 import PublicCompanyRegister from './pages/PublicCompanyRegister'
 import Guide from './pages/Guide'
 import NotFound from './pages/NotFound'
@@ -128,6 +129,7 @@ const App = () => (
                   <Route path="/rentals/:id" element={<RentalDetail />} />
                   <Route path="/payments" element={<Payments />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route path="/licencas-planos" element={<LicencasPlanos />} />
                   <Route path="/guide" element={<Guide />} />
                 </Route>
               </Route>

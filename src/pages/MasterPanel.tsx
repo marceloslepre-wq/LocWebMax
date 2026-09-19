@@ -128,24 +128,21 @@ export default function MasterPanel() {
     notes: '',
   })
   const [newLicenseForm, setNewLicenseForm] = useState({
-    name: '',
-    document: '',
-    responsible_name: '',
-    contact: '',
-    email: '',
+    tenant_id: '',
     plan_id: '',
-    trial_days: 15,
-    admin_email: '',
-    admin_password: '',
+    status: 'active',
+    expiration_date: '',
+    override_users: '',
+    override_units: '',
   })
   const [planForm, setPlanForm] = useState({
     name: '',
-    price: '',
-    units_limit: '',
-    users_limit: '',
     description: '',
-    is_master_exclusive: false,
+    price: '199.90',
+    units_limit: '50',
+    users_limit: '100',
     status: 'active',
+    is_master_exclusive: false,
   })
 
   // Permissão de segurança: Apenas Marcelo Lepre (role: Master ou marceloslepre@gmail.com)
@@ -447,45 +444,64 @@ export default function MasterPanel() {
   const handleCreateNewLicense = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      if (!newLicenseForm.tenant_id) {
+        toast({
+          title: 'Selecione a empresa',
+          description: 'Por favor escolha a empresa/cliente para vincular a licença.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      const chosenTenant = tenants.find((t) => t.id === newLicenseForm.tenant_id)
       const chosenPlan = plans.find((p) => p.id === newLicenseForm.plan_id)
-      await tenantService.onboardTenant({
-        name: newLicenseForm.name.trim(),
-        document: newLicenseForm.document.trim(),
-        responsible_name: newLicenseForm.responsible_name.trim(),
-        contact: newLicenseForm.contact.trim(),
-        email: newLicenseForm.email.trim(),
+
+      const overrideUsers = newLicenseForm.override_users.trim()
+        ? Number(newLicenseForm.override_users)
+        : null
+      const overrideUnits = newLicenseForm.override_units.trim()
+        ? Number(newLicenseForm.override_units)
+        : null
+
+      const expDate = newLicenseForm.expiration_date
+        ? new Date(newLicenseForm.expiration_date).toISOString()
+        : null
+
+      const history = chosenTenant?.history_notes ? [...chosenTenant.history_notes] : []
+      history.push({
+        date: new Date().toISOString(),
+        action: 'Licença Vinculada / Atualizada',
+        notes: `Plano: ${chosenPlan ? chosenPlan.name : 'Plano'} | Status: ${newLicenseForm.status} | Expiração: ${newLicenseForm.expiration_date || 'Sem prazo'}`,
+      })
+
+      await tenantService.update(newLicenseForm.tenant_id, {
         plan_id: chosenPlan ? chosenPlan.id : '',
-        plan_name: chosenPlan ? chosenPlan.name : 'Plano Básico',
-        trial_days: Number(newLicenseForm.trial_days) || 15,
-        admin_user: newLicenseForm.admin_email.trim()
-          ? {
-              name: newLicenseForm.responsible_name.trim(),
-              email: newLicenseForm.admin_email.trim(),
-              password: newLicenseForm.admin_password.trim() || 'Skip@Pass',
-            }
-          : undefined,
+        plan_name: chosenPlan ? chosenPlan.name : chosenTenant?.plan_name || 'Plano Básico',
+        status: newLicenseForm.status === 'inactive' ? 'inactive' : 'active',
+        subscription_status: newLicenseForm.status as any,
+        expiration_date: expDate,
+        custom_users_limit: overrideUsers,
+        custom_units_limit: overrideUnits,
+        history_notes: history,
       })
 
       toast({
-        title: 'Nova licença provisionada com sucesso!',
-        description: `A empresa "${newLicenseForm.name}" agora faz parte do sistema.`,
+        title: 'Licença vinculada com sucesso!',
+        description: `A licença para ${chosenTenant?.name || 'a empresa'} foi configurada.`,
       })
       setNewLicenseModalOpen(false)
       setNewLicenseForm({
-        name: '',
-        document: '',
-        responsible_name: '',
-        contact: '',
-        email: '',
+        tenant_id: '',
         plan_id: '',
-        trial_days: 15,
-        admin_email: '',
-        admin_password: '',
+        status: 'active',
+        expiration_date: '',
+        override_users: '',
+        override_units: '',
       })
       loadData()
     } catch (err: any) {
       toast({
-        title: 'Erro ao criar nova licença',
+        title: 'Erro ao vincular licença',
         description: err.message,
         variant: 'destructive',
       })
@@ -498,23 +514,23 @@ export default function MasterPanel() {
       setEditingPlan(plan)
       setPlanForm({
         name: plan.name,
+        description: plan.description || '',
         price: String(plan.price),
         units_limit: String(plan.units_limit),
         users_limit: String(plan.users_limit),
-        description: plan.description || '',
-        is_master_exclusive: plan.is_master_exclusive,
         status: plan.status,
+        is_master_exclusive: plan.is_master_exclusive,
       })
     } else {
       setEditingPlan(null)
       setPlanForm({
         name: '',
-        price: '199.90',
-        units_limit: '100',
-        users_limit: '5',
         description: '',
-        is_master_exclusive: false,
+        price: '199.90',
+        units_limit: '50',
+        users_limit: '100',
         status: 'active',
+        is_master_exclusive: false,
       })
     }
     setPlanFormOpen(true)
@@ -1805,238 +1821,276 @@ export default function MasterPanel() {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: NOVA LICENÇA MANUAL */}
+      {/* MODAL: VINCULAR NOVA LICENÇA (PADRÃO CONDPACK - PRINT 1) */}
       <Dialog open={newLicenseModalOpen} onOpenChange={setNewLicenseModalOpen}>
-        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900">
-              <Plus className="w-5 h-5 text-purple-600" />
-              Provisionar Nova Licença de Cliente
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-lg max-h-[92vh] overflow-y-auto shadow-2xl p-6 sm:p-7 rounded-xl">
+          <DialogHeader className="space-y-1 text-left pb-1">
+            <DialogTitle className="text-lg font-bold text-slate-900">
+              Vincular Nova Licença
             </DialogTitle>
-            <DialogDescription className="text-slate-500 text-xs">
-              Cadastre um novo tenant cliente com isolamento 100% de dados e configurações.
+            <DialogDescription className="text-slate-500 text-xs leading-relaxed">
+              Vincule uma empresa/cliente a um plano contratado, defina a vigência e limites
+              opcionais.
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleCreateNewLicense} className="space-y-3 py-2 text-xs">
+          <form onSubmit={handleCreateNewLicense} className="space-y-4 pt-2 text-xs">
+            {/* Empresa / Condomínio */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-700 font-semibold">
-                Razão Social / Nome da Empresa *
-              </Label>
-              <Input
-                required
-                placeholder="Ex: Prime Locações Hospitalares"
-                value={newLicenseForm.name}
-                onChange={(e) => setNewLicenseForm((p) => ({ ...p, name: e.target.value }))}
-                className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
-              />
+              <Label className="text-xs text-slate-700 font-semibold">Empresa / Cliente *</Label>
+              <Select
+                value={newLicenseForm.tenant_id}
+                onValueChange={(val) => {
+                  const t = tenants.find((item) => item.id === val)
+                  setNewLicenseForm((p) => ({
+                    ...p,
+                    tenant_id: val,
+                    plan_id: t?.plan_id || p.plan_id,
+                    status: (t?.subscription_status as any) || 'active',
+                    expiration_date: t?.expiration_date ? t.expiration_date.split('T')[0] : '',
+                    override_users:
+                      t?.custom_users_limit !== null && t?.custom_users_limit !== undefined
+                        ? String(t.custom_users_limit)
+                        : '',
+                    override_units:
+                      t?.custom_units_limit !== null && t?.custom_units_limit !== undefined
+                        ? String(t.custom_units_limit)
+                        : '',
+                  }))
+                }}
+              >
+                <SelectTrigger className="bg-white border-slate-200 text-slate-900 text-xs h-10 focus:border-purple-600">
+                  <SelectValue placeholder="Selecione a empresa/cliente" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border-slate-200 text-slate-900 text-xs max-h-64">
+                  {tenants.map((t) => (
+                    <SelectItem key={t.id} value={t.id} className="text-xs">
+                      {t.name.toUpperCase()} {t.document ? `(${t.document})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">CNPJ / CPF</Label>
-                <Input
-                  placeholder="00.000.000/0001-00"
-                  value={newLicenseForm.document}
-                  onChange={(e) => setNewLicenseForm((p) => ({ ...p, document: e.target.value }))}
-                  className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">WhatsApp / Contato *</Label>
-                <Input
-                  required
-                  placeholder="(11) 99999-9999"
-                  value={newLicenseForm.contact}
-                  onChange={(e) => setNewLicenseForm((p) => ({ ...p, contact: e.target.value }))}
-                  className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
-                />
-              </div>
+            {/* Plano Contratado */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-700 font-semibold">Plano Contratado *</Label>
+              <Select
+                value={newLicenseForm.plan_id}
+                onValueChange={(val) => setNewLicenseForm((p) => ({ ...p, plan_id: val }))}
+              >
+                <SelectTrigger className="bg-white border-slate-200 text-slate-900 text-xs h-10 focus:border-purple-600">
+                  <SelectValue placeholder="Selecione o plano contratado" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border-slate-200 text-slate-900 text-xs">
+                  {plans.map((p) => (
+                    <SelectItem key={p.id} value={p.id} className="text-xs">
+                      {p.name} (R$ {p.price.toFixed(2)}/mês)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            {/* Status da Licença e Data de Expiração */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">
-                  Nome do Responsável *
-                </Label>
-                <Input
-                  required
-                  placeholder="Ex: Carlos Silva"
-                  value={newLicenseForm.responsible_name}
-                  onChange={(e) =>
-                    setNewLicenseForm((p) => ({ ...p, responsible_name: e.target.value }))
-                  }
-                  className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">E-mail</Label>
-                <Input
-                  type="email"
-                  placeholder="contato@empresa.com"
-                  value={newLicenseForm.email}
-                  onChange={(e) => setNewLicenseForm((p) => ({ ...p, email: e.target.value }))}
-                  className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">Plano Inicial</Label>
+                <Label className="text-xs text-slate-700 font-semibold">Status da Licença</Label>
                 <Select
-                  value={newLicenseForm.plan_id}
-                  onValueChange={(val) => setNewLicenseForm((p) => ({ ...p, plan_id: val }))}
+                  value={newLicenseForm.status}
+                  onValueChange={(val) => setNewLicenseForm((p) => ({ ...p, status: val }))}
                 >
-                  <SelectTrigger className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus:border-purple-600">
-                    <SelectValue placeholder="Selecione o plano" />
+                  <SelectTrigger className="bg-white border-slate-200 text-slate-900 text-xs h-10 focus:border-purple-600">
+                    <SelectValue placeholder="Status da licença" />
                   </SelectTrigger>
                   <SelectContent className="bg-white border-slate-200 text-slate-900 text-xs">
-                    {plans.map((p) => (
-                      <SelectItem key={p.id} value={p.id} className="text-xs">
-                        {p.name} (R$ {p.price.toFixed(2)})
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="active" className="text-xs">
+                      Ativa
+                    </SelectItem>
+                    <SelectItem value="trial" className="text-xs">
+                      Trial (Teste)
+                    </SelectItem>
+                    <SelectItem value="paused" className="text-xs">
+                      Pausada
+                    </SelectItem>
+                    <SelectItem value="expired" className="text-xs">
+                      Expirada
+                    </SelectItem>
+                    <SelectItem value="canceled" className="text-xs">
+                      Cancelada
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">
-                  Período de Teste (Dias)
-                </Label>
-                <Input
-                  type="number"
-                  value={newLicenseForm.trial_days}
-                  onChange={(e) =>
-                    setNewLicenseForm((p) => ({ ...p, trial_days: Number(e.target.value) || 0 }))
-                  }
-                  className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
-                />
+                <Label className="text-xs text-slate-700 font-semibold">Data de Expiração</Label>
+                <div className="relative">
+                  <Input
+                    type="date"
+                    value={newLicenseForm.expiration_date}
+                    onChange={(e) =>
+                      setNewLicenseForm((p) => ({ ...p, expiration_date: e.target.value }))
+                    }
+                    className="bg-white border-slate-200 text-slate-900 text-xs h-10 focus-visible:ring-purple-500"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="border-t border-slate-100 pt-3 mt-3">
-              <span className="font-semibold text-slate-800 block mb-2">
-                Acesso do Administrador da Licença (Opcional)
+            {/* Limites Sobrescritos Manuais */}
+            <div className="pt-2 space-y-2">
+              <span className="text-xs text-slate-600 font-medium block">
+                Limites Sobrescritos Manuais (Opcional - prevalecem sobre o plano)
               </span>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-slate-600">E-mail de Login</Label>
+                  <Label className="text-[11px] text-slate-500">Override Máx. Usuários</Label>
                   <Input
-                    type="email"
-                    placeholder="admin@empresa.com"
-                    value={newLicenseForm.admin_email}
+                    type="number"
+                    placeholder="Padrão do plano"
+                    value={newLicenseForm.override_users}
                     onChange={(e) =>
-                      setNewLicenseForm((p) => ({ ...p, admin_email: e.target.value }))
+                      setNewLicenseForm((p) => ({ ...p, override_users: e.target.value }))
                     }
-                    className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
+                    className="bg-white border-slate-200 text-slate-900 text-xs h-10 placeholder:text-slate-400 focus-visible:ring-purple-500"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-slate-600">Senha Provisória</Label>
+                  <Label className="text-[11px] text-slate-500">Override Máx. Unidades</Label>
                   <Input
-                    type="password"
-                    placeholder="Padrão: Skip@Pass"
-                    value={newLicenseForm.admin_password}
+                    type="number"
+                    placeholder="Padrão do plano"
+                    value={newLicenseForm.override_units}
                     onChange={(e) =>
-                      setNewLicenseForm((p) => ({ ...p, admin_password: e.target.value }))
+                      setNewLicenseForm((p) => ({ ...p, override_units: e.target.value }))
                     }
-                    className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
+                    className="bg-white border-slate-200 text-slate-900 text-xs h-10 placeholder:text-slate-400 focus-visible:ring-purple-500"
                   />
                 </div>
               </div>
             </div>
 
-            <DialogFooter className="pt-3">
+            <DialogFooter className="pt-4 flex items-center justify-end gap-2 border-t border-slate-100">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => setNewLicenseModalOpen(false)}
-                className="border-slate-200 text-slate-700 hover:bg-slate-50 text-xs"
+                className="border-slate-200 text-slate-700 hover:bg-slate-50 text-xs h-9 px-4 font-medium"
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
                 size="sm"
-                className="bg-purple-600 hover:bg-purple-700 text-white text-xs shadow-sm"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-9 px-5 shadow-sm font-semibold"
               >
-                Criar Licença
+                Salvar Licença
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: CRIAR / EDITAR PLANO */}
+      {/* MODAL: CRIAR NOVO PLANO (PADRÃO CONDPACK - PRINT 2) */}
       <Dialog open={planFormOpen} onOpenChange={setPlanFormOpen}>
-        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-md shadow-xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900">
-              <Layers className="w-5 h-5 text-purple-600" />
-              {editingPlan ? 'Editar Plano Comercial' : 'Novo Plano Comercial'}
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-lg shadow-2xl p-6 sm:p-7 rounded-xl">
+          <DialogHeader className="space-y-1 text-left pb-1">
+            <DialogTitle className="text-lg font-bold text-slate-900">
+              {editingPlan ? 'Editar Plano' : 'Criar Novo Plano'}
             </DialogTitle>
+            <DialogDescription className="text-slate-500 text-xs leading-relaxed">
+              Defina os parâmetros, preços e limites da assinatura deste plano.
+            </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSavePlan} className="space-y-3 py-2 text-xs">
+          <form onSubmit={handleSavePlan} className="space-y-4 pt-2 text-xs">
+            {/* Nome do Plano */}
             <div className="space-y-1.5">
               <Label className="text-xs text-slate-700 font-semibold">Nome do Plano *</Label>
               <Input
                 required
-                placeholder="Ex: Plano Enterprise"
+                placeholder="Ex: Básico, Pro, Enterprise"
                 value={planForm.name}
                 onChange={(e) => setPlanForm((p) => ({ ...p, name: e.target.value }))}
-                className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
+                className="bg-white border-slate-200 text-slate-900 text-xs h-10 placeholder:text-slate-400 focus-visible:ring-purple-500"
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            {/* Descrição */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-700 font-semibold">Descrição</Label>
+              <Textarea
+                rows={3}
+                placeholder="Descreva o público-alvo e benefícios..."
+                value={planForm.description}
+                onChange={(e) => setPlanForm((p) => ({ ...p, description: e.target.value }))}
+                className="bg-white border-slate-200 text-slate-900 text-xs placeholder:text-slate-400 focus-visible:ring-purple-500 resize-none"
+              />
+            </div>
+
+            {/* Preço Mensal (R$), Máx. Unidades, Máx. Usuários */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-700 font-semibold">Preço Mensal (R$)</Label>
                 <Input
                   type="number"
                   step="0.01"
                   required
+                  placeholder="199,90"
                   value={planForm.price}
                   onChange={(e) => setPlanForm((p) => ({ ...p, price: e.target.value }))}
-                  className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
+                  className="bg-white border-slate-200 text-slate-900 text-xs h-10 focus-visible:ring-purple-500"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">Limite Unidades</Label>
+                <Label className="text-xs text-slate-700 font-semibold">Máx. Unidades</Label>
                 <Input
                   type="number"
                   required
+                  placeholder="50"
                   value={planForm.units_limit}
                   onChange={(e) => setPlanForm((p) => ({ ...p, units_limit: e.target.value }))}
-                  className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
+                  className="bg-white border-slate-200 text-slate-900 text-xs h-10 focus-visible:ring-purple-500"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">Limite Usuários</Label>
+                <Label className="text-xs text-slate-700 font-semibold">Máx. Usuários</Label>
                 <Input
                   type="number"
                   required
+                  placeholder="100"
                   value={planForm.users_limit}
                   onChange={(e) => setPlanForm((p) => ({ ...p, users_limit: e.target.value }))}
-                  className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
+                  className="bg-white border-slate-200 text-slate-900 text-xs h-10 focus-visible:ring-purple-500"
                 />
               </div>
             </div>
 
+            {/* Status */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-700 font-semibold">Descrição do Plano</Label>
-              <Textarea
-                rows={2}
-                placeholder="Descrição dos recursos inclusos..."
-                value={planForm.description}
-                onChange={(e) => setPlanForm((p) => ({ ...p, description: e.target.value }))}
-                className="bg-white border-slate-200 text-slate-900 text-xs focus-visible:ring-purple-500"
-              />
+              <Label className="text-xs text-slate-700 font-semibold">Status</Label>
+              <Select
+                value={planForm.status}
+                onValueChange={(val) => setPlanForm((p) => ({ ...p, status: val }))}
+              >
+                <SelectTrigger className="bg-white border-slate-200 text-slate-900 text-xs h-10 focus:border-purple-600">
+                  <SelectValue placeholder="Status do plano" />
+                </SelectTrigger>
+                <SelectContent className="bg-white border-slate-200 text-slate-900 text-xs">
+                  <SelectItem value="active" className="text-xs">
+                    Ativo
+                  </SelectItem>
+                  <SelectItem value="inactive" className="text-xs">
+                    Inativo
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="flex items-center gap-2 pt-1">
+            {/* Checkbox Plano exclusivo Master */}
+            <div className="flex items-center gap-2.5 pt-1">
               <input
                 type="checkbox"
                 id="is-master-exclusive"
@@ -2044,30 +2098,30 @@ export default function MasterPanel() {
                 onChange={(e) =>
                   setPlanForm((p) => ({ ...p, is_master_exclusive: e.target.checked }))
                 }
-                className="rounded border-slate-300 bg-white text-purple-600 focus:ring-purple-500"
+                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
               />
               <Label
                 htmlFor="is-master-exclusive"
-                className="text-xs text-slate-700 cursor-pointer font-medium"
+                className="text-xs text-slate-700 cursor-pointer font-medium select-none"
               >
-                Exclusivo para Master (oculto no cadastro público)
+                Plano exclusivo Master (oculto para clientes e público)
               </Label>
             </div>
 
-            <DialogFooter className="pt-3">
+            <DialogFooter className="pt-4 flex items-center justify-end gap-2 border-t border-slate-100">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => setPlanFormOpen(false)}
-                className="border-slate-200 text-slate-700 hover:bg-slate-50 text-xs"
+                className="border-slate-200 text-slate-700 hover:bg-slate-50 text-xs h-9 px-4 font-medium"
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
                 size="sm"
-                className="bg-purple-600 hover:bg-purple-700 text-white text-xs shadow-sm"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-9 px-5 shadow-sm font-semibold"
               >
                 Salvar Plano
               </Button>

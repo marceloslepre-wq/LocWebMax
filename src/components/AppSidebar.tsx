@@ -10,6 +10,7 @@ import {
   CreditCard,
   BookOpen,
   LogOut,
+  Award,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -44,6 +45,7 @@ export function AppSidebar() {
     { title: 'Locações', url: '/rentals', icon: FileText, show: true },
     { title: 'Pagamentos', url: '/payments', icon: CreditCard, show: true },
     { title: 'Clientes', url: '/customers', icon: Users, show: true },
+    { title: 'Licenças e Planos', url: '/licencas-planos', icon: Award, show: isMaster },
     { title: 'Painel Master', url: '/master', icon: ShieldCheck, show: isMaster },
     { title: 'Guia de Uso', url: '/guide', icon: BookOpen, show: true },
     {
