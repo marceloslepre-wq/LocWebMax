@@ -1,3 +1,7 @@
+routerAdd('GET', '/backend/v1/payments/mp-webhook', (e) => {
+  return e.json(200, { received: true })
+})
+
 routerAdd('POST', '/backend/v1/payments/mp-webhook', (e) => {
   var body = e.requestInfo().body || {}
   if (typeof body !== 'object') body = {}
