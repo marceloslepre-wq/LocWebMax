@@ -369,6 +369,15 @@ cronAdd('helena_daily_cobranca', '0 9 * * *', () => {
         message: agentPrompt,
       })
     } catch (errChat) {
+      var errDailyMsg = errChat ? errChat.message || String(errChat) : 'unknown error'
+      var errDailyStack = errChat && errChat.stack ? String(errChat.stack) : ''
+      console.error(
+        'helena_daily_cobranca: agent call failed for contract ' +
+          contractNumber +
+          ': ' +
+          errDailyMsg +
+          (errDailyStack ? ' | stack: ' + errDailyStack : ''),
+      )
       $app
         .logger()
         .error(
@@ -376,7 +385,9 @@ cronAdd('helena_daily_cobranca', '0 9 * * *', () => {
           'contract',
           contractNumber,
           'err',
-          errChat.message || String(errChat),
+          errDailyMsg,
+          'stack',
+          errDailyStack,
         )
       continue
     }

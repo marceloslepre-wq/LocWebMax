@@ -373,10 +373,20 @@ routerAdd(
           message: agentPrompt,
         })
       } catch (errChat) {
+        var errTrigMsg = errChat ? errChat.message || String(errChat) : 'unknown error'
+        var errTrigStack = errChat && errChat.stack ? String(errChat.stack) : ''
+        console.error(
+          'helena_trigger_cobranca: agent call failed for contract ' +
+            contractNumber +
+            ': ' +
+            errTrigMsg +
+            (errTrigStack ? ' | stack: ' + errTrigStack : ''),
+        )
         results.push({
           contract: contractNumber,
           error: 'agent_chat_failed',
-          details: errChat.message || String(errChat),
+          details: errTrigMsg,
+          stack: errTrigStack,
         })
         continue
       }
