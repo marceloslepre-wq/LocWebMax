@@ -272,9 +272,18 @@ export default function MasterPanel() {
     }
   }, [tenants, plans])
 
-  // Gerador de Link
+  // Gerador de Link (usa sempre o domínio de produção oficial personalizado como padrão)
   const publicRegisterLink = useMemo(() => {
-    const origin = window.location.origin
+    const defaultOrigin = 'https://locwebpro.sholver.com.br'
+    const origin =
+      typeof window !== 'undefined' &&
+      window.location.origin &&
+      !window.location.origin.includes('localhost') &&
+      !window.location.origin.includes('goskip.app') &&
+      !window.location.origin.includes('127.0.0.1')
+        ? window.location.origin
+        : defaultOrigin
+
     if (selectedPlanForLink && selectedPlanForLink !== 'none') {
       return `${origin}/cadastro?plano=${selectedPlanForLink}`
     }
