@@ -16,7 +16,8 @@ import Rentals from './pages/Rentals'
 import RentalDetail from './pages/RentalDetail'
 import Payments from './pages/Payments'
 import Settings from './pages/Settings'
-import TenantsManagement from './pages/TenantsManagement'
+import MasterPanel from './pages/MasterPanel'
+import PublicCompanyRegister from './pages/PublicCompanyRegister'
 import Guide from './pages/Guide'
 import NotFound from './pages/NotFound'
 import PublicCustomerForm from './pages/PublicCustomerForm'
@@ -29,6 +30,7 @@ import { useEffect } from 'react'
 import { rentalsService } from '@/services/rentals'
 import { RouteErrorBoundary, ErrorBoundaryOutlet } from '@/components/RouteErrorBoundary'
 import { PublicErrorBoundary } from '@/components/PublicErrorBoundary'
+import { TenantSubscriptionGuard } from '@/components/tenants/TenantSubscriptionGuard'
 
 const OverdueChecker = () => {
   useEffect(() => {
@@ -48,6 +50,14 @@ const App = () => (
           <Sonner />
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route
+              path="/cadastro"
+              element={
+                <PublicErrorBoundary>
+                  <PublicCompanyRegister />
+                </PublicErrorBoundary>
+              }
+            />
             <Route
               path="/public/customer/new"
               element={
@@ -98,7 +108,17 @@ const App = () => (
             />
             <Route element={<ProtectedRoute />}>
               <Route element={<ErrorBoundaryOutlet />}>
-                <Route element={<Layout />}>
+                {/* Rota exclusiva do Painel Master Multi-Tenant (tela cheia com padrão CondPack) */}
+                <Route path="/master" element={<MasterPanel />} />
+
+                {/* Rotas protegidas com checagem de assinatura de tenant */}
+                <Route
+                  element={
+                    <TenantSubscriptionGuard>
+                      <Layout />
+                    </TenantSubscriptionGuard>
+                  }
+                >
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/inventory" element={<Inventory />} />
                   <Route path="/inventory/:id" element={<ItemDetail />} />
@@ -107,7 +127,6 @@ const App = () => (
                   <Route path="/rentals" element={<Rentals />} />
                   <Route path="/rentals/:id" element={<RentalDetail />} />
                   <Route path="/payments" element={<Payments />} />
-                  <Route path="/tenants" element={<TenantsManagement />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/guide" element={<Guide />} />
                 </Route>

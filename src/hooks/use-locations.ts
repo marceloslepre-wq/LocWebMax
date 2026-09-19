@@ -18,13 +18,8 @@ export function refreshLocations() {
 import useMainStore from '@/stores/main'
 
 export function useLocations(overrideTenantId?: string | null) {
-  let storeTenantId: string | null = null
-  try {
-    const store = useMainStore()
-    storeTenantId = store.activeTenantId
-  } catch {
-    // In case used outside StoreProvider
-  }
+  const store = useMainStore()
+  const storeTenantId = store?.activeTenantId ?? null
 
   const effectiveTenantId = overrideTenantId !== undefined ? overrideTenantId : storeTenantId
 

@@ -5,11 +5,11 @@ import {
   Users,
   FileText,
   Settings,
-  BookOpen,
-  LogOut,
+  ShieldCheck,
   Briefcase,
   CreditCard,
-  Building2,
+  BookOpen,
+  LogOut,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -32,8 +32,10 @@ export function AppSidebar() {
   const { can } = usePermissions()
   const { signOut, user, profile } = useAuth()
 
-  // Marcelo (usuário sem tenant_id fixo) vê a aba de Gestão de Tenants
-  const showTenantsTab = !isTenantUser && !profile?.tenant_id && !user?.tenant_id
+  const isMaster =
+    user?.role === 'Master' ||
+    profile?.role === 'Master' ||
+    user?.email === 'marceloslepre@gmail.com'
 
   const navItems = [
     { title: 'Painel', url: '/dashboard', icon: LayoutDashboard, show: true },
@@ -42,7 +44,7 @@ export function AppSidebar() {
     { title: 'Locações', url: '/rentals', icon: FileText, show: true },
     { title: 'Pagamentos', url: '/payments', icon: CreditCard, show: true },
     { title: 'Clientes', url: '/customers', icon: Users, show: true },
-    { title: 'Empresas (Tenants)', url: '/tenants', icon: Building2, show: showTenantsTab },
+    { title: 'Painel Master', url: '/master', icon: ShieldCheck, show: isMaster },
     { title: 'Guia de Uso', url: '/guide', icon: BookOpen, show: true },
     {
       title: 'Configurações',

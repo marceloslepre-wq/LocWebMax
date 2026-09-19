@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-19T14:27:03.572Z",
+  "generatedAt": "2026-09-19T14:48:29.032Z",
   "collections": [
     {
       "name": "users",
@@ -1606,11 +1606,150 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "plan_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "plan_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "custom_price",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "custom_units_limit",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "custom_users_limit",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "subscription_status",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "start_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "expiration_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "history_notes",
+          "type": "json",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE INDEX idx_tenants_name ON tenants (name)",
         "CREATE INDEX idx_tenants_status ON tenants (status)"
+      ]
+    },
+    {
+      "name": "plans",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "price",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "billing_cycle",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "units_limit",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "users_limit",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "is_master_exclusive",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "features",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_plans_status ON plans (status)",
+        "CREATE INDEX idx_plans_name ON plans (name)"
       ]
     }
   ]

@@ -3,6 +3,7 @@ import pb from '@/lib/pocketbase/client'
 import { PermissionKey } from '@/hooks/use-permissions'
 import { useAuth } from '@/hooks/use-auth'
 import { customerService, Customer } from '@/services/customers'
+import { usersService } from '@/services/users'
 import { useRealtime } from '@/hooks/use-realtime'
 
 export type Asset = {

@@ -89,6 +89,7 @@ export default function Settings() {
     password: '',
     permissions: [] as PermissionKey[],
   })
+  const [userRoleFilter, setUserRoleFilter] = useState<string>('all')
 
   const [locDialogOpen, setLocDialogOpen] = useState(false)
   const [editingLocId, setEditingLocId] = useState<string | null>(null)
@@ -838,6 +839,7 @@ export default function Settings() {
                       <Label>Papel</Label>
                       <Select
                         value={userForm.role}
+                        disabled={editingUser?.role === 'Master'}
                         onValueChange={(v) => setUserForm({ ...userForm, role: v })}
                       >
                         <SelectTrigger>
@@ -846,6 +848,9 @@ export default function Settings() {
                         <SelectContent>
                           <SelectItem value="Operador">Operador</SelectItem>
                           <SelectItem value="Administrador">Administrador</SelectItem>
+                          {editingUser?.role === 'Master' && (
+                            <SelectItem value="Master">Master</SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
@@ -889,6 +894,42 @@ export default function Settings() {
               </DialogContent>
             </Dialog>
           </div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs text-muted-foreground font-medium">Filtrar por Perfil:</span>
+            <Button
+              variant={userRoleFilter === 'all' ? 'default' : 'outline'}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setUserRoleFilter('all')}
+            >
+              Todos ({users.length})
+            </Button>
+            <Button
+              variant={userRoleFilter === 'Master' ? 'default' : 'outline'}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setUserRoleFilter('Master')}
+            >
+              Master ({users.filter((u) => u.role === 'Master').length})
+            </Button>
+            <Button
+              variant={userRoleFilter === 'Administrador' ? 'default' : 'outline'}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setUserRoleFilter('Administrador')}
+            >
+              Administrador ({users.filter((u) => u.role === 'Administrador').length})
+            </Button>
+            <Button
+              variant={userRoleFilter === 'Operador' ? 'default' : 'outline'}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setUserRoleFilter('Operador')}
+            >
+              Operador ({users.filter((u) => u.role === 'Operador').length})
+            </Button>
+          </div>
+
           <Card>
             <Table>
               <TableHeader>
@@ -901,120 +942,152 @@ export default function Settings() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u.id} className="group">
-                    <TableCell className="font-medium">{u.name}</TableCell>
-                    <TableCell>{u.email}</TableCell>
-                    <TableCell>{u.role}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={u.active ? 'default' : 'secondary'}
-                        className={u.active ? 'bg-emerald-500 hover:bg-emerald-600' : ''}
-                      >
-                        {u.active ? 'Ativo' : 'Desativado'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={async () => {
-                            await pb.send(`/backend/v1/users/${u.id}`, {
-                              method: 'PUT',
-                              body: JSON.stringify({ active: !u.active }),
-                              headers: { 'Content-Type': 'application/json' },
-                            })
-                            updateUser(u.id, { active: !u.active })
-                          }}
-                        >
-                          {u.active ? 'Desativar' : 'Ativar'}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleOpenUserForm(u)}
-                          className="h-8 w-8"
-                        >
-                          <Edit className="w-4 h-4 text-primary" />
-                        </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
+                {users
+                  .filter((u) => userRoleFilter === 'all' || u.role === userRoleFilter)
+                  .map((u) => {
+                    const isMaster = u.role === 'Master' || u.email === 'marceloslepre@gmail.com'
+                    return (
+                      <TableRow key={u.id} className="group">
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <span>{u.name}</span>
+                            {isMaster && (
+                              <Badge className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] px-1.5 py-0">
+                                Master
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{u.email}</TableCell>
+                        <TableCell>
+                          {isMaster ? (
+                            <Badge className="bg-rose-600 text-white font-semibold text-xs">
+                              Master
+                            </Badge>
+                          ) : (
+                            u.role
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={u.active ? 'default' : 'secondary'}
+                            className={u.active ? 'bg-emerald-500 hover:bg-emerald-600' : ''}
+                          >
+                            {u.active ? 'Ativo' : 'Desativado'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {!isMaster && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={async () => {
+                                  await pb.send(`/backend/v1/users/${u.id}`, {
+                                    method: 'PUT',
+                                    body: JSON.stringify({ active: !u.active }),
+                                    headers: { 'Content-Type': 'application/json' },
+                                  })
+                                  updateUser(u.id, { active: !u.active })
+                                }}
+                              >
+                                {u.active ? 'Desativar' : 'Ativar'}
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                              onClick={() => handleOpenUserForm(u)}
+                              className="h-8 w-8"
+                              title={
+                                isMaster
+                                  ? 'Editar perfil e credenciais do Master'
+                                  : 'Editar usuário'
+                              }
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Edit className="w-4 h-4 text-primary" />
                             </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Excluir Usuário</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Tem certeza que deseja excluir este registro? Esta ação não pode ser
-                                desfeita.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={async () => {
-                                  try {
-                                    await pb.collection('users').delete(u.id)
-                                    deleteUser(u.id)
-                                    toast({ title: 'Membro removido.' })
-                                  } catch (err: any) {
-                                    const status = err?.status ?? err?.response?.status ?? 0
-                                    const isNotFound =
-                                      status === 404 ||
-                                      err?.message?.includes("wasn't found") ||
-                                      err?.response?.message?.includes("wasn't found")
+                            {!isMaster && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Excluir Usuário</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Tem certeza que deseja excluir este registro? Esta ação não
+                                      pode ser desfeita.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={async () => {
+                                        try {
+                                          await pb.collection('users').delete(u.id)
+                                          deleteUser(u.id)
+                                          toast({ title: 'Membro removido.' })
+                                        } catch (err: any) {
+                                          const status = err?.status ?? err?.response?.status ?? 0
+                                          const isNotFound =
+                                            status === 404 ||
+                                            err?.message?.includes("wasn't found") ||
+                                            err?.response?.message?.includes("wasn't found")
 
-                                    if (isNotFound) {
-                                      deleteUser(u.id)
-                                      toast({
-                                        title: 'Membro removido.',
-                                        description:
-                                          'Este usuário já não existe e foi removido da lista.',
-                                      })
-                                      return
-                                    }
+                                          if (isNotFound) {
+                                            deleteUser(u.id)
+                                            toast({
+                                              title: 'Membro removido.',
+                                              description:
+                                                'Este usuário já não existe e foi removido da lista.',
+                                            })
+                                            return
+                                          }
 
-                                    const isRelationError =
-                                      err?.message?.includes(
-                                        'Failed to delete record. Make sure that the record is not part of a required relation reference.',
-                                      ) ||
-                                      err?.response?.message?.includes(
-                                        'Failed to delete record. Make sure that the record is not part of a required relation reference.',
-                                      )
-                                    if (isRelationError) {
-                                      toast({
-                                        title: 'Erro ao excluir',
-                                        description:
-                                          'Este registro não pode ser removido pois está vinculado a outros dados no sistema (como locações ou estoque).',
-                                        variant: 'destructive',
-                                      })
-                                    } else {
-                                      toast({
-                                        title: 'Erro ao excluir',
-                                        description: err?.message || 'Ocorreu um erro inesperado.',
-                                        variant: 'destructive',
-                                      })
-                                    }
-                                  }
-                                }}
-                                className="bg-destructive text-white"
-                              >
-                                Excluir
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                                          const isRelationError =
+                                            err?.message?.includes(
+                                              'Failed to delete record. Make sure that the record is not part of a required relation reference.',
+                                            ) ||
+                                            err?.response?.message?.includes(
+                                              'Failed to delete record. Make sure that the record is not part of a required relation reference.',
+                                            )
+                                          if (isRelationError) {
+                                            toast({
+                                              title: 'Erro ao excluir',
+                                              description:
+                                                'Este registro não pode ser removido pois está vinculado a outros dados no sistema (como locações ou estoque).',
+                                              variant: 'destructive',
+                                            })
+                                          } else {
+                                            toast({
+                                              title: 'Erro ao excluir',
+                                              description:
+                                                err?.message || 'Ocorreu um erro inesperado.',
+                                              variant: 'destructive',
+                                            })
+                                          }
+                                        }
+                                      }}
+                                      className="bg-destructive text-white"
+                                    >
+                                      Excluir
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
               </TableBody>
             </Table>
           </Card>
