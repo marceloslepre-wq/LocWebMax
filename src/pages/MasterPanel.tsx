@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2,
@@ -78,6 +78,7 @@ import useMainStore from '@/stores/main'
 import { tenantService, Tenant, TenantHistoryNote } from '@/services/tenants'
 import { plansService, Plan } from '@/services/plans'
 import pb from '@/lib/pocketbase/client'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 
 export default function MasterPanel() {
   const { toast } = useToast()
@@ -90,6 +91,7 @@ export default function MasterPanel() {
   const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [loadError, setLoadError] = useState<{ is429: boolean; message: string } | null>(null)
 
   // Filtros de tabela de licenças
   const [searchTerm, setSearchTerm] = useState('')
@@ -151,31 +153,72 @@ export default function MasterPanel() {
     user?.role === 'Master' ||
     user?.email === 'marceloslepre@gmail.com'
 
-  const loadData = async () => {
-    try {
-      setRefreshing(true)
-      const [tenantsData, plansData] = await Promise.all([
-        tenantService.getAll(),
-        plansService.getAll(),
-      ])
-      setTenants(tenantsData)
-      setPlans(plansData)
-    } catch (err: any) {
-      console.error('Erro ao carregar dados do painel master:', err)
-      toast({
-        title: 'Erro ao carregar dados',
-        description: err.message || 'Falha ao buscar tenants e planos.',
-        variant: 'destructive',
-      })
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
+  // Controle de concorrência e montagem
+  const loadingRef = useRef(false)
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
     }
-  }
+  }, [])
+
+  const loadData = useCallback(
+    async (options?: { forceRefresh?: boolean }) => {
+      // Guard de concorrência: se já está carregando, não dispara chamadas concorrentes
+      if (loadingRef.current) return
+      loadingRef.current = true
+
+      try {
+        setRefreshing(true)
+        setLoadError(null)
+
+        // Escalonamento sequencial com pequena pausa para evitar estouro de concorrência no PocketBase
+        const tenantsData = await tenantService.getAll({ forceRefresh: options?.forceRefresh })
+        if (!isMountedRef.current) return
+
+        // Pequena pausa (60ms) para escalonar o tráfego do servidor
+        await new Promise((resolve) => setTimeout(resolve, 60))
+        if (!isMountedRef.current) return
+
+        const plansData = await plansService.getAll()
+        if (!isMountedRef.current) return
+
+        setTenants(tenantsData)
+        setPlans(plansData)
+        setLoadError(null)
+      } catch (err: any) {
+        console.error('Erro ao carregar dados do painel master:', err)
+        const is429 =
+          err?.status === 429 ||
+          err?.message?.includes('429') ||
+          err?.message?.includes('Too Many Requests')
+        const msg = is429
+          ? 'Muitas requisições simultâneas ao servidor. Aguarde alguns instantes e tente novamente.'
+          : getErrorMessage(err) || 'Falha ao buscar dados do painel.'
+
+        setLoadError({ is429, message: msg })
+
+        toast({
+          title: is429 ? 'Limite temporário de requisições' : 'Erro ao carregar dados',
+          description: msg,
+          variant: 'destructive',
+        })
+      } finally {
+        loadingRef.current = false
+        if (isMountedRef.current) {
+          setLoading(false)
+          setRefreshing(false)
+        }
+      }
+    },
+    [toast],
+  )
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [loadData])
 
   // Métricas
   const metrics = useMemo(() => {
@@ -640,6 +683,62 @@ export default function MasterPanel() {
     )
   }
 
+  // Se o carregamento inicial falhou totalmente e ainda não temos dados, exibe tela amigável sem quebrar o painel
+  if (loadError && tenants.length === 0 && plans.length === 0) {
+    return (
+      <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
+        <header className="border-b border-slate-800 bg-slate-950 px-6 py-3 sticky top-0 z-30">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center text-white shadow-md">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="font-extrabold text-lg tracking-tight text-white">
+                  Novo Locação
+                </span>
+                <p className="text-xs text-slate-400">Painel de Administração Global</p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadData({ forceRefresh: true })}
+              disabled={refreshing}
+              className="h-8 border-slate-700 bg-transparent text-slate-200 hover:bg-slate-800 hover:text-white text-xs gap-1.5"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              Tentar novamente
+            </Button>
+          </div>
+        </header>
+        <main className="flex-1 max-w-md mx-auto p-6 flex items-center justify-center">
+          <Card className="w-full text-center border-slate-200 shadow-md">
+            <CardContent className="pt-6 pb-6 space-y-4 flex flex-col items-center">
+              <AlertCircle className="w-12 h-12 text-amber-500" />
+              <div className="space-y-1">
+                <h2 className="text-lg font-bold text-slate-900">
+                  {loadError.is429
+                    ? 'Muitas requisições simultâneas'
+                    : 'Instabilidade ao carregar dados'}
+                </h2>
+                <p className="text-xs text-slate-600 leading-relaxed">{loadError.message}</p>
+              </div>
+              <Button
+                onClick={() => loadData({ forceRefresh: true })}
+                disabled={refreshing}
+                className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-5 shadow-sm"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                {refreshing ? 'Carregando...' : 'Tentar novamente'}
+              </Button>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
       {/* 1. Cabeçalho Escuro Superior (Mantido escuro como no print) */}
@@ -681,7 +780,7 @@ export default function MasterPanel() {
             <Button
               variant="outline"
               size="sm"
-              onClick={loadData}
+              onClick={() => loadData({ forceRefresh: true })}
               disabled={refreshing}
               className="h-8 border-slate-700 bg-transparent text-slate-200 hover:bg-slate-800 hover:text-white text-xs gap-1.5"
             >
@@ -704,6 +803,28 @@ export default function MasterPanel() {
 
       {/* Conteúdo Principal */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+        {/* Banner discreto de erro temporário (se ocorreu erro com dados pré-existentes em cache) */}
+        {loadError && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900 shadow-sm text-xs">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+              <div>
+                <span className="font-semibold block">Aviso de sincronização</span>
+                <span className="text-amber-800">{loadError.message}</span>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadData({ forceRefresh: true })}
+              disabled={refreshing}
+              className="h-8 border-amber-300 bg-white text-amber-800 hover:bg-amber-100 text-xs shrink-0"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
+              Tentar novamente
+            </Button>
+          </div>
+        )}
         {/* 2. Card Destacado: Gerador de Link de Primeiro Cadastro (Gradiente Roxo Vibrante com Card Branco Interno) */}
         <div className="rounded-2xl bg-gradient-to-r from-purple-700 via-purple-600 to-indigo-600 p-6 shadow-md text-white relative">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">

@@ -54,12 +54,64 @@ export interface TenantOnboardingInput {
   }
 }
 
+// Cache e deduplicação para consultas de tenants
+let cachedTenants: { data: Tenant[]; timestamp: number } | null = null
+let pendingGetAllPromise: Promise<Tenant[]> | null = null
+const CACHE_TTL_MS = 5000 // 5s de cache curto
+
 export const tenantService = {
-  async getAll(): Promise<Tenant[]> {
-    const records = await pb.collection('tenants').getFullList<Tenant>({
-      sort: '-created',
-    })
-    return records
+  /**
+   * Limpa o cache em memória (usado após mutações)
+   */
+  invalidateCache(): void {
+    cachedTenants = null
+    pendingGetAllPromise = null
+  },
+
+  /**
+   * Busca tenants com paginação moderada (batch perPage=100) para evitar sobrecarga e 429,
+   * incluindo deduplicação de chamadas simultâneas e cache curto de 5s.
+   */
+  async getAll(options?: { forceRefresh?: boolean }): Promise<Tenant[]> {
+    const now = Date.now()
+    if (!options?.forceRefresh && cachedTenants && now - cachedTenants.timestamp < CACHE_TTL_MS) {
+      return cachedTenants.data
+    }
+
+    if (!options?.forceRefresh && pendingGetAllPromise) {
+      return pendingGetAllPromise
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        // Usar paginação progressiva moderada em lotes de 100 registros (em vez de perPage=1000 de uma vez)
+        const allRecords: Tenant[] = []
+        let page = 1
+        const perPage = 100
+        let hasMore = true
+
+        while (hasMore) {
+          const res = await pb.collection('tenants').getList<Tenant>(page, perPage, {
+            sort: '-created',
+            requestKey: null, // evitar cancelamentos automáticos indesejados
+          })
+          allRecords.push(...res.items)
+          if (page >= res.totalPages || res.items.length === 0) {
+            hasMore = false
+          } else {
+            page++
+          }
+        }
+
+        cachedTenants = { data: allRecords, timestamp: Date.now() }
+        return allRecords
+      } finally {
+        pendingGetAllPromise = null
+      }
+    })()
+
+    pendingGetAllPromise = fetchPromise
+    return fetchPromise
   },
 
   async getOne(id: string): Promise<Tenant> {
@@ -88,7 +140,9 @@ export const tenantService = {
   },
 
   async update(id: string, data: Partial<Tenant>): Promise<Tenant> {
-    return pb.collection('tenants').update<Tenant>(id, data)
+    const res = await pb.collection('tenants').update<Tenant>(id, data)
+    this.invalidateCache()
+    return res
   },
 
   async requestRenewal(
@@ -135,6 +189,7 @@ export const tenantService = {
 
   async delete(id: string): Promise<void> {
     await pb.collection('tenants').delete(id)
+    this.invalidateCache()
   },
 
   /**
@@ -258,6 +313,7 @@ export const tenantService = {
       }
     }
 
+    this.invalidateCache()
     return { tenant, user: createdUser }
   },
 }
