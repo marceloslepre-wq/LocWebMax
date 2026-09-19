@@ -290,9 +290,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  useRealtime('customers', () => refreshCustomers(), !!user)
-  useRealtime('inventory', () => refreshInventory(), !!user)
-  useRealtime('rentals', () => refreshRentals(), !!user)
+  // Debounced realtime refresh handlers to avoid request bursts on multi-event triggers
+  const debounceRef = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  const debouncedRefresh = React.useCallback((key: string, fn: () => void, delayMs = 2000) => {
+    if (debounceRef.current[key]) {
+      clearTimeout(debounceRef.current[key])
+    }
+    debounceRef.current[key] = setTimeout(() => {
+      delete debounceRef.current[key]
+      fn()
+    }, delayMs)
+  }, [])
+
+  useRealtime('customers', () => debouncedRefresh('customers', refreshCustomers), !!user)
+  useRealtime('inventory', () => debouncedRefresh('inventory', refreshInventory), !!user)
+  useRealtime('rentals', () => debouncedRefresh('rentals', refreshRentals), !!user)
 
   const loadItemAssets = async (id: string): Promise<Asset[]> => {
     try {

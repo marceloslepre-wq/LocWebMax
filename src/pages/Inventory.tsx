@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -82,12 +82,15 @@ export default function Inventory() {
     fetchLocations()
   }, [fetchLocations])
   useStoreRealtime()
-  useRealtime('estoque_por_local', () => {
-    fetchLocations()
-  })
-  useRealtime('inventory', () => {
-    fetchLocations()
-  })
+  const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedFetchLocations = useCallback(() => {
+    if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current)
+    fetchTimeoutRef.current = setTimeout(() => {
+      fetchLocations()
+    }, 1500)
+  }, [fetchLocations])
+
+  useRealtime('estoque_por_local', debouncedFetchLocations)
 
   const categories = Array.from(new Set(inventory.map((i) => i.category)))
 

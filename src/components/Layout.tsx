@@ -33,12 +33,16 @@ export default function Layout() {
   } = useMainStore()
 
   const [tenantsList, setTenantsList] = useState<Tenant[]>([])
+  const fetchedTenantsRef = useState(false)
 
   useReactEffect(() => {
-    if (!isTenantUser) {
+    if (!isTenantUser && !fetchedTenantsRef[0]) {
       tenantService
         .getAll()
-        .then(setTenantsList)
+        .then((list) => {
+          setTenantsList(list)
+          fetchedTenantsRef[1](true)
+        })
         .catch(() => {})
     }
   }, [isTenantUser])

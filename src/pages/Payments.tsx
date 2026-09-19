@@ -127,9 +127,15 @@ export default function Payments() {
     loadPayments()
   }, [loadPayments])
 
-  useRealtime('payments', () => {
-    loadPayments()
-  })
+  const paymentsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedLoadPayments = useCallback(() => {
+    if (paymentsTimeoutRef.current) clearTimeout(paymentsTimeoutRef.current)
+    paymentsTimeoutRef.current = setTimeout(() => {
+      loadPayments()
+    }, 2000)
+  }, [loadPayments])
+
+  useRealtime('payments', debouncedLoadPayments)
 
   const handleRentalSelect = (id: string) => {
     setRentalId(id)

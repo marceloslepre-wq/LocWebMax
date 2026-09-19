@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import pb from '@/lib/pocketbase/client'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { TransferInventoryDialog } from '@/components/inventory/TransferInventoryDialog'
@@ -41,13 +41,15 @@ export default function StockLocations() {
     loadData()
   }, [loadData])
 
-  useRealtime('estoque_por_local', () => {
-    loadData()
-  })
+  const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedLoadData = useCallback(() => {
+    if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current)
+    fetchTimeoutRef.current = setTimeout(() => {
+      loadData()
+    }, 1500)
+  }, [loadData])
 
-  useRealtime('inventory', () => {
-    loadData()
-  })
+  useRealtime('estoque_por_local', debouncedLoadData)
 
   const matrix = useMemo(() => {
     return inventory

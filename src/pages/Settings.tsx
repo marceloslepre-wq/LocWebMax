@@ -372,8 +372,12 @@ export default function Settings() {
     }
   }
 
+  const activeTenantIdRef = useRef(activeTenantId)
   useEffect(() => {
-    fetchLocais()
+    if (activeTenantIdRef.current !== activeTenantId || locationsList.length === 0) {
+      activeTenantIdRef.current = activeTenantId
+      fetchLocais()
+    }
   }, [activeTenantId])
 
   const handleOpenLocForm = (loc?: any) => {

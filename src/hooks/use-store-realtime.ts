@@ -23,19 +23,46 @@ function mapInventoryItem(item: any) {
   }
 }
 
+let lastRefreshTime = 0
+let refreshTimeout: ReturnType<typeof setTimeout> | null = null
+
 export function useStoreRealtime() {
-  const refreshInventory = async () => {
-    try {
-      const data = await pb.collection('inventory').getFullList({ sort: '-created' })
-      const mapped = data.map(mapInventoryItem)
-      const store = useMainStore as any
-      if (typeof store?.setState === 'function') {
-        const currentState = store.getState()
-        store.setState({ ...currentState, inventory: mapped })
+  const store = useMainStore()
+
+  const refreshInventory = () => {
+    const now = Date.now()
+    // Debounce to at most once every 5 seconds across components
+    if (now - lastRefreshTime < 5000) {
+      if (!refreshTimeout) {
+        refreshTimeout = setTimeout(
+          () => {
+            refreshTimeout = null
+            refreshInventory()
+          },
+          5000 - (now - lastRefreshTime),
+        )
       }
-    } catch {
-      // silent fail — store updates are best-effort
+      return
     }
+
+    lastRefreshTime = now
+    const filter = store?.activeTenantId
+      ? `tenant_id = "${store.activeTenantId}"`
+      : `(tenant_id = "" || tenant_id = null)`
+
+    pb.collection('inventory')
+      .getFullList({ filter, sort: '-created' })
+      .then((data) => {
+        const mapped = data.map(mapInventoryItem)
+        const anyStore = useMainStore as any
+        if (typeof anyStore?.setState === 'function') {
+          const currentState = anyStore.getState()
+          anyStore.setState({ ...currentState, inventory: mapped })
+        }
+      })
+      .catch(() => {
+        // silent fail — store updates are best-effort
+      })
   }
 
   useRealtime('estoque_por_local', refreshInventory)
