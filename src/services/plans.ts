@@ -25,8 +25,9 @@ export const plansService = {
 
   async getActivePublic(): Promise<Plan[]> {
     return pb.collection('plans').getFullList<Plan>({
-      filter: 'status = "active"',
+      filter: 'status = "active" && is_master_exclusive != true',
       sort: 'price',
+      requestKey: null,
     })
   },
 
