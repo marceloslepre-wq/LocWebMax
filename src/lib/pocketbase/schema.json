@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-20T15:37:49.129Z",
+  "generatedAt": "2026-09-20T16:01:12.773Z",
   "collections": [
     {
       "name": "users",
@@ -1792,6 +1792,107 @@
       "indexes": [
         "CREATE INDEX idx_plans_status ON plans (status)",
         "CREATE INDEX idx_plans_name ON plans (name)"
+      ]
+    },
+    {
+      "name": "logs_suporte_master",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && @request.auth.role = 'Master'",
+        "view": "@request.auth.id != '' && @request.auth.role = 'Master'",
+        "create": "@request.auth.id != '' && @request.auth.role = 'Master'",
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "master_user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "master_email",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "master_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tenant_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "tenants"
+        },
+        {
+          "name": "tenant_name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "target_user_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "target_user_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "target_user_email",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "target_user_role",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ip_address",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "user_agent",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_logs_suporte_master_tenant ON logs_suporte_master (tenant_id)",
+        "CREATE INDEX idx_logs_suporte_master_user ON logs_suporte_master (master_user_id)",
+        "CREATE INDEX idx_logs_suporte_master_created ON logs_suporte_master (created DESC)"
       ]
     }
   ]

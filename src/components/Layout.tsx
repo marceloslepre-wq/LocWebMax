@@ -18,6 +18,7 @@ import {
 import useMainStore from '@/stores/main'
 import { hexToHSL } from '@/lib/utils'
 import { tenantService, Tenant } from '@/services/tenants'
+import { SupportAccessBanner } from '@/components/tenants/SupportAccessBanner'
 
 export default function Layout() {
   const navigate = useNavigate()
@@ -30,6 +31,7 @@ export default function Layout() {
     activeTenantId,
     setActiveTenantId,
     isTenantUser,
+    supportSession,
   } = useMainStore()
 
   const [tenantsList, setTenantsList] = useState<Tenant[]>([])
@@ -137,11 +139,19 @@ export default function Layout() {
       <div className="flex h-screen w-full bg-background overflow-hidden print:!block print:!h-auto print:!min-h-0 print:!overflow-visible print:!static">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden print:!block print:!h-auto print:!min-h-0 print:!overflow-visible print:!static">
+          <SupportAccessBanner />
           <header className="h-16 border-b bg-card flex items-center justify-between px-4 sticky top-0 z-10 shadow-sm print:hidden flex-shrink-0">
             <div className="flex items-center gap-4 flex-1">
               <SidebarTrigger />
-              {/* Seletor de Tenant para o Marcelo (admin geral) */}
-              {!isTenantUser ? (
+              {/* Seletor de Tenant ou Indicador de Ambiente */}
+              {supportSession ? (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-xs text-amber-900 dark:text-amber-200 font-medium">
+                  <Building2 className="w-3.5 h-3.5 text-amber-600" />
+                  <span>
+                    Acesso Suporte: <strong>{supportSession.tenant.name}</strong>
+                  </span>
+                </div>
+              ) : !isTenantUser ? (
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/60 border text-xs">
                     <Building2 className="w-3.5 h-3.5 text-primary" />

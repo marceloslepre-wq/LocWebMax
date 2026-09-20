@@ -46,9 +46,11 @@ const LEGACY_MAP: Record<string, string[]> = {
 export function usePermissions() {
   const { user } = useAuth()
 
+  // Se o usuário Master estiver em modo suporte ou se for Administrador, possui acesso irrestrito
   const can = (perm: PermissionKey | string) => {
     if (!user) return false
-    if (user.role === 'Administrador') return true
+    if (user.role === 'Administrador' || user.role === 'Master' || user.role === 'Gestor')
+      return true
     const permissions: string[] = user.permissions || []
     if (permissions.includes(perm)) return true
     const alternatives = LEGACY_MAP[perm]

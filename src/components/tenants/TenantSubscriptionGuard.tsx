@@ -25,8 +25,11 @@ export function TenantSubscriptionGuard({ children }: TenantSubscriptionGuardPro
   const lastCheckTimeRef = useRef<number>(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // O Master NUNCA é bloqueado. A operação principal (Hospital Home, sem tenant) NUNCA é bloqueada.
+  const { supportSession } = useMainStore()
+
+  // O Master NUNCA é bloqueado. Em modo suporte, o Master também tem acesso total irrestrito para prestar suporte. A operação principal (sem tenant) NUNCA é bloqueada.
   const isMaster =
+    !!supportSession ||
     currentUser?.role === 'Master' ||
     user?.role === 'Master' ||
     user?.email === 'marceloslepre@gmail.com'
@@ -34,7 +37,7 @@ export function TenantSubscriptionGuard({ children }: TenantSubscriptionGuardPro
   const tenantId = (user as any)?.tenant_id || activeTenantId
 
   useEffect(() => {
-    // Se for Master ou instância principal sem tenant, libera sem restrição
+    // Se for Master, em modo suporte ou instância principal sem tenant, libera sem restrição
     if (isMaster || !tenantId) {
       setBlockedTenant(null)
       setBlockReason(null)

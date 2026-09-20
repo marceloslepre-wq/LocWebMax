@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { customerService, Customer } from '@/services/customers'
 import { usersService } from '@/services/users'
 import { useRealtime } from '@/hooks/use-realtime'
+import { masterSupportService, SupportAccessSession } from '@/services/master-support'
 
 export type Asset = {
   id: string
@@ -133,6 +134,9 @@ interface MainStore {
   activeTenantId: string | null
   setActiveTenantId: (tenantId: string | null) => void
   isTenantUser: boolean
+  supportSession: SupportAccessSession | null
+  startSupportAccess: (tenantId: string) => Promise<{ success: boolean; tenantName: string }>
+  exitSupportAccess: () => void
   globalSearch: string
   setGlobalSearch: (search: string) => void
   inventory: InventoryItem[]
@@ -223,6 +227,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null)
+  const [supportSession, setSupportSession] = useState<SupportAccessSession | null>(() => {
+    try {
+      const stored = sessionStorage.getItem('locwebpro_support_session')
+      return stored ? JSON.parse(stored) : null
+    } catch {
+      return null
+    }
+  })
   const [globalSearch, setGlobalSearch] = useState('')
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -256,9 +268,53 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const userTenantId = (user as any)?.tenant_id || currentUser?.tenant_id || null
   const isTenantUser = !!userTenantId
 
-  // activeTenantId efetivo: se o usuário logado for de um tenant, NUNCA pode sair dele.
-  // Se for admin geral (Marcelo), pode alternar entre null (operação Marcelo) e um tenant selecionado.
-  const activeTenantId = isTenantUser ? userTenantId : selectedTenantId
+  // activeTenantId efetivo:
+  // 1. Se estiver em sessão de suporte ativa, o tenantId do cliente impersonado tem prioridade total.
+  // 2. Se o usuário logado for de um tenant, fica restrito a ele.
+  // 3. Se for admin geral (Marcelo), pode alternar entre null (operação Marcelo) e um tenant selecionado.
+  const activeTenantId = supportSession
+    ? supportSession.tenant.id
+    : isTenantUser
+      ? userTenantId
+      : selectedTenantId
+
+  const startSupportAccess = async (tenantId: string) => {
+    const res = await masterSupportService.startSupportAccess(tenantId)
+    const session: SupportAccessSession = {
+      tenant: res.tenant,
+      targetUser: res.target_user,
+      startedAt: new Date().toISOString(),
+    }
+    setSupportSession(session)
+    try {
+      sessionStorage.setItem('locwebpro_support_session', JSON.stringify(session))
+    } catch {
+      /* intentionally ignored */
+    }
+
+    // Sobrescreve imediatamente o currentUser com o contexto do primeiro gestor
+    setCurrentUser({
+      id: res.target_user.id,
+      name: res.target_user.name,
+      email: res.target_user.email,
+      role: res.target_user.role,
+      active: true,
+      permissions: (res.target_user.permissions || []) as any,
+      tenant_id: res.tenant.id,
+    })
+
+    return { success: true, tenantName: res.tenant.name }
+  }
+
+  const exitSupportAccess = () => {
+    setSupportSession(null)
+    try {
+      sessionStorage.removeItem('locwebpro_support_session')
+    } catch {
+      /* intentionally ignored */
+    }
+    setSelectedTenantId(null)
+  }
 
   const getEffectiveTenantFilter = () => {
     return activeTenantId
@@ -432,19 +488,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           console.error('Error fetching users:', err)
         }
 
-        const myProfile = mappedUsers.find((u) => u.email === (user as any).email)
-        if (myProfile) {
-          setCurrentUser(myProfile)
-        } else {
+        if (supportSession) {
+          // Em modo suporte ativo, mantém o usuário impersonado como currentUser
           setCurrentUser({
-            id: (user as any).id,
-            name: (user as any).name || '',
-            email: (user as any).email || '',
-            role: (user as any).role || '',
-            active: (user as any).active ?? true,
-            permissions: (user as any).permissions || [],
-            tenant_id: (user as any).tenant_id,
+            id: supportSession.targetUser.id,
+            name: supportSession.targetUser.name,
+            email: supportSession.targetUser.email,
+            role: supportSession.targetUser.role || 'Administrador',
+            active: true,
+            permissions: (supportSession.targetUser.permissions || []) as any,
+            tenant_id: supportSession.tenant.id,
           })
+        } else {
+          const myProfile = mappedUsers.find((u) => u.email === (user as any).email)
+          if (myProfile) {
+            setCurrentUser(myProfile)
+          } else {
+            setCurrentUser({
+              id: (user as any).id,
+              name: (user as any).name || '',
+              email: (user as any).email || '',
+              role: (user as any).role || '',
+              active: (user as any).active ?? true,
+              permissions: (user as any).permissions || [],
+              tenant_id: (user as any).tenant_id,
+            })
+          }
         }
 
         refreshCustomers()
@@ -837,6 +906,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         activeTenantId,
         setActiveTenantId: setSelectedTenantId,
         isTenantUser,
+        supportSession,
+        startSupportAccess,
+        exitSupportAccess,
         globalSearch,
         setGlobalSearch,
         inventory,

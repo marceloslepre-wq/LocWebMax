@@ -29,14 +29,16 @@ import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
 export function AppSidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { settings, setCurrentUser, isTenantUser, activeTenantId } = useMainStore()
+  const { settings, setCurrentUser, isTenantUser, activeTenantId, supportSession } = useMainStore()
   const { can } = usePermissions()
   const { signOut, user, profile } = useAuth()
 
+  // Enquanto o modo suporte estiver ativo, bloqueia o acesso ao /master no menu
   const isMaster =
-    user?.role === 'Master' ||
-    profile?.role === 'Master' ||
-    user?.email === 'marceloslepre@gmail.com'
+    !supportSession &&
+    (user?.role === 'Master' ||
+      profile?.role === 'Master' ||
+      user?.email === 'marceloslepre@gmail.com')
 
   const userRole = (user?.role || profile?.role || '').toLowerCase()
   const userName = (user?.name || profile?.name || '').toLowerCase()
@@ -44,6 +46,7 @@ export function AppSidebar() {
   // Perfis com acesso à aba de Licenças e Planos: Master, Administrador ou Gestor
   const canSeeLicensesAndPlans =
     isMaster ||
+    !!supportSession ||
     userRole.includes('admin') ||
     userRole.includes('gestor') ||
     userName.includes('gestor') ||

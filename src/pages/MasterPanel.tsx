@@ -621,14 +621,42 @@ export default function MasterPanel() {
     }
   }
 
-  // Impersonação
+  const { startSupportAccess, exitSupportAccess, supportSession } = useMainStore()
+  const [accessingSupportId, setAccessingSupportId] = useState<string | null>(null)
+
+  // Ativação do Modo Suporte Master
+  const handleAccessTenantPanel = async (tenant: Tenant) => {
+    try {
+      setAccessingSupportId(tenant.id)
+      toast({
+        title: `Acessando painel da empresa ${tenant.name}...`,
+        description: 'Autenticando sessão de suporte e carregando o primeiro gestor.',
+      })
+      const res = await startSupportAccess(tenant.id)
+      toast({
+        title: `Acesso ativado: ${res.tenantName}`,
+        description: 'Você está navegando com acesso total de suporte ao painel do gestor.',
+      })
+      navigate('/dashboard')
+    } catch (err: any) {
+      console.error('Erro ao acessar painel de suporte:', err)
+      const msg =
+        err?.code === 'NO_ADMIN_USER'
+          ? 'Esta empresa ainda não possui um usuário Administrador/Gestor cadastrado.'
+          : err?.message || 'Falha ao iniciar modo suporte para este cliente.'
+      toast({
+        title: 'Não foi possível acessar o painel',
+        description: msg,
+        variant: 'destructive',
+      })
+    } finally {
+      setAccessingSupportId(null)
+    }
+  }
+
+  // Impersonação direta legada (mantida como fallback)
   const handleImpersonateTenant = (tenant: Tenant) => {
-    setActiveTenantId(tenant.id)
-    toast({
-      title: `Acessando ${tenant.name}`,
-      description: 'Você está navegando no ambiente exclusivo deste tenant.',
-    })
-    navigate('/dashboard')
+    handleAccessTenantPanel(tenant)
   }
 
   // Filtro de Tenants
@@ -668,6 +696,44 @@ export default function MasterPanel() {
     } finally {
       window.location.href = '/'
     }
+  }
+
+  // Se o usuário estiver atualmente no modo suporte, bloqueia o acesso à tela /master e orienta a sair primeiro
+  if (supportSession) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6">
+        <div className="w-16 h-16 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center mb-4">
+          <AlertCircle className="w-10 h-10" />
+        </div>
+        <h1 className="text-2xl font-bold mb-2 text-white">Modo Suporte Ativo</h1>
+        <p className="text-slate-300 max-w-md text-center mb-6 text-sm">
+          Você está atualmente acessando o painel da empresa{' '}
+          <strong className="text-amber-400">{supportSession.tenant.name}</strong>. Para acessar a
+          administração global Master, encerre a sessão de suporte.
+        </p>
+        <div className="flex gap-3">
+          <Button
+            onClick={() => navigate('/dashboard')}
+            variant="outline"
+            className="border-slate-700 bg-slate-800 text-slate-200 hover:text-white"
+          >
+            Voltar ao Dashboard do Cliente
+          </Button>
+          <Button
+            onClick={() => {
+              exitSupportAccess()
+              toast({
+                title: 'Acesso de suporte encerrado',
+                description: 'Você retornou ao Painel Master.',
+              })
+            }}
+            className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold"
+          >
+            Sair do Acesso e Abrir Master
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   if (!isMasterUser) {
@@ -1344,6 +1410,27 @@ export default function MasterPanel() {
                             </TableCell>
                             <TableCell className="text-right py-3">
                               <div className="flex items-center justify-end gap-1.5">
+                                {/* Botão Acessar Painel (estilo Ponto Digital: roxo, com seta de login, exclusivo para empresas clientes) */}
+                                {!isMasterPlan && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={accessingSupportId === t.id}
+                                    onClick={() => handleAccessTenantPanel(t)}
+                                    className="h-7 text-xs border-purple-300 bg-purple-50/60 text-purple-700 hover:bg-purple-100 hover:text-purple-800 px-2.5 gap-1.5 font-medium shadow-sm transition-all"
+                                    title="Acessar painel do primeiro gestor desta empresa como Suporte Master"
+                                  >
+                                    <ArrowRight
+                                      className={`w-3.5 h-3.5 text-purple-600 ${accessingSupportId === t.id ? 'animate-pulse' : ''}`}
+                                    />
+                                    <span>
+                                      {accessingSupportId === t.id
+                                        ? 'Acessando...'
+                                        : 'Acessar Painel'}
+                                    </span>
+                                  </Button>
+                                )}
+
                                 {/* Botão rápido +30d */}
                                 <Button
                                   variant="outline"
@@ -1354,17 +1441,6 @@ export default function MasterPanel() {
                                 >
                                   <RefreshCw className="w-3 h-3 text-emerald-600" />
                                   +30d
-                                </Button>
-
-                                {/* Acessar / Impersonar */}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleImpersonateTenant(t)}
-                                  className="h-7 text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-50 px-2"
-                                  title="Acessar painel deste cliente"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5" />
                                 </Button>
 
                                 {/* Menu ⋮ */}
@@ -1596,12 +1672,13 @@ export default function MasterPanel() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleImpersonateTenant(t)}
+                              disabled={accessingSupportId === t.id}
+                              onClick={() => handleAccessTenantPanel(t)}
                               className="h-7 text-xs text-purple-700 border-purple-200 hover:bg-purple-50 gap-1"
                               title="Acessar ambiente deste cliente para gerenciar ou conectar QR Code"
                             >
-                              <ExternalLink className="w-3 h-3" />
-                              Acessar
+                              <ArrowRight className="w-3 h-3" />
+                              {accessingSupportId === t.id ? 'Acessando...' : 'Acessar'}
                             </Button>
                           </TableCell>
                         </TableRow>
