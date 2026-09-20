@@ -5,8 +5,9 @@ export interface Plan {
   name: string
   price: number
   billing_cycle: 'monthly' | 'yearly'
-  units_limit: number
-  users_limit: number
+  units_limit?: number
+  users_limit?: number
+  max_contracts: number // Limite de contratos de locação cadastrados (0 ou >= 999999 = Ilimitado)
   is_master_exclusive: boolean
   status: 'active' | 'inactive'
   description?: string
@@ -40,6 +41,7 @@ export const plansService = {
       billing_cycle: data.billing_cycle || 'monthly',
       units_limit: data.units_limit ?? 50,
       users_limit: data.users_limit ?? 10,
+      max_contracts: data.max_contracts ?? 100,
       is_master_exclusive: data.is_master_exclusive ?? false,
       status: data.status || 'active',
       description: data.description || '',

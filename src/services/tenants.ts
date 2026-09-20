@@ -21,6 +21,7 @@ export interface Tenant {
   custom_price?: number
   custom_units_limit?: number
   custom_users_limit?: number
+  custom_contracts_limit?: number | null
   subscription_status?: 'active' | 'trial' | 'paused' | 'expired' | 'canceled'
   start_date?: string
   expiration_date?: string
@@ -45,6 +46,7 @@ export interface TenantOnboardingInput {
   custom_price?: number
   custom_units_limit?: number
   custom_users_limit?: number
+  custom_contracts_limit?: number | null
   subscription_status?: 'active' | 'trial' | 'paused' | 'expired' | 'canceled'
   trial_days?: number
   admin_user?: {
@@ -132,6 +134,8 @@ export const tenantService = {
       custom_price: data.custom_price !== undefined ? data.custom_price : null,
       custom_units_limit: data.custom_units_limit !== undefined ? data.custom_units_limit : null,
       custom_users_limit: data.custom_users_limit !== undefined ? data.custom_users_limit : null,
+      custom_contracts_limit:
+        data.custom_contracts_limit !== undefined ? data.custom_contracts_limit : null,
       subscription_status: data.subscription_status || 'trial',
       start_date: data.start_date || new Date().toISOString(),
       expiration_date: data.expiration_date || null,
@@ -242,6 +246,7 @@ export const tenantService = {
       custom_price: input.custom_price,
       custom_units_limit: input.custom_units_limit,
       custom_users_limit: input.custom_users_limit,
+      custom_contracts_limit: input.custom_contracts_limit,
       subscription_status: input.subscription_status || 'trial',
       start_date: now.toISOString(),
       expiration_date: expDate.toISOString(),

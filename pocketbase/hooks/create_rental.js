@@ -104,6 +104,86 @@ routerAdd(
       callerTenantId = body.tenant_id
     }
 
+    // ----------------------------------------------------
+    // VALIDAÇÃO DE LIMITE DE CONTRATOS DO PLANO / TENANT
+    // ----------------------------------------------------
+    var isMasterCaller = false
+    try {
+      if (e.auth) {
+        var userRole = e.auth.getString('role') || ''
+        var userEmail = e.auth.getString('email') || ''
+        if (userRole === 'Master' || userEmail === 'marceloslepre@gmail.com') {
+          isMasterCaller = true
+        }
+      }
+    } catch (_) {}
+
+    // A operação Hospital Home e o Master são SEMPRE ilimitados
+    if (!isMasterCaller && callerTenantId) {
+      try {
+        var tenantRec = $app.findRecordById('tenants', callerTenantId)
+        var tName = (tenantRec.getString('name') || '').toLowerCase()
+        var pName = (tenantRec.getString('plan_name') || '').toLowerCase()
+
+        var isMasterTenant = tName.includes('hospital home') || pName.includes('master')
+
+        if (!isMasterTenant) {
+          // Determinar o limite de contratos: custom_contracts_limit tem prioridade, senão max_contracts do plano
+          var contractLimit = null
+          var rawCustom = tenantRec.get('custom_contracts_limit')
+          if (rawCustom !== null && rawCustom !== undefined && rawCustom !== '') {
+            contractLimit = Number(rawCustom)
+          } else {
+            var planId = tenantRec.getString('plan_id')
+            if (planId) {
+              try {
+                var planRec = $app.findRecordById('plans', planId)
+                if (planRec.getBool('is_master_exclusive')) {
+                  contractLimit = 0 // ilimitado
+                } else {
+                  var pMax = planRec.get('max_contracts')
+                  if (pMax !== null && pMax !== undefined && pMax !== '') {
+                    contractLimit = Number(pMax)
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+
+          // Se contractLimit for definido e > 0 e < 999999 (0 ou >= 999999 significa ilimitado)
+          if (contractLimit !== null && contractLimit > 0 && contractLimit < 999999) {
+            // Contar contratos existentes deste tenant
+            var existingRentals = $app.findRecordsByFilter(
+              'rentals',
+              'tenant_id = "' + callerTenantId + '"',
+              '',
+              0,
+              0,
+            )
+            var currentCount = existingRentals.length
+            if (currentCount >= contractLimit) {
+              return e.badRequestError(
+                'Limite de contratos do seu plano atingido (' +
+                  currentCount +
+                  '/' +
+                  contractLimit +
+                  '). Faça upgrade do plano ou solicite renovação com a loja.',
+              )
+            }
+          }
+        }
+      } catch (tErr) {
+        // Fail-open: se não conseguir consultar o tenant/licença, não bloqueia a criação do contrato
+        $app
+          .logger()
+          .warn(
+            'create_rental: failed checking tenant contract limits (fail-open)',
+            'err',
+            tErr.message || String(tErr),
+          )
+      }
+    }
+
     const rentalsCol = $app.findCollectionByNameOrId('rentals')
     const rental = new Record(rentalsCol)
     rental.set('contract_number', contractNumber)

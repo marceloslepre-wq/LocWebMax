@@ -118,7 +118,7 @@ export default function MasterPanel() {
   const [planToDelete, setPlanToDelete] = useState<Plan | null>(null)
 
   // Formulários temporários
-  const [limitsForm, setLimitsForm] = useState({ custom_units_limit: '', custom_users_limit: '' })
+  const [limitsForm, setLimitsForm] = useState({ custom_contracts_limit: '' })
   const [expirationForm, setExpirationForm] = useState({ expiration_date: '' })
   const [changePlanForm, setChangePlanForm] = useState({ plan_id: '', custom_price: '' })
   const [generalForm, setGeneralForm] = useState({
@@ -134,15 +134,13 @@ export default function MasterPanel() {
     plan_id: '',
     status: 'active',
     expiration_date: '',
-    override_users: '',
-    override_units: '',
+    override_contracts: '',
   })
   const [planForm, setPlanForm] = useState({
     name: '',
     description: '',
     price: '199.90',
-    units_limit: '50',
-    users_limit: '100',
+    max_contracts: '100',
     status: 'active',
     is_master_exclusive: false,
   })
@@ -336,23 +334,22 @@ export default function MasterPanel() {
   const handleSaveLimits = async () => {
     if (!limitsModalTenant) return
     try {
-      const units = limitsForm.custom_units_limit ? Number(limitsForm.custom_units_limit) : null
-      const users = limitsForm.custom_users_limit ? Number(limitsForm.custom_users_limit) : null
+      const contracts =
+        limitsForm.custom_contracts_limit !== '' ? Number(limitsForm.custom_contracts_limit) : null
 
       const history = limitsModalTenant.history_notes || []
       history.push({
         date: new Date().toISOString(),
         action: 'Limites alterados',
-        notes: `Unidades: ${units ?? 'Padrão do plano'}, Usuários: ${users ?? 'Padrão do plano'}`,
+        notes: `Contratos: ${contracts !== null ? (contracts === 0 ? 'Ilimitado' : contracts) : 'Padrão do plano'}`,
       })
 
       await tenantService.update(limitsModalTenant.id, {
-        custom_units_limit: units,
-        custom_users_limit: users,
+        custom_contracts_limit: contracts,
         history_notes: history,
       })
 
-      toast({ title: 'Limites atualizados com sucesso!' })
+      toast({ title: 'Limites de contratos atualizados com sucesso!' })
       setLimitsModalTenant(null)
       loadData()
     } catch (err: any) {
@@ -508,12 +505,10 @@ export default function MasterPanel() {
       const chosenTenant = tenants.find((t) => t.id === newLicenseForm.tenant_id)
       const chosenPlan = plans.find((p) => p.id === newLicenseForm.plan_id)
 
-      const overrideUsers = newLicenseForm.override_users.trim()
-        ? Number(newLicenseForm.override_users)
-        : null
-      const overrideUnits = newLicenseForm.override_units.trim()
-        ? Number(newLicenseForm.override_units)
-        : null
+      const overrideContracts =
+        newLicenseForm.override_contracts.trim() !== ''
+          ? Number(newLicenseForm.override_contracts)
+          : null
 
       const expDate = newLicenseForm.expiration_date
         ? new Date(newLicenseForm.expiration_date).toISOString()
@@ -523,7 +518,7 @@ export default function MasterPanel() {
       history.push({
         date: new Date().toISOString(),
         action: 'Licença Vinculada / Atualizada',
-        notes: `Plano: ${chosenPlan ? chosenPlan.name : 'Plano'} | Status: ${newLicenseForm.status} | Expiração: ${newLicenseForm.expiration_date || 'Sem prazo'}`,
+        notes: `Plano: ${chosenPlan ? chosenPlan.name : 'Plano'} | Status: ${newLicenseForm.status} | Expiração: ${newLicenseForm.expiration_date || 'Sem prazo'} | Limite Contratos: ${overrideContracts !== null ? (overrideContracts === 0 ? 'Ilimitado' : overrideContracts) : 'Padrão do plano'}`,
       })
 
       await tenantService.update(newLicenseForm.tenant_id, {
@@ -532,8 +527,7 @@ export default function MasterPanel() {
         status: newLicenseForm.status === 'inactive' ? 'inactive' : 'active',
         subscription_status: newLicenseForm.status as any,
         expiration_date: expDate,
-        custom_users_limit: overrideUsers,
-        custom_units_limit: overrideUnits,
+        custom_contracts_limit: overrideContracts,
         history_notes: history,
       })
 
@@ -547,8 +541,7 @@ export default function MasterPanel() {
         plan_id: '',
         status: 'active',
         expiration_date: '',
-        override_users: '',
-        override_units: '',
+        override_contracts: '',
       })
       loadData()
     } catch (err: any) {
@@ -564,12 +557,15 @@ export default function MasterPanel() {
   const handleOpenPlanModal = (plan?: Plan) => {
     if (plan) {
       setEditingPlan(plan)
+      const contractsVal =
+        plan.max_contracts !== undefined && plan.max_contracts !== null
+          ? String(plan.max_contracts)
+          : '100'
       setPlanForm({
         name: plan.name,
         description: plan.description || '',
         price: String(plan.price),
-        units_limit: String(plan.units_limit),
-        users_limit: String(plan.users_limit),
+        max_contracts: contractsVal,
         status: plan.status,
         is_master_exclusive: plan.is_master_exclusive,
       })
@@ -579,8 +575,7 @@ export default function MasterPanel() {
         name: '',
         description: '',
         price: '199.90',
-        units_limit: '50',
-        users_limit: '100',
+        max_contracts: '100',
         status: 'active',
         is_master_exclusive: false,
       })
@@ -594,8 +589,7 @@ export default function MasterPanel() {
       const dataToSave = {
         name: planForm.name.trim(),
         price: Number(planForm.price) || 0,
-        units_limit: Number(planForm.units_limit) || 0,
-        users_limit: Number(planForm.users_limit) || 0,
+        max_contracts: Number(planForm.max_contracts) || 0,
         description: planForm.description.trim(),
         is_master_exclusive: planForm.is_master_exclusive,
         status: (planForm.status as 'active' | 'inactive') || 'active',
@@ -1239,27 +1233,19 @@ export default function MasterPanel() {
                                 ? 'Isento'
                                 : 'R$ 199,90/mês'
 
-                        const unitsLimitDisplay =
-                          t.custom_units_limit !== null && t.custom_units_limit !== undefined
-                            ? t.custom_units_limit >= 999999
+                        const contractsLimitDisplay = isMasterPlan
+                          ? 'Ilimitado'
+                          : t.custom_contracts_limit !== null &&
+                              t.custom_contracts_limit !== undefined
+                            ? t.custom_contracts_limit === 0 || t.custom_contracts_limit >= 999999
                               ? 'Ilimitado'
-                              : t.custom_units_limit
+                              : t.custom_contracts_limit
                             : matchedPlan
-                              ? matchedPlan.units_limit >= 999999
+                              ? matchedPlan.max_contracts === 0 ||
+                                matchedPlan.max_contracts >= 999999
                                 ? 'Ilimitado'
-                                : matchedPlan.units_limit
-                              : '50'
-
-                        const usersLimitDisplay =
-                          t.custom_users_limit !== null && t.custom_users_limit !== undefined
-                            ? t.custom_users_limit >= 999999
-                              ? 'Ilimitado'
-                              : t.custom_users_limit
-                            : matchedPlan
-                              ? matchedPlan.users_limit >= 999999
-                                ? 'Ilimitado'
-                                : matchedPlan.users_limit
-                              : '10'
+                                : matchedPlan.max_contracts
+                              : '100'
 
                         return (
                           <TableRow
@@ -1297,33 +1283,20 @@ export default function MasterPanel() {
                               Novo Locação
                             </TableCell>
                             <TableCell className="text-xs py-3">
-                              <div className="space-y-0.5">
-                                <div className="flex items-center gap-1 text-[11px] text-slate-700">
-                                  <span className="text-slate-500">Usuários:</span>
-                                  <span className="font-semibold">{usersLimitDisplay}</span>
-                                  {t.custom_users_limit !== null &&
-                                    t.custom_users_limit !== undefined && (
-                                      <Badge
-                                        variant="outline"
-                                        className="text-[9px] py-0 px-1 border-purple-200 bg-purple-50 text-purple-700 font-medium"
-                                      >
-                                        Custom
-                                      </Badge>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-1 text-[11px] text-slate-700">
-                                  <span className="text-slate-500">Unidades:</span>
-                                  <span className="font-semibold">{unitsLimitDisplay}</span>
-                                  {t.custom_units_limit !== null &&
-                                    t.custom_units_limit !== undefined && (
-                                      <Badge
-                                        variant="outline"
-                                        className="text-[9px] py-0 px-1 border-purple-200 bg-purple-50 text-purple-700 font-medium"
-                                      >
-                                        Custom
-                                      </Badge>
-                                    )}
-                                </div>
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-700">
+                                <span className="text-slate-500">Contratos:</span>
+                                <span className="font-semibold text-slate-800">
+                                  {contractsLimitDisplay}
+                                </span>
+                                {t.custom_contracts_limit !== null &&
+                                  t.custom_contracts_limit !== undefined && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[9px] py-0 px-1 border-purple-200 bg-purple-50 text-purple-700 font-medium"
+                                    >
+                                      Custom
+                                    </Badge>
+                                  )}
                               </div>
                             </TableCell>
                             <TableCell className="text-xs font-bold text-slate-800 py-3">
@@ -1421,15 +1394,10 @@ export default function MasterPanel() {
                                       onClick={() => {
                                         setLimitsModalTenant(t)
                                         setLimitsForm({
-                                          custom_units_limit:
-                                            t.custom_units_limit !== null &&
-                                            t.custom_units_limit !== undefined
-                                              ? String(t.custom_units_limit)
-                                              : '',
-                                          custom_users_limit:
-                                            t.custom_users_limit !== null &&
-                                            t.custom_users_limit !== undefined
-                                              ? String(t.custom_users_limit)
+                                          custom_contracts_limit:
+                                            t.custom_contracts_limit !== null &&
+                                            t.custom_contracts_limit !== undefined
+                                              ? String(t.custom_contracts_limit)
                                               : '',
                                         })
                                       }}
@@ -1694,16 +1662,14 @@ export default function MasterPanel() {
                     </div>
 
                     <div className="space-y-1.5 text-xs text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Limite de Unidades:</span>
-                        <span className="font-semibold text-slate-800">
-                          {p.units_limit >= 999999 ? 'Ilimitado' : p.units_limit}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Limite de Usuários:</span>
-                        <span className="font-semibold text-slate-800">
-                          {p.users_limit >= 999999 ? 'Ilimitado' : p.users_limit}
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Limite de Contratos:</span>
+                        <span className="font-bold text-slate-900">
+                          {p.is_master_exclusive ||
+                          p.max_contracts === 0 ||
+                          p.max_contracts >= 999999
+                            ? 'Ilimitado'
+                            : p.max_contracts}
                         </span>
                       </div>
                     </div>
@@ -1808,32 +1774,21 @@ export default function MasterPanel() {
           <div className="space-y-4 py-2 text-xs">
             <div className="space-y-1.5">
               <Label className="text-xs text-slate-700 font-semibold">
-                Limite de Unidades (Vazio = Segue o Plano)
+                Limite de Contratos de Locação (Vazio = Segue o Plano)
               </Label>
               <Input
                 type="number"
-                placeholder="Ex: 500 ou 999999 para ilimitado"
-                value={limitsForm.custom_units_limit}
-                onChange={(e) =>
-                  setLimitsForm((p) => ({ ...p, custom_units_limit: e.target.value }))
-                }
+                min="0"
+                placeholder="Ex: 100 (ou 0 para ilimitado)"
+                value={limitsForm.custom_contracts_limit}
+                onChange={(e) => setLimitsForm({ custom_contracts_limit: e.target.value })}
                 className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
               />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs text-slate-700 font-semibold">
-                Limite de Usuários (Vazio = Segue o Plano)
-              </Label>
-              <Input
-                type="number"
-                placeholder="Ex: 20 ou 999999 para ilimitado"
-                value={limitsForm.custom_users_limit}
-                onChange={(e) =>
-                  setLimitsForm((p) => ({ ...p, custom_users_limit: e.target.value }))
-                }
-                className="bg-white border-slate-200 text-slate-900 text-xs h-9 focus-visible:ring-purple-500"
-              />
+              <p className="text-[11px] text-slate-500">
+                Informe a quantidade máxima de contratos de locação cadastrados. Digite{' '}
+                <strong>0</strong> para ilimitado ou deixe em branco para seguir o limite padrão do
+                plano.
+              </p>
             </div>
           </div>
 
@@ -2112,13 +2067,9 @@ export default function MasterPanel() {
                     plan_id: t?.plan_id || p.plan_id,
                     status: (t?.subscription_status as any) || 'active',
                     expiration_date: t?.expiration_date ? t.expiration_date.split('T')[0] : '',
-                    override_users:
-                      t?.custom_users_limit !== null && t?.custom_users_limit !== undefined
-                        ? String(t.custom_users_limit)
-                        : '',
-                    override_units:
-                      t?.custom_units_limit !== null && t?.custom_units_limit !== undefined
-                        ? String(t.custom_units_limit)
+                    override_contracts:
+                      t?.custom_contracts_limit !== null && t?.custom_contracts_limit !== undefined
+                        ? String(t.custom_contracts_limit)
                         : '',
                   }))
                 }}
@@ -2202,36 +2153,27 @@ export default function MasterPanel() {
               </div>
             </div>
 
-            {/* Limites Sobrescritos Manuais */}
+            {/* Limite Sobrescrito Manual */}
             <div className="pt-2 space-y-2">
               <span className="text-xs text-slate-600 font-medium block">
-                Limites Sobrescritos Manuais (Opcional - prevalecem sobre o plano)
+                Limite Sobrescrito de Contratos (Opcional - prevalece sobre o plano)
               </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] text-slate-500">Override Máx. Usuários</Label>
-                  <Input
-                    type="number"
-                    placeholder="Padrão do plano"
-                    value={newLicenseForm.override_users}
-                    onChange={(e) =>
-                      setNewLicenseForm((p) => ({ ...p, override_users: e.target.value }))
-                    }
-                    className="bg-white border-slate-200 text-slate-900 text-xs h-10 placeholder:text-slate-400 focus-visible:ring-purple-500"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] text-slate-500">Override Máx. Unidades</Label>
-                  <Input
-                    type="number"
-                    placeholder="Padrão do plano"
-                    value={newLicenseForm.override_units}
-                    onChange={(e) =>
-                      setNewLicenseForm((p) => ({ ...p, override_units: e.target.value }))
-                    }
-                    className="bg-white border-slate-200 text-slate-900 text-xs h-10 placeholder:text-slate-400 focus-visible:ring-purple-500"
-                  />
-                </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-500">Limite de Contratos</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="Padrão do plano (ou 0 para ilimitado)"
+                  value={newLicenseForm.override_contracts}
+                  onChange={(e) =>
+                    setNewLicenseForm((p) => ({ ...p, override_contracts: e.target.value }))
+                  }
+                  className="bg-white border-slate-200 text-slate-900 text-xs h-10 placeholder:text-slate-400 focus-visible:ring-purple-500"
+                />
+                <span className="text-[10px] text-slate-400">
+                  Deixe vazio para usar o padrão do plano contratado ou digite 0 para contratos
+                  ilimitados.
+                </span>
               </div>
             </div>
 
@@ -2294,8 +2236,8 @@ export default function MasterPanel() {
               />
             </div>
 
-            {/* Preço Mensal (R$), Máx. Unidades, Máx. Usuários */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            {/* Preço Mensal (R$) e Limite de Contratos */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-700 font-semibold">Preço Mensal (R$)</Label>
                 <Input
@@ -2309,24 +2251,14 @@ export default function MasterPanel() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">Máx. Unidades</Label>
+                <Label className="text-xs text-slate-700 font-semibold">Limite de Contratos</Label>
                 <Input
                   type="number"
                   required
-                  placeholder="50"
-                  value={planForm.units_limit}
-                  onChange={(e) => setPlanForm((p) => ({ ...p, units_limit: e.target.value }))}
-                  className="bg-white border-slate-200 text-slate-900 text-xs h-10 focus-visible:ring-purple-500"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">Máx. Usuários</Label>
-                <Input
-                  type="number"
-                  required
-                  placeholder="100"
-                  value={planForm.users_limit}
-                  onChange={(e) => setPlanForm((p) => ({ ...p, users_limit: e.target.value }))}
+                  min="0"
+                  placeholder="100 (ou 0 para ilimitado)"
+                  value={planForm.max_contracts}
+                  onChange={(e) => setPlanForm((p) => ({ ...p, max_contracts: e.target.value }))}
                   className="bg-white border-slate-200 text-slate-900 text-xs h-10 focus-visible:ring-purple-500"
                 />
               </div>

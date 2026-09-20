@@ -302,10 +302,14 @@ export default function PublicCompanyRegister() {
 
                     <div className="mt-3 pt-2 border-t border-slate-800 text-[11px] text-slate-300 space-y-1">
                       <div>
-                        Até <strong>{p.units_limit}</strong> unidades
-                      </div>
-                      <div>
-                        Até <strong>{p.users_limit}</strong> usuários
+                        Limite:{' '}
+                        <strong>
+                          {p.is_master_exclusive ||
+                          p.max_contracts === 0 ||
+                          p.max_contracts >= 999999
+                            ? 'Contratos ilimitados'
+                            : `Até ${p.max_contracts} contratos de locação`}
+                        </strong>
                       </div>
                     </div>
                   </div>

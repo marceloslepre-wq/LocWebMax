@@ -15,6 +15,7 @@ import {
   Building2,
   Calendar,
   AlertTriangle,
+  FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -55,8 +56,7 @@ export default function LicencasPlanos() {
 
   // Métricas reais de uso isoladas por contexto
   const [counts, setCounts] = useState({
-    usersCount: 0,
-    unitsCount: 0,
+    contractsCount: 0,
   })
 
   // Modais
@@ -95,15 +95,12 @@ export default function LicencasPlanos() {
 
       // Se for cliente tenant, carregar apenas seu próprio tenant e plano
       if (isCustomerTenant && effectiveTenantId) {
-        const [tenantData, allPlans, usersList, inventoryList] = await Promise.all([
+        const [tenantData, allPlans, rentalsList] = await Promise.all([
           tenantService.getOne(effectiveTenantId),
           plansService.getAll(),
-          pb.collection('users').getFullList({
+          pb.collection('rentals').getFullList({
             filter: `tenant_id = "${effectiveTenantId}"`,
-          }),
-          pb.collection('inventory').getFullList({
-            filter: `tenant_id = "${effectiveTenantId}"`,
-            fields: 'id,total_qty,available_qty',
+            fields: 'id',
           }),
         ])
 
@@ -116,14 +113,8 @@ export default function LicencasPlanos() {
           null
         setActivePlan(matchedPlan)
 
-        const totalUnits = inventoryList.reduce(
-          (sum, item: any) => sum + (Number(item.total_qty) || 1),
-          0,
-        )
-
         setCounts({
-          usersCount: usersList.length || 1,
-          unitsCount: totalUnits || inventoryList.length || 0,
+          contractsCount: rentalsList.length,
         })
       } else {
         // Operação Principal (Master ou Administrador/Gestor da matriz sem tenant específico)
@@ -131,15 +122,12 @@ export default function LicencasPlanos() {
         const filterTenantId = !isTenantUser && activeTenantId ? activeTenantId : null
 
         if (filterTenantId) {
-          const [tenantData, allPlans, usersList, inventoryList] = await Promise.all([
+          const [tenantData, allPlans, rentalsList] = await Promise.all([
             tenantService.getOne(filterTenantId),
             plansService.getAll(),
-            pb.collection('users').getFullList({
+            pb.collection('rentals').getFullList({
               filter: `tenant_id = "${filterTenantId}"`,
-            }),
-            pb.collection('inventory').getFullList({
-              filter: `tenant_id = "${filterTenantId}"`,
-              fields: 'id,total_qty,available_qty',
+              fields: 'id',
             }),
           ])
 
@@ -152,26 +140,17 @@ export default function LicencasPlanos() {
             null
           setActivePlan(matchedPlan)
 
-          const totalUnits = inventoryList.reduce(
-            (sum, item: any) => sum + (Number(item.total_qty) || 1),
-            0,
-          )
-
           setCounts({
-            usersCount: usersList.length || 1,
-            unitsCount: totalUnits || inventoryList.length || 0,
+            contractsCount: rentalsList.length,
           })
         } else {
           // Operação Principal Matriz (Hospital Home)
-          const [allTenants, allPlans, usersList, inventoryList] = await Promise.all([
+          const [allTenants, allPlans, rentalsList] = await Promise.all([
             tenantService.getAll(),
             plansService.getAll(),
-            pb.collection('users').getFullList({
+            pb.collection('rentals').getFullList({
               filter: `tenant_id = "" || tenant_id = null`,
-            }),
-            pb.collection('inventory').getFullList({
-              filter: `tenant_id = "" || tenant_id = null`,
-              fields: 'id,total_qty,available_qty',
+              fields: 'id',
             }),
           ])
 
@@ -199,8 +178,7 @@ export default function LicencasPlanos() {
               subscription_status: 'active',
               plan_name: 'Plano Master',
               custom_price: 0,
-              custom_units_limit: 999999,
-              custom_users_limit: 999999,
+              custom_contracts_limit: 0,
               history_notes: [
                 {
                   date: '2026-07-05T00:00:00.000Z',
@@ -226,14 +204,8 @@ export default function LicencasPlanos() {
 
           setActivePlan(matchedPlan)
 
-          const totalUnits = inventoryList.reduce(
-            (sum, item: any) => sum + (Number(item.total_qty) || 1),
-            0,
-          )
-
           setCounts({
-            usersCount: usersList.length || 1,
-            unitsCount: totalUnits || inventoryList.length || 0,
+            contractsCount: rentalsList.length,
           })
         }
       }
@@ -260,26 +232,20 @@ export default function LicencasPlanos() {
     (currentTenant?.plan_name?.toLowerCase().includes('master') ?? false) ||
     (!isCustomerTenant && isMasterUser)
 
-  const usersLimit =
-    currentTenant?.custom_users_limit !== null && currentTenant?.custom_users_limit !== undefined
-      ? currentTenant.custom_users_limit
-      : (activePlan?.users_limit ?? (isMasterPlan ? 999999 : 100))
+  // Limite de contratos de locação
+  const contractsLimit =
+    currentTenant?.custom_contracts_limit !== null &&
+    currentTenant?.custom_contracts_limit !== undefined
+      ? currentTenant.custom_contracts_limit
+      : (activePlan?.max_contracts ?? (isMasterPlan ? 0 : 100))
 
-  const unitsLimit =
-    currentTenant?.custom_units_limit !== null && currentTenant?.custom_units_limit !== undefined
-      ? currentTenant.custom_units_limit
-      : (activePlan?.units_limit ?? (isMasterPlan ? 999999 : 50))
+  const isUnlimitedContracts = isMasterPlan || contractsLimit === 0 || contractsLimit >= 999999
 
-  const isUnlimitedUsers = isMasterPlan || usersLimit >= 999999
-  const isUnlimitedUnits = isMasterPlan || unitsLimit >= 999999
-
-  const usersPercent = isUnlimitedUsers
-    ? 100
-    : Math.min(100, Math.round((counts.usersCount / (usersLimit || 1)) * 100))
-
-  const unitsPercent = isUnlimitedUnits
-    ? 100
-    : Math.min(100, Math.round((counts.unitsCount / (unitsLimit || 1)) * 100))
+  const contractsPercent = isUnlimitedContracts
+    ? counts.contractsCount > 0
+      ? 100
+      : 0
+    : Math.min(100, Math.round((counts.contractsCount / (contractsLimit || 1)) * 100))
 
   // Status de assinatura
   const subscriptionStatus = currentTenant?.subscription_status || 'active'
@@ -711,78 +677,57 @@ export default function LicencasPlanos() {
           <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm p-5 space-y-5">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-indigo-600" />
+                <FileText className="w-4 h-4 text-indigo-600" />
                 <h3 className="text-sm font-bold text-slate-900">Uso Atual vs. Limite</h3>
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                Capacidade utilizada pela sua operação em relação ao plano contratado.
+                Contratos de locação cadastrados pela sua empresa em relação ao limite do plano
+                contratado.
               </p>
             </div>
 
-            {/* Métrica 1: Usuários Cadastrados */}
-            <div className="space-y-1.5 pt-1">
+            {/* Métrica Única Comercial: Contratos Cadastrados */}
+            <div className="space-y-2 pt-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-600 font-medium flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-slate-400" />
-                  Usuários Cadastrados
+                  <FileText className="w-3.5 h-3.5 text-slate-400" />
+                  Contratos Cadastrados
                 </span>
                 <span className="font-extrabold text-slate-800">
-                  {counts.usersCount} /{' '}
-                  <span className={isUnlimitedUsers ? 'text-emerald-600' : 'text-slate-600'}>
-                    {isUnlimitedUsers ? 'Ilimitado' : usersLimit}
+                  {counts.contractsCount} /{' '}
+                  <span
+                    className={
+                      isUnlimitedContracts ? 'text-emerald-600 font-black' : 'text-slate-800'
+                    }
+                  >
+                    {isUnlimitedContracts ? 'Ilimitado' : contractsLimit}
                   </span>
                 </span>
               </div>
-              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+              <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden p-0.5">
                 <div
-                  className={`h-full rounded-full ${
-                    !isUnlimitedUsers && usersPercent >= 90
-                      ? 'bg-rose-500'
-                      : !isUnlimitedUsers && usersPercent >= 75
-                        ? 'bg-amber-500'
-                        : 'bg-emerald-500'
+                  className={`h-full rounded-full transition-all ${
+                    isUnlimitedContracts
+                      ? 'bg-gradient-to-r from-emerald-500 to-indigo-600 w-full'
+                      : contractsPercent >= 90
+                        ? 'bg-rose-500'
+                        : contractsPercent >= 75
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500'
                   }`}
-                  style={{ width: `${usersPercent}%` }}
+                  style={{ width: isUnlimitedContracts ? '100%' : `${contractsPercent}%` }}
                 />
               </div>
-              <span className="text-[10px] text-slate-400 block">
-                {isUnlimitedUsers
-                  ? 'Sem restrição de cadastros'
-                  : `${usersPercent}% da capacidade do plano utilizada`}
-              </span>
-            </div>
-
-            {/* Métrica 2: Unidades / Itens */}
-            <div className="space-y-1.5 pt-2 border-t border-slate-100">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-600 font-medium flex items-center gap-1.5">
-                  <Package className="w-3.5 h-3.5 text-slate-400" />
-                  Unidades / Itens
+              <div className="flex justify-between items-center text-[10px] text-slate-400">
+                <span>
+                  {isUnlimitedContracts
+                    ? 'Plano com contratos de locação ilimitados'
+                    : `${counts.contractsCount} de ${contractsLimit} contratos utilizados`}
                 </span>
-                <span className="font-extrabold text-slate-800">
-                  {counts.unitsCount} /{' '}
-                  <span className={isUnlimitedUnits ? 'text-emerald-600' : 'text-slate-600'}>
-                    {isUnlimitedUnits ? 'Ilimitado' : unitsLimit}
-                  </span>
-                </span>
+                {!isUnlimitedContracts && (
+                  <span className="font-semibold text-slate-600">{contractsPercent}%</span>
+                )}
               </div>
-              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${
-                    !isUnlimitedUnits && unitsPercent >= 90
-                      ? 'bg-rose-500'
-                      : !isUnlimitedUnits && unitsPercent >= 75
-                        ? 'bg-amber-500'
-                        : 'bg-emerald-500'
-                  }`}
-                  style={{ width: `${unitsPercent}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-slate-400 block">
-                {isUnlimitedUnits
-                  ? 'Sem restrição de itens e unidades'
-                  : `${unitsPercent}% da capacidade de estoque utilizada`}
-              </span>
             </div>
 
             {/* Aviso Informativo */}
@@ -791,8 +736,8 @@ export default function LicencasPlanos() {
                 <AlertCircle className="w-3.5 h-3.5 text-sky-600 mt-0.5 shrink-0" />
                 <span>
                   {isMasterPlan
-                    ? 'Você está no plano Master. Cadastros e operações são ilimitados sem restrições.'
-                    : 'Precisa de mais capacidade para cadastrar novos usuários ou unidades? Você pode solicitar uma renovação ou upgrade a qualquer momento.'}
+                    ? 'Você está no plano Master. Cadastros e contratos de locação são 100% ilimitados e isentos.'
+                    : 'Precisa cadastrar mais contratos de locação? Você pode solicitar um upgrade de plano ou renovação a qualquer momento.'}
                 </span>
               </div>
             </div>
@@ -940,9 +885,8 @@ export default function LicencasPlanos() {
             <div className="p-3.5 bg-indigo-50/70 border border-indigo-200/70 rounded-lg text-indigo-950 space-y-1">
               <span className="font-bold block text-sm">Status: VIP Master Isento</span>
               <p className="text-xs text-indigo-800">
-                Você possui acesso irrestrito com todos os módulos, cadastros ilimitados de
-                usuários, unidades e equipamentos, sem prazo de expiração e sem geração de
-                cobranças.
+                Você possui acesso irrestrito com todos os módulos, contratos de locação e cadastros
+                ilimitados, sem prazo de expiração e sem geração de cobranças.
               </p>
             </div>
             {isMasterUser && (

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-19T21:05:21.564Z",
+  "generatedAt": "2026-09-20T14:31:04.858Z",
   "collections": [
     {
       "name": "users",
@@ -1690,6 +1690,12 @@
           "type": "text",
           "required": false,
           "system": false
+        },
+        {
+          "name": "custom_contracts_limit",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -1775,6 +1781,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "max_contracts",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

@@ -347,9 +347,11 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
       setTrackingCode('')
       setErrors({})
     } catch (err) {
+      const errMsg = getErrorMessage(err)
+      const isLimitError = errMsg.toLowerCase().includes('limite de contratos')
       toast({
-        title: 'Estoque Insuficiente',
-        description: getErrorMessage(err),
+        title: isLimitError ? 'Limite do Plano Atingido' : 'Falha ao Criar Locação',
+        description: errMsg,
         variant: 'destructive',
       })
     } finally {
