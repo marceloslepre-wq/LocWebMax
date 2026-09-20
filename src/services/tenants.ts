@@ -59,20 +59,42 @@ export interface TenantOnboardingInput {
 // Cache e deduplicação para consultas de tenants
 let cachedTenants: { data: Tenant[]; timestamp: number } | null = null
 let pendingGetAllPromise: Promise<Tenant[]> | null = null
-const CACHE_TTL_MS = 5000 // 5s de cache curto
+const CACHE_TTL_MS = 60000 // 60s de cache em memória para lista
+const SINGLE_TENANT_CACHE_TTL_MS = 60000 // 60s de cache para tenant individual
+
+const cachedSingleTenants = new Map<string, { data: Tenant; timestamp: number }>()
+const pendingGetOnePromises = new Map<string, Promise<Tenant>>()
+// Backoff tracking por tenant para evitar avalanche em caso de 429 ou falhas
+const backoffUntil = new Map<string, number>()
+const backoffDelayMs = new Map<string, number>()
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 export const tenantService = {
   /**
    * Limpa o cache em memória (usado após mutações)
    */
-  invalidateCache(): void {
-    cachedTenants = null
-    pendingGetAllPromise = null
+  invalidateCache(id?: string): void {
+    if (id) {
+      cachedSingleTenants.delete(id)
+      pendingGetOnePromises.delete(id)
+      backoffUntil.delete(id)
+      backoffDelayMs.delete(id)
+    } else {
+      cachedTenants = null
+      pendingGetAllPromise = null
+      cachedSingleTenants.clear()
+      pendingGetOnePromises.clear()
+      backoffUntil.clear()
+      backoffDelayMs.clear()
+    }
   },
 
   /**
    * Busca tenants com paginação moderada (batch perPage=100) para evitar sobrecarga e 429,
-   * incluindo deduplicação de chamadas simultâneas e cache curto de 5s.
+   * incluindo deduplicação de chamadas simultâneas e cache.
    */
   async getAll(options?: { forceRefresh?: boolean }): Promise<Tenant[]> {
     const now = Date.now()
@@ -98,6 +120,10 @@ export const tenantService = {
             requestKey: null, // evitar cancelamentos automáticos indesejados
           })
           allRecords.push(...res.items)
+          // Atualiza cache individual para cada tenant também
+          for (const item of res.items) {
+            cachedSingleTenants.set(item.id, { data: item, timestamp: Date.now() })
+          }
           if (page >= res.totalPages || res.items.length === 0) {
             hasMore = false
           } else {
@@ -116,8 +142,99 @@ export const tenantService = {
     return fetchPromise
   },
 
-  async getOne(id: string): Promise<Tenant> {
-    return pb.collection('tenants').getOne<Tenant>(id)
+  /**
+   * Busca um tenant por ID com:
+   * 1. Cache em memória (60s)
+   * 2. Deduplicação de requisições idênticas em vôo (promise sharing)
+   * 3. Backoff exponencial (2s, 4s, 8s até 30s) quando houver 429 ou erro transitório
+   * 4. Suporte a requestKey: null para evitar auto-cancelamentos do PocketBase
+   */
+  async getOne(id: string, options?: { forceRefresh?: boolean }): Promise<Tenant> {
+    if (!id) {
+      throw new Error('Tenant ID obrigatório')
+    }
+
+    const now = Date.now()
+
+    // 1. Verificar cache em memória
+    if (!options?.forceRefresh) {
+      const cached = cachedSingleTenants.get(id)
+      if (cached && now - cached.timestamp < SINGLE_TENANT_CACHE_TTL_MS) {
+        return cached.data
+      }
+    }
+
+    // 2. Verificar se está em período de cooldown/backoff ativo
+    const blockedUntilTime = backoffUntil.get(id) || 0
+    if (now < blockedUntilTime) {
+      const cached = cachedSingleTenants.get(id)
+      if (cached) {
+        // Retorna dado cached mesmo que expirado enquanto aguarda backoff
+        return cached.data
+      }
+      const waitTime = blockedUntilTime - now
+      const err: any = new Error(
+        `Requisições em cooldown (backoff ativo por ${Math.round(waitTime / 1000)}s)`,
+      )
+      err.status = 429
+      err.isCoolingDown = true
+      throw err
+    }
+
+    // 3. Deduplicação em vôo: se já existe requisição em andamento para este id, compartilha
+    if (!options?.forceRefresh) {
+      const pending = pendingGetOnePromises.get(id)
+      if (pending) {
+        return pending
+      }
+    }
+
+    const runWithRetry = async (): Promise<Tenant> => {
+      const maxRetries = 2
+      let attempt = 0
+
+      while (attempt <= maxRetries) {
+        try {
+          const res = await pb.collection('tenants').getOne<Tenant>(id, {
+            requestKey: null,
+          })
+          // Sucesso: reseta backoff para este id e salva no cache
+          backoffUntil.delete(id)
+          backoffDelayMs.delete(id)
+          cachedSingleTenants.set(id, { data: res, timestamp: Date.now() })
+          return res
+        } catch (err: any) {
+          const is429 =
+            err?.status === 429 ||
+            err?.response?.status === 429 ||
+            err?.message?.includes('429') ||
+            err?.message?.includes('Too Many Requests')
+
+          if (is429) {
+            // Calcular próximo delay de backoff exponencial: 2s -> 4s -> 8s -> máx 30s
+            const currentDelay = backoffDelayMs.get(id) || 2000
+            const nextDelay = Math.min(currentDelay * 2, 30000)
+            backoffDelayMs.set(id, nextDelay)
+            backoffUntil.set(id, Date.now() + currentDelay)
+
+            if (attempt < maxRetries) {
+              attempt++
+              await sleep(currentDelay)
+              continue
+            }
+          }
+          throw err
+        }
+      }
+      throw new Error('Falha ao buscar dados do tenant após tentativas com backoff')
+    }
+
+    const promise = runWithRetry().finally(() => {
+      pendingGetOnePromises.delete(id)
+    })
+
+    pendingGetOnePromises.set(id, promise)
+    return promise
   },
 
   async create(data: Partial<Tenant>): Promise<Tenant> {

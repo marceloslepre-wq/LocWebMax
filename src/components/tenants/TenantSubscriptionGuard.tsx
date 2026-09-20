@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react'
-import { AlertCircle, Clock, MessageSquare, LogOut, RefreshCw, ShieldAlert } from 'lucide-react'
+import { useEffect, useState, useRef } from 'react'
+import { AlertCircle, Clock, MessageSquare, LogOut, ShieldAlert } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
 import useMainStore from '@/stores/main'
-import pb from '@/lib/pocketbase/client'
-import { Tenant } from '@/services/tenants'
+import { tenantService, Tenant } from '@/services/tenants'
 
 interface TenantSubscriptionGuardProps {
   children: React.ReactNode
 }
+
+// Intervalo respeitoso de verificação em background (60 segundos)
+const SUBSCRIPTION_CHECK_INTERVAL_MS = 60000
 
 export function TenantSubscriptionGuard({ children }: TenantSubscriptionGuardProps) {
   const { user, signOut } = useAuth()
@@ -17,6 +19,11 @@ export function TenantSubscriptionGuard({ children }: TenantSubscriptionGuardPro
   const [checking, setChecking] = useState(false)
   const [blockedTenant, setBlockedTenant] = useState<Tenant | null>(null)
   const [blockReason, setBlockReason] = useState<'expired' | 'paused' | null>(null)
+
+  // Rastreia a última checagem bem-sucedida ou em andamento para não re-executar em render loops
+  const lastCheckedTenantIdRef = useRef<string | null>(null)
+  const lastCheckTimeRef = useRef<number>(0)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // O Master NUNCA é bloqueado. A operação principal (Hospital Home, sem tenant) NUNCA é bloqueada.
   const isMaster =
@@ -31,46 +38,85 @@ export function TenantSubscriptionGuard({ children }: TenantSubscriptionGuardPro
     if (isMaster || !tenantId) {
       setBlockedTenant(null)
       setBlockReason(null)
+      lastCheckedTenantIdRef.current = null
       return
     }
 
     let isMounted = true
-    const checkSubscription = async () => {
+
+    const evaluateTenantStatus = (tenant: Tenant) => {
+      const now = new Date()
+      const isPaused = tenant.subscription_status === 'paused' || tenant.status === 'inactive'
+      const isExpired =
+        tenant.expiration_date &&
+        new Date(tenant.expiration_date) < now &&
+        tenant.subscription_status !== 'active'
+
+      if (isPaused) {
+        setBlockedTenant(tenant)
+        setBlockReason('paused')
+      } else if (isExpired || tenant.subscription_status === 'expired') {
+        setBlockedTenant(tenant)
+        setBlockReason('expired')
+      } else {
+        setBlockedTenant(null)
+        setBlockReason(null)
+      }
+    }
+
+    const checkSubscription = async (forceRefresh = false) => {
+      const now = Date.now()
+      // Se já verificamos esse mesmo tenant há menos de 60s (e não foi forceRefresh), não dispara rede
+      if (
+        !forceRefresh &&
+        lastCheckedTenantIdRef.current === tenantId &&
+        now - lastCheckTimeRef.current < SUBSCRIPTION_CHECK_INTERVAL_MS
+      ) {
+        return
+      }
+
       try {
         setChecking(true)
-        const tenant = await pb.collection('tenants').getOne<Tenant>(tenantId)
+        // Usa o serviço protegido com cache de 60s, dedup em vôo, requestKey:null e backoff anti-429
+        const tenant = await tenantService.getOne(tenantId, { forceRefresh })
         if (!isMounted) return
 
-        const now = new Date()
-        const isPaused = tenant.subscription_status === 'paused' || tenant.status === 'inactive'
-        const isExpired =
-          tenant.expiration_date &&
-          new Date(tenant.expiration_date) < now &&
-          tenant.subscription_status !== 'active'
-
-        if (isPaused) {
-          setBlockedTenant(tenant)
-          setBlockReason('paused')
-        } else if (isExpired || tenant.subscription_status === 'expired') {
-          setBlockedTenant(tenant)
-          setBlockReason('expired')
-        } else {
+        lastCheckedTenantIdRef.current = tenantId
+        lastCheckTimeRef.current = Date.now()
+        evaluateTenantStatus(tenant)
+      } catch (err: any) {
+        // Log seguro e informativo com supressão de ruído quando for cooldown
+        if (!err?.isCoolingDown) {
+          console.warn('Não foi possível verificar status de assinatura do tenant:', err)
+        }
+        // Em caso de erro de rede ou 429: COMPORTAMENTO FAIL-OPEN.
+        // O usuário não pode ficar bloqueado do dashboard por erro transitório ou rate limit.
+        // Mantém a operação liberada e agenda próxima verificação com backoff respeitoso.
+        if (isMounted) {
           setBlockedTenant(null)
           setBlockReason(null)
         }
-      } catch (err) {
-        console.warn('Não foi possível verificar status de assinatura do tenant:', err)
-        // Em caso de erro de rede, não trava arbitrariamente a operação
-        setBlockedTenant(null)
       } finally {
         if (isMounted) setChecking(false)
       }
     }
 
+    // Executa a verificação
     checkSubscription()
+
+    // Polling respeitoso a cada 60s (apenas 1x por minuto)
+    const interval = setInterval(() => {
+      if (isMounted) {
+        checkSubscription(true)
+      }
+    }, SUBSCRIPTION_CHECK_INTERVAL_MS)
 
     return () => {
       isMounted = false
+      clearInterval(interval)
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+      }
     }
   }, [tenantId, isMaster])
 
