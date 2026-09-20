@@ -287,7 +287,7 @@ export default function LicencasPlanos() {
             event: 'Início da Licença',
             plan: 'Plano Pro',
             period: '31/12/2027',
-            description: 'Início do período de implantação do sistema Novo Locação',
+            description: 'Início do período de implantação do sistema LocWebPro',
             date: '05/07/2026, 16:36',
           },
         ]

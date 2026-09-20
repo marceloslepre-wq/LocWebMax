@@ -119,7 +119,7 @@ export function TenantSubscriptionGuard({ children }: TenantSubscriptionGuardPro
               <Button
                 onClick={() => {
                   const text = encodeURIComponent(
-                    `Olá! Gostaria de renovar a assinatura do sistema Novo Locação para a empresa ${blockedTenant.name} (CNPJ: ${blockedTenant.document || 'N/A'}).`,
+                    `Olá! Gostaria de renovar a assinatura do sistema LocWebPro para a empresa ${blockedTenant.name} (CNPJ: ${blockedTenant.document || 'N/A'}).`,
                   )
                   window.open(
                     `https://api.whatsapp.com/send?phone=5511999999999&text=${text}`,

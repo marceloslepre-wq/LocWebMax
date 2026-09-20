@@ -1,6 +1,6 @@
 {
-  "name": "Gestão de Locação Web",
-  "short_name": "LocaWeb",
+  "name": "LocWebPro",
+  "short_name": "LocWebPro",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

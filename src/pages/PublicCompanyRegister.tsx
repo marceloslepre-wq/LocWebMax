@@ -203,7 +203,7 @@ export default function PublicCompanyRegister() {
               Empresa Cadastrada!
             </CardTitle>
             <CardDescription className="text-slate-600 text-sm mt-1">
-              Bem-vindo ao Novo Locação. O ambiente isolado da empresa{' '}
+              Bem-vindo ao LocWebPro. O ambiente isolado da empresa{' '}
               <strong className="text-slate-900">{successData.companyName}</strong> foi provisionado
               com sucesso.
             </CardDescription>
@@ -286,7 +286,7 @@ export default function PublicCompanyRegister() {
             </div>
             <div>
               <span className="font-extrabold text-base tracking-tight text-slate-900 block leading-tight">
-                Novo Locação
+                LocWebPro
               </span>
               <span className="text-[11px] text-slate-500 font-medium">
                 Sistema Especialista de Gestão
@@ -660,7 +660,7 @@ export default function PublicCompanyRegister() {
       <footer className="border-t border-slate-200 bg-white py-6 px-4 text-center text-xs text-slate-500">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>
-            © {new Date().getFullYear()} Plataforma Multi-Tenant Novo Locação. Todos os direitos
+            © {new Date().getFullYear()} Plataforma Multi-Tenant LocWebPro. Todos os direitos
             reservados.
           </span>
           <div className="flex items-center gap-4 text-slate-400 text-[11px]">

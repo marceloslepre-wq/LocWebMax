@@ -300,13 +300,13 @@ export default function MasterPanel() {
 
   const handleShareWhatsApp = () => {
     const text = encodeURIComponent(
-      `Olá! Segue seu link de acesso exclusivo para criar sua conta no Novo Locação:\n${publicRegisterLink}`,
+      `Olá! Segue seu link de acesso exclusivo para criar sua conta no LocWebPro:\n${publicRegisterLink}`,
     )
     window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank')
   }
 
   const handleShareEmail = () => {
-    const subject = encodeURIComponent('Acesso ao Sistema Novo Locação')
+    const subject = encodeURIComponent('Acesso ao Sistema LocWebPro')
     const body = encodeURIComponent(
       `Olá!\n\nUtilize o link abaixo para criar sua conta e cadastrar sua empresa no sistema:\n${publicRegisterLink}\n\nAbraços!`,
     )
@@ -697,9 +697,7 @@ export default function MasterPanel() {
                 <ShieldCheck className="w-6 h-6" />
               </div>
               <div>
-                <span className="font-extrabold text-lg tracking-tight text-white">
-                  Novo Locação
-                </span>
+                <span className="font-extrabold text-lg tracking-tight text-white">LocWebPro</span>
                 <p className="text-xs text-slate-400">Painel de Administração Global</p>
               </div>
             </div>
@@ -753,9 +751,7 @@ export default function MasterPanel() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-lg tracking-tight text-white">
-                  Novo Locação
-                </span>
+                <span className="font-extrabold text-lg tracking-tight text-white">LocWebPro</span>
                 <Badge className="bg-slate-800/90 text-slate-300 border-slate-700 font-semibold text-[10px] uppercase tracking-wider px-2 py-0.5">
                   MASTER MULTI-TENANT
                 </Badge>
@@ -1288,9 +1284,7 @@ export default function MasterPanel() {
                                 )}
                               </div>
                             </TableCell>
-                            <TableCell className="text-xs text-slate-600 py-3">
-                              Novo Locação
-                            </TableCell>
+                            <TableCell className="text-xs text-slate-600 py-3">LocWebPro</TableCell>
                             <TableCell className="text-xs py-3">
                               <div className="flex items-center gap-1.5 text-[11px] text-slate-700">
                                 <span className="text-slate-500">Contratos:</span>
