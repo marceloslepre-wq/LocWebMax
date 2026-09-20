@@ -783,6 +783,15 @@ export default function MasterPanel() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => navigate('/')}
+              className="h-8 border-slate-700 bg-white/10 hover:bg-white/20 text-white font-medium text-xs shadow-sm transition-colors"
+            >
+              Ir ao Painel Gerencial
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => loadData({ forceRefresh: true })}
               disabled={refreshing}
               className="h-8 border-slate-700 bg-transparent text-slate-200 hover:bg-slate-800 hover:text-white text-xs gap-1.5"
