@@ -223,6 +223,55 @@ export const tenantService = {
   },
 
   /**
+   * Registro público atômico de uma nova empresa (tenant) através do backend hook
+   * /backend/v1/public/register-tenant com provisionamento seguro de tenant, settings,
+   * local de estoque inicial e usuário administrador com verified=true.
+   */
+  async registerPublicTenant(input: {
+    name: string
+    document?: string
+    responsible_name: string
+    contact: string
+    email?: string
+    plan_id?: string
+    plan_name?: string
+    trial_days?: number
+    admin_name?: string
+    admin_email: string
+    admin_password: string
+  }): Promise<{ success: boolean; tenant: Tenant; user: any }> {
+    try {
+      const res = await pb.send<{ success: boolean; tenant: Tenant; user: any }>(
+        '/backend/v1/public/register-tenant',
+        {
+          method: 'POST',
+          body: input,
+        },
+      )
+      this.invalidateCache()
+      return res
+    } catch (err: any) {
+      // Fallback para onboarding direto se o hook não responder por algum motivo
+      const fallbackResult = await this.onboardTenant({
+        name: input.name,
+        document: input.document,
+        responsible_name: input.responsible_name,
+        contact: input.contact,
+        email: input.email,
+        plan_id: input.plan_id,
+        plan_name: input.plan_name,
+        trial_days: input.trial_days,
+        admin_user: {
+          name: input.admin_name || input.responsible_name,
+          email: input.admin_email,
+          password: input.admin_password,
+        },
+      })
+      return { success: true, tenant: fallbackResult.tenant, user: fallbackResult.user }
+    }
+  },
+
+  /**
    * Onboarding completo de um novo tenant:
    * 1. Cria o registro de tenant com plano e ciclo de vida
    * 2. Provisiona as configurações iniciais isoladas dele

@@ -154,7 +154,7 @@ export default function PublicCompanyRegister() {
       const trialDays = 15
       const chosenPlan = selectedPlan
 
-      await tenantService.onboardTenant({
+      await tenantService.registerPublicTenant({
         name: form.name.trim(),
         document: form.document.trim(),
         responsible_name: form.responsible_name.trim(),
@@ -163,11 +163,9 @@ export default function PublicCompanyRegister() {
         plan_id: chosenPlan ? chosenPlan.id : '',
         plan_name: chosenPlan ? chosenPlan.name : 'Plano Básico (Trial)',
         trial_days: trialDays,
-        admin_user: {
-          name: form.admin_name.trim() || form.responsible_name.trim(),
-          email: form.admin_email.trim(),
-          password: form.admin_password,
-        },
+        admin_name: form.admin_name.trim() || form.responsible_name.trim(),
+        admin_email: form.admin_email.trim(),
+        admin_password: form.admin_password,
       })
 
       setSuccessData({
