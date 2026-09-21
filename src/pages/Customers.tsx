@@ -40,7 +40,11 @@ import { useToast } from '@/hooks/use-toast'
 import { TenantOnboardingDialog } from '@/components/tenants/TenantOnboardingDialog'
 
 export default function Customers() {
-  const { globalSearch, settings, activeTenantId, isTenantUser } = useMainStore()
+  const { globalSearch, settings, activeTenantId, isTenantUser, currentUser, supportSession } =
+    useMainStore()
+  const isMaster =
+    !supportSession &&
+    (currentUser?.role === 'Master' || currentUser?.email === 'marceloslepre@gmail.com')
   const { can } = usePermissions()
   const { toast } = useToast()
   const [search, setSearch] = useState('')
@@ -175,7 +179,7 @@ export default function Customers() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          {!isTenantUser && !activeTenantId && (
+          {isMaster && !isTenantUser && !activeTenantId && (
             <TenantOnboardingDialog onSuccess={fetchCustomers} />
           )}
           <ShareCustomerLinkDialog />

@@ -265,8 +265,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   })
 
   // Determinar se o usuário logado pertence a um tenant (fixo) ou é admin geral
-  const userTenantId = (user as any)?.tenant_id || currentUser?.tenant_id || null
-  const isTenantUser = !!userTenantId
+  // Em modo suporte (supportSession ativo), o usuário real é o Master autenticado no pb.authStore (user).
+  // Se supportSession for nula, currentUser deve refletir o usuário real logado.
+  const userTenantId = supportSession
+    ? (user as any)?.tenant_id || null
+    : (user as any)?.tenant_id || currentUser?.tenant_id || null
+  const isTenantUser = !supportSession && !!userTenantId
 
   // activeTenantId efetivo:
   // 1. Se estiver em sessão de suporte ativa, o tenantId do cliente impersonado tem prioridade total.
@@ -285,12 +289,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       targetUser: res.target_user,
       startedAt: new Date().toISOString(),
     }
-    setSupportSession(session)
+
+    // Salva snapshot do currentUser antes de vestir o perfil do cliente
     try {
+      if (currentUser) {
+        sessionStorage.setItem('locwebpro_support_original_user', JSON.stringify(currentUser))
+      }
       sessionStorage.setItem('locwebpro_support_session', JSON.stringify(session))
     } catch {
       /* intentionally ignored */
     }
+
+    setSupportSession(session)
 
     // Sobrescreve imediatamente o currentUser com o contexto do primeiro gestor
     setCurrentUser({
@@ -306,14 +316,103 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return { success: true, tenantName: res.tenant.name }
   }
 
-  const exitSupportAccess = () => {
+  const exitSupportAccess = async () => {
     setSupportSession(null)
+    setSelectedTenantId(null)
+
+    let originalUser: User | null = null
     try {
-      sessionStorage.removeItem('locwebpro_support_session')
+      const storedOriginal = sessionStorage.getItem('locwebpro_support_original_user')
+      if (storedOriginal) {
+        originalUser = JSON.parse(storedOriginal)
+      }
     } catch {
       /* intentionally ignored */
+    } finally {
+      try {
+        sessionStorage.removeItem('locwebpro_support_session')
+        sessionStorage.removeItem('locwebpro_support_original_user')
+      } catch {
+        /* intentionally ignored */
+      }
     }
-    setSelectedTenantId(null)
+
+    // Restaura o usuário autenticado original (sem tenant do cliente acessado)
+    if (originalUser) {
+      setCurrentUser(originalUser)
+    } else if (user) {
+      setCurrentUser({
+        id: (user as any).id,
+        name: (user as any).name || '',
+        email: (user as any).email || '',
+        role: (user as any).role || '',
+        active: (user as any).active ?? true,
+        permissions: (user as any).permissions || [],
+        tenant_id: (user as any).tenant_id || undefined,
+      })
+    }
+
+    // Recarrega dados da operação principal (com activeTenantId nulo)
+    try {
+      const mainFilter = `(tenant_id = "" || tenant_id = null)`
+      const [invData, settingsList, rentData, custData, usersData] = await Promise.all([
+        pb.collection('inventory').getFullList({ filter: mainFilter, sort: '-created' }),
+        pb.collection('settings').getFullList({ filter: mainFilter }),
+        pb.collection('rentals').getFullList({ filter: mainFilter, sort: '-created' }),
+        customerService.getCustomers(null),
+        usersService.getAll(null).catch(() => []),
+      ])
+
+      if (invData) setInventory(invData.map(mapInventoryRow))
+      if (rentData) setRentals(rentData.map(mapRentalRow))
+      if (custData) setCustomers(custData)
+
+      if (Array.isArray(usersData)) {
+        const mapped = usersData.map(mapUserRow)
+        setUsers(mapped.filter((u) => !u.tenant_id))
+        const authEmail = (user as any)?.email
+        const myProfile = mapped.find((u) => u.email === authEmail)
+        if (myProfile) {
+          setCurrentUser(myProfile)
+        }
+      }
+
+      const setData = settingsList?.[0]
+      if (setData) {
+        setSettingsId(setData.id)
+        setSettings({
+          primaryColor: (setData as any).primary_color || '#1e40af',
+          logoUrl: (setData as any).logo_url,
+          contractFileName: (setData as any).contract_file_name,
+          contractTemplateHtml: (setData as any).contract_template_html,
+          salesReceiptTemplateHtml: (setData as any).sales_receipt_template_html,
+          lateFeeType: ((setData as any).late_fee_type as Settings['lateFeeType']) || 'daily',
+          lateFeeValue: Number((setData as any).late_fee_value) || 2,
+          companyName: (setData as any).company_name || '',
+          companyDocument: (setData as any).company_document || '',
+          companyAddress: (setData as any).company_address || '',
+          returnResponsibleName: (setData as any).return_responsible_name || '',
+          landlordRepName: (setData as any).landlord_rep_name || 'Marcelo da Silveira Lepre',
+          landlordRepDocument: (setData as any).landlord_rep_document || '022.862.567-05',
+          witness1Name:
+            (setData as any).witness_1_name || 'Cristiani Aparecida de Fretais Pereira Gomes',
+          witness1Document: (setData as any).witness_1_document || '106.522.497-44',
+          witness2Name: (setData as any).witness_2_name || 'Tatiane Cardoso Rodrigues',
+          witness2Document: (setData as any).witness_2_document || '141.122.117-67',
+          categories: (setData as any).categories || [
+            'Ferramentas',
+            'Equipamentos Pesados',
+            'Acessórios',
+            'Geral',
+          ],
+          locations: (setData as any).locations || [],
+          notificationTemplates: (setData as any).notification_templates || [],
+          tenantId: (setData as any).tenant_id,
+        })
+      }
+    } catch (err) {
+      console.error('Error reloading main operation data on exitSupportAccess:', err)
+    }
   }
 
   const getEffectiveTenantFilter = () => {
@@ -500,18 +599,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             tenant_id: supportSession.tenant.id,
           })
         } else {
-          const myProfile = mappedUsers.find((u) => u.email === (user as any).email)
+          // Sem suporte ativo: sempre recompor o currentUser a partir do usuário autenticado real
+          // garantindo que não haja contaminação residual de tenant_id
+          const authUser = user as any
+          const myProfile = mappedUsers.find((u) => u.email === authUser.email)
           if (myProfile) {
-            setCurrentUser(myProfile)
+            setCurrentUser({
+              ...myProfile,
+              tenant_id: authUser.tenant_id || myProfile.tenant_id || undefined,
+            })
           } else {
             setCurrentUser({
-              id: (user as any).id,
-              name: (user as any).name || '',
-              email: (user as any).email || '',
-              role: (user as any).role || '',
-              active: (user as any).active ?? true,
-              permissions: (user as any).permissions || [],
-              tenant_id: (user as any).tenant_id,
+              id: authUser.id,
+              name: authUser.name || '',
+              email: authUser.email || '',
+              role: authUser.role || '',
+              active: authUser.active ?? true,
+              permissions: authUser.permissions || [],
+              tenant_id: authUser.tenant_id || undefined,
             })
           }
         }
