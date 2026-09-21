@@ -396,95 +396,141 @@ export const tenantService = {
    * 4. Se fornecido admin_user, cria o usuário do tenant
    */
   async onboardTenant(input: TenantOnboardingInput): Promise<{ tenant: Tenant; user?: any }> {
-    const trialDays = input.trial_days ?? 15
-    const now = new Date()
-    const expDate = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000)
-
-    const tenant = await this.create({
-      name: input.name,
-      document: input.document,
-      responsible_name: input.responsible_name,
-      contact: input.contact,
-      email: input.email,
-      status: 'active',
-      plan_id: input.plan_id || '',
-      plan_name: input.plan_name || 'Plano Básico (Trial)',
-      custom_price: input.custom_price,
-      custom_units_limit: input.custom_units_limit,
-      custom_users_limit: input.custom_users_limit,
-      custom_contracts_limit: input.custom_contracts_limit,
-      subscription_status: input.subscription_status || 'trial',
-      start_date: now.toISOString(),
-      expiration_date: expDate.toISOString(),
-      notes: `Provisionado em ${now.toLocaleDateString('pt-BR')}`,
-      history_notes: [
+    // Tentativa primária através do hook seguro de backend restrito exclusivamente ao Master
+    try {
+      const res = await pb.send<{ success: boolean; tenant: Tenant; user: any }>(
+        '/backend/v1/master/provision-tenant',
         {
-          date: now.toISOString(),
-          action: 'Provisionamento de Tenant',
-          notes: `Plano: ${input.plan_name || 'Trial'} (${trialDays} dias de teste)`,
+          method: 'POST',
+          body: {
+            name: input.name,
+            document: input.document,
+            responsible_name: input.responsible_name,
+            contact: input.contact,
+            email: input.email,
+            plan_id: input.plan_id,
+            plan_name: input.plan_name,
+            trial_days: input.trial_days,
+            custom_price: input.custom_price,
+            custom_contracts_limit: input.custom_contracts_limit,
+            subscription_status: input.subscription_status,
+            admin_user: input.admin_user
+              ? {
+                  name: input.admin_user.name || input.responsible_name,
+                  email: input.admin_user.email,
+                  password: input.admin_user.password || 'Skip@Pass',
+                }
+              : undefined,
+          },
         },
-      ],
-    })
+      )
+      this.invalidateCache()
+      return { tenant: res.tenant, user: res.user }
+    } catch (hookErr: any) {
+      // Se for recusa de permissão do backend (403 Forbidden ou erro explícito do Master), repassar o erro imediatamente
+      if (
+        hookErr?.status === 403 ||
+        hookErr?.status === 401 ||
+        hookErr?.message?.includes('Apenas administradores com perfil Master') ||
+        hookErr?.message?.includes('exclusivamente ao usuário Master')
+      ) {
+        throw new Error(
+          hookErr.message ||
+            'Apenas o administrador com perfil Master tem autorização para provisionar novas empresas (tenants).',
+        )
+      }
 
-    // Provisionar settings isoladas para este tenant
-    try {
-      await pb.collection('settings').create({
-        tenant_id: tenant.id,
-        company_name: tenant.name,
-        company_document: tenant.document || '',
-        company_address: '',
-        return_responsible_name: tenant.responsible_name,
-        late_fee_type: 'daily',
-        late_fee_value: 2,
-        primary_color: '#0f766e',
-        categories: ['Geral', 'Equipamentos', 'Acessórios'],
-        notification_templates: [],
+      // Fallback para chamadas com autenticação direta do Master se o hook der 404/500
+      const trialDays = input.trial_days ?? 15
+      const now = new Date()
+      const expDate = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000)
+
+      const tenant = await this.create({
+        name: input.name,
+        document: input.document,
+        responsible_name: input.responsible_name,
+        contact: input.contact,
+        email: input.email,
+        status: 'active',
+        plan_id: input.plan_id || '',
+        plan_name: input.plan_name || 'Plano Básico (Trial)',
+        custom_price: input.custom_price,
+        custom_units_limit: input.custom_units_limit,
+        custom_users_limit: input.custom_users_limit,
+        custom_contracts_limit: input.custom_contracts_limit,
+        subscription_status: input.subscription_status || 'trial',
+        start_date: now.toISOString(),
+        expiration_date: expDate.toISOString(),
+        notes: `Provisionado em ${now.toLocaleDateString('pt-BR')}`,
+        history_notes: [
+          {
+            date: now.toISOString(),
+            action: 'Provisionamento de Tenant',
+            notes: `Plano: ${input.plan_name || 'Trial'} (${trialDays} dias de teste)`,
+          },
+        ],
       })
-    } catch (err) {
-      console.warn('Erro ao provisionar settings do tenant:', err)
-    }
 
-    // Criar local de estoque inicial isolado do tenant
-    try {
-      await pb.collection('locais').create({
-        tenant_id: tenant.id,
-        nome: 'Galpão Principal',
-        endereco: 'Sede da Empresa',
-        ativo: true,
-      })
-    } catch (err) {
-      console.warn('Erro ao provisionar local do tenant:', err)
-    }
-
-    // Se fornecido usuário administrador do tenant, criar com tenant_id (nunca Master)
-    let createdUser = null
-    if (input.admin_user && input.admin_user.email) {
+      // Provisionar settings isoladas para este tenant
       try {
-        const password = input.admin_user.password || 'Skip@Pass'
-        createdUser = await pb.collection('users').create({
-          email: input.admin_user.email,
-          password,
-          passwordConfirm: password,
-          name: input.admin_user.name || input.responsible_name,
-          role: 'Administrador',
-          active: true,
+        await pb.collection('settings').create({
           tenant_id: tenant.id,
-          permissions: [
-            'items:write',
-            'items:delete',
-            'customers:write',
-            'customers:delete',
-            'rentals:manage',
-            'users:manage',
-            'reports:view',
-          ],
+          company_name: tenant.name,
+          company_document: tenant.document || '',
+          company_address: '',
+          return_responsible_name: tenant.responsible_name,
+          late_fee_type: 'daily',
+          late_fee_value: 2,
+          primary_color: '#0f766e',
+          categories: ['Geral', 'Equipamentos', 'Acessórios'],
+          notification_templates: [],
         })
       } catch (err) {
-        console.error('Erro ao provisionar usuário do tenant:', err)
+        console.warn('Erro ao provisionar settings do tenant:', err)
       }
-    }
 
-    this.invalidateCache()
-    return { tenant, user: createdUser }
+      // Criar local de estoque inicial isolado do tenant
+      try {
+        await pb.collection('locais').create({
+          tenant_id: tenant.id,
+          nome: 'Galpão Principal',
+          endereco: 'Sede da Empresa',
+          ativo: true,
+        })
+      } catch (err) {
+        console.warn('Erro ao provisionar local do tenant:', err)
+      }
+
+      // Se fornecido usuário administrador do tenant, criar com tenant_id (nunca Master)
+      let createdUser = null
+      if (input.admin_user && input.admin_user.email) {
+        try {
+          const password = input.admin_user.password || 'Skip@Pass'
+          createdUser = await pb.collection('users').create({
+            email: input.admin_user.email,
+            password,
+            passwordConfirm: password,
+            name: input.admin_user.name || input.responsible_name,
+            role: 'Administrador',
+            active: true,
+            tenant_id: tenant.id,
+            permissions: [
+              'items:write',
+              'items:delete',
+              'customers:write',
+              'customers:delete',
+              'rentals:manage',
+              'users:manage',
+              'reports:view',
+            ],
+          })
+        } catch (err) {
+          console.error('Erro ao provisionar usuário do tenant:', err)
+        }
+      }
+
+      this.invalidateCache()
+      return { tenant, user: createdUser }
+    }
   },
 }

@@ -34,11 +34,15 @@ export default function Layout() {
     supportSession,
   } = useMainStore()
 
+  const isMaster =
+    currentUser?.role === 'Master' || currentUser?.email === 'marceloslepre@gmail.com'
+
   const [tenantsList, setTenantsList] = useState<Tenant[]>([])
   const fetchedTenantsRef = useState(false)
 
   useReactEffect(() => {
-    if (!isTenantUser && !fetchedTenantsRef[0]) {
+    // Apenas Master carrega e tem acesso à lista global de tenants para seleção de ambiente
+    if (isMaster && !isTenantUser && !fetchedTenantsRef[0]) {
       tenantService
         .getAll()
         .then((list) => {
@@ -47,7 +51,7 @@ export default function Layout() {
         })
         .catch(() => {})
     }
-  }, [isTenantUser])
+  }, [isMaster, isTenantUser])
 
   useEffect(() => {
     if (!currentUser) {
@@ -151,7 +155,7 @@ export default function Layout() {
                     Acesso Suporte: <strong>{supportSession.tenant.name}</strong>
                   </span>
                 </div>
-              ) : !isTenantUser ? (
+              ) : isMaster ? (
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/60 border text-xs">
                     <Building2 className="w-3.5 h-3.5 text-primary" />
@@ -180,14 +184,14 @@ export default function Layout() {
                     </Select>
                   </div>
                 </div>
-              ) : (
+              ) : isTenantUser ? (
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 font-medium">
                   <Building2 className="w-3.5 h-3.5" />
                   <span>
                     Ambiente da Empresa: <strong>{settings.companyName || 'Meu Tenant'}</strong>
                   </span>
                 </div>
-              )}
+              ) : null}
 
               <div className="relative max-w-xs hidden md:block w-full">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
