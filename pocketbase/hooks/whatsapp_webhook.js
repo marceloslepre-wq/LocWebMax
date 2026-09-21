@@ -64,17 +64,25 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     return e.json(200, { success: true, skipped: 'bot disabled' })
   }
 
-  // ELIGIBILITY CHECK: Helena only attends clients with an eligible rental
-  // (status = "Ativo" or "Atrasado" and actual_return_date is empty).
-  // If the sender has NO eligible rental, do NOT trigger the Helena agent loop.
+  // ELIGIBILITY CHECK: Helena only attends clients with a rental expiring today or already overdue
+  // (status = "Ativo" or "Atrasado", actual_return_date is empty, and expected_return_date <= today).
+  // If the sender has NO expiring or overdue rental, do NOT trigger the Helena agent loop.
   const phoneDigits = phone.replace(/^55/, '')
   let isEligible = false
   let matchedCustomer = null
   let matchedRental = null
 
-  // 1. Check if phone matches any customer in the system
+  // Brazilian Date (UTC-3: America/Sao_Paulo)
+  const dNow = new Date()
+  const brtMs = dNow.getTime() - 3 * 60 * 60 * 1000
+  const brtDate = new Date(brtMs)
+  const yyyy = brtDate.getUTCFullYear()
+  const mm = String(brtDate.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(brtDate.getUTCDate()).padStart(2, '0')
+  const todayStr = yyyy + '-' + mm + '-' + dd
+
+  // 1. Check if phone matches any customer with contract expiring today or overdue
   try {
-    // Try both full phone with 55 and without 55
     const custFilter =
       'phone_cell ~ "' +
       phoneDigits +
@@ -90,10 +98,13 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     const foundCusts = $app.findRecordsByFilter('customers', custFilter, '-created', 10, 0)
     for (let cIdx = 0; cIdx < foundCusts.length; cIdx++) {
       const cCandidate = foundCusts[cIdx]
+      // Eligible: status Ativo or Atrasado, not yet returned, and expected_return_date <= today
       const rFilter =
         'customer_id = "' +
         cCandidate.id +
-        '" && (status = "Ativo" || status = "Atrasado") && actual_return_date = ""'
+        '" && (status = "Ativo" || status = "Atrasado") && actual_return_date = "" && expected_return_date <= "' +
+        todayStr +
+        ' 23:59:59.999Z"'
       const foundRents = $app.findRecordsByFilter('rentals', rFilter, '-expected_return_date', 1, 0)
       if (foundRents.length > 0) {
         isEligible = true
@@ -134,8 +145,11 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
               lRental.getString('status') === 'Atrasado') &&
             !lRental.getString('actual_return_date')
           ) {
-            isEligible = true
-            matchedRental = lRental
+            const expDate = lRental.getString('expected_return_date') || ''
+            if (expDate && expDate <= todayStr + ' 23:59:59.999Z') {
+              isEligible = true
+              matchedRental = lRental
+            }
           }
         }
       }
@@ -181,7 +195,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
 
     if (shouldSendNotice) {
       const noticeText =
-        'Olá! Este canal é exclusivo para acompanhamento de locações ativas da Hospital Home. Para novas locações, orçamentos ou informações, por favor entre em contato diretamente com a nossa equipe de atendimento na loja. Agradecemos a compreensão!'
+        'Olá! Este canal é exclusivo para acompanhamento de contratos de locação vencendo ou vencidos da Hospital Home. Para novas locações, orçamentos ou informações gerais, por favor entre em contato diretamente com a nossa equipe de atendimento na loja. Agradecemos a compreensão!'
 
       const apiUrl = $secrets.get('EVOLUTION_API_URL') || ''
       const apiKey = $secrets.get('EVOLUTION_API_KEY') || ''

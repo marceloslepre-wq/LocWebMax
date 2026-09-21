@@ -70,7 +70,9 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     return ''
   }
 
-  var buildItemList = function (rentalRec) {
+  var SPECIAL_REFS = ['820', '830', '840', '821', '831', '841', '900', '800', '730', '720', '652']
+
+  var buildRentalItemAnalysis = function (rentalRec) {
     var rentalItems = rentalRec.get('items')
     if (!Array.isArray(rentalItems)) {
       try {
@@ -82,6 +84,9 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     if (!Array.isArray(rentalItems)) rentalItems = []
 
     var itemNames = []
+    var codes = []
+    var hasSpecialProduct = false
+
     for (var j = 0; j < rentalItems.length; j++) {
       var rawItem = rentalItems[j]
       if (!rawItem || typeof rawItem !== 'object') continue
@@ -97,11 +102,15 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
 
       var itemName =
         rawItem.name || rawItem.description || rawItem.productName || rawItem.product_name || ''
+      var itemCode = String(rawItem.code || rawItem.sku || rawItem.product_code || '').trim()
+
       try {
         var inv = $app.findRecordById('inventory', itemId)
         if (inv) {
           var invName = inv.getString('name')
+          var invCode = inv.getString('code')
           if (invName) itemName = invName
+          if (invCode) itemCode = String(invCode).trim()
         }
       } catch (_) {}
       if (!itemName) itemName = 'Item ' + itemId
@@ -112,11 +121,23 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         .replace(/\s+/g, ' ')
         .trim()
 
+      if (itemCode) {
+        codes.push(itemCode)
+        if (SPECIAL_REFS.indexOf(itemCode) !== -1) {
+          hasSpecialProduct = true
+        }
+      }
+
       var displayQty = qty - returnedQty
       if (displayQty < 1) displayQty = qty
       itemNames.push(displayQty + ' x ' + itemName)
     }
-    return itemNames
+
+    return {
+      itemNames: itemNames,
+      codes: codes,
+      hasSpecialProduct: hasSpecialProduct,
+    }
   }
 
   var parseDateToDays = function (dateStr) {
@@ -282,9 +303,21 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
 
     var customerName = customer.getString('name')
     var totalFormatted = formatBRL(rental.get('total') || 0)
-    var itemsList = buildItemList(rental)
-    var itemsStr = itemsList.length > 0 ? itemsList.join(', ') : 'Equipamento Hospitalar'
+    var analysis = buildRentalItemAnalysis(rental)
+    var itemsList = analysis.itemNames
+    var itemsStr = itemsList.length > 0 ? itemsList.join(', ') : 'item locado'
+    var isSpecialProduct = analysis.hasSpecialProduct
     var dateFormatted = formatDate(expectedRaw)
+
+    var renewalOptionsText = isSpecialProduct
+      ? 'oferecer APENAS renovação por 30 dias (produto com locação exclusiva de 30 dias, NÃO oferecer 15 dias)'
+      : 'oferecer renovação por 15 ou 30 dias via PIX'
+
+    var devoluçãoText = isSpecialProduct
+      ? 'informar que para devolução a equipe da loja agendará a retirada/coleta na residência do cliente com ' +
+        returnResp
+      : 'informar que a devolução deve ser feita pelo próprio cliente na loja física, confirmando com ' +
+        returnResp
 
     // Stage description for agent instructions
     var stageInstruction = ''
@@ -292,44 +325,54 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       stageInstruction =
         'Hoje é o dia do vencimento da locação. Apresente-se amigavelmente como Helena do Hospital Home, informe que o contrato ' +
         contractNumber +
-        ' de (' +
+        ' referente a ' +
         itemsStr +
-        ') vence hoje (' +
+        ' vence hoje (' +
         dateFormatted +
-        '). Pergunte com cordialidade se o cliente gostaria de RENOVAR o contrato por mais 15 ou 30 dias (via PIX) ou se prefere fazer a DEVOLUÇÃO (se devolução, informe que quem cuidará do recebimento é ' +
-        returnResp +
-        '). Seja objetiva e simpática.'
+        '). Pergunte com cordialidade se o cliente gostaria de RENOVAR o contrato (' +
+        renewalOptionsText +
+        ') ou se prefere fazer a DEVOLUÇÃO (' +
+        devoluçãoText +
+        '). Seja objetiva, simpática e humanizada.'
     } else if (targetStage === 'atraso_d2') {
       stageInstruction =
         'O contrato ' +
         contractNumber +
-        ' de (' +
+        ' referente a ' +
         itemsStr +
-        ') venceu há 2 dias (' +
+        ' venceu há 2 dias (' +
         dateFormatted +
-        ') e consta como pendente de renovação ou devolução. Comunique com gentileza mas firmeza que precisamos regularizar a situação: ofereça renovar por mais 15 ou 30 dias via PIX ou confirmar a devolução com ' +
-        returnResp +
-        '.'
+        ') e consta como pendente de renovação ou devolução. Comunique com gentileza mas firmeza que precisamos regularizar a situação: opção 1 Renovar (' +
+        renewalOptionsText +
+        ') ou opção 2 Devolução (' +
+        devoluçãoText +
+        ').'
     } else if (targetStage === 'atraso_d4') {
       stageInstruction =
         'O contrato ' +
         contractNumber +
-        ' de (' +
+        ' referente a ' +
         itemsStr +
-        ') venceu há 4 dias (' +
+        ' venceu há 4 dias (' +
         dateFormatted +
-        '). Mensagem mais firme: reforce que o contrato está em atraso, com acúmulo de diárias, e que precisamos definir hoje se haverá renovação (15/30 dias) ou agendamento da devolução com ' +
-        returnResp +
-        ' para evitar medidas adicionais.'
+        '). Mensagem mais firme: reforce que o contrato referente a ' +
+        itemsStr +
+        ' está em atraso com acúmulo de diárias, e que precisamos definir hoje se haverá renovação (' +
+        renewalOptionsText +
+        ') ou devolução (' +
+        devoluçãoText +
+        ') para evitar medidas adicionais.'
     } else if (targetStage === 'atraso_d7') {
       stageInstruction =
         'ÚLTIMO AVISO DE COBRANÇA: O contrato ' +
         contractNumber +
-        ' de (' +
+        ' referente a ' +
         itemsStr +
-        ') está com 7 dias de atraso. Mensagem formal e assertiva: informe que este é o último aviso antes de o contrato ser encaminhado ao setor jurídico/administrativo e protesto. Solicite retorno urgente para renovar (15/30 dias) ou efetuar a devolução imediata com ' +
-        returnResp +
-        '.'
+        ' está com 7 dias de atraso. Mensagem formal e assertiva: informe que este é o último aviso antes de o contrato ser encaminhado ao setor administrativo/jurídico. Solicite retorno urgente para renovar (' +
+        renewalOptionsText +
+        ') ou efetuar a devolução imediata (' +
+        devoluçãoText +
+        ').'
     }
 
     var agentPrompt =
@@ -339,8 +382,13 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       ' sobre a locação nº ' +
       contractNumber +
       '.\n' +
-      'Itens locados: ' +
+      'Nome real dos produtos locados: ' +
       itemsStr +
+      ' (NUNCA substitua por termos genéricos como "Equipamento Hospitalar").\n' +
+      'Produto especial (pesado/coleta na residência e alugado apenas por 30 dias): ' +
+      (isSpecialProduct
+        ? 'SIM (apenas 30 dias na renovação; retirada agendada na residência)'
+        : 'NÃO (renovação por 15 ou 30 dias; devolução pelo cliente na loja)') +
       '.\n' +
       'Valor do contrato atual: ' +
       totalFormatted +
@@ -359,7 +407,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       'Instrução específica:\n' +
       stageInstruction +
       '\n\n' +
-      'Gere a mensagem que deve ser enviada diretamente ao cliente pelo WhatsApp.'
+      'Gere a mensagem que deve ser enviada diretamente ao cliente pelo WhatsApp mantendo a estrutura padrão: negritos, opções 1 Renovar / 2 Devolução, e fecho "Como prefere seguir? 💙".'
 
     // Resolve or create whatsapp conversation thread
     var conversation = null
