@@ -1,16 +1,6 @@
 cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
-  // ATENÇÃO: A rotina diária está PAUSADA a pedido do usuário (Marcelo) para validação
-  // prévia do fluxo de pagamento PIX e mensagens humanizadas.
-  // Para reativar, remova esta trava ou defina HELENA_DAILY_ACTIVE no ambiente/configuração.
-  var HELENA_DAILY_ACTIVE = false
-  if (!HELENA_DAILY_ACTIVE) {
-    $app
-      .logger()
-      .info(
-        'helena_daily_cobranca: cron job pausado aguardando validação do Marcelo. Execução ignorada.',
-      )
-    return
-  }
+  // Cron 0 12 * * * UTC = 09:00:00 BRT (disparo diário às 09h)
+  $app.logger().info('helena_daily_cobranca: iniciando rotina diária de cobrança da Helena')
 
   // Use Brazilian Timezone (UTC-3: America/Sao_Paulo) so calculations match local day
   // Cron 0 12 * * * UTC = 09:00:00 BRT

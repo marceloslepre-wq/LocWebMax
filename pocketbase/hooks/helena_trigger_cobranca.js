@@ -630,7 +630,7 @@ routerAdd(
             ' dias de atraso). Use exatamente este valor no texto: "acumulando diárias no valor de ' +
             lateFeeInfo.formatted +
             '". NUNCA invente outro valor.\n'
-        : '') +
+          : '') +
         (!isSpecialProduct && storeLocationsText
           ? 'ENDEREÇOS DAS LOJAS FÍSICAS PARA DEVOLUÇÃO (caso o cliente escolha devolver):\n' +
             storeLocationsText +
