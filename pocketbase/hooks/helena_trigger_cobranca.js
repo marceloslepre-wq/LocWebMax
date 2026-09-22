@@ -20,10 +20,136 @@ routerAdd(
 
     var sRecords = $app.findRecordsByFilter('settings', "id != ''", '', 1, 0)
     var returnResp = 'a pessoa responsável pela devolução'
+    var defaultLateFeeType = 'daily'
+    var defaultLateFeeValue = 2
     if (sRecords.length > 0) {
       var rawResp = sRecords[0].getString('return_responsible_name') || ''
       if (rawResp.trim()) {
         returnResp = rawResp.trim()
+      }
+      var rawLateType = sRecords[0].getString('late_fee_type') || ''
+      if (rawLateType.trim()) {
+        defaultLateFeeType = rawLateType.trim()
+      }
+      var rawLateVal = sRecords[0].get('late_fee_value')
+      if (rawLateVal !== null && rawLateVal !== undefined && !isNaN(Number(rawLateVal))) {
+        defaultLateFeeValue = Number(rawLateVal)
+      }
+    }
+
+    // Helper to load formatted physical store addresses for a tenant
+    var getStoreLocationsText = function (tenantId) {
+      try {
+        var locFilter = 'ativo = true'
+        if (tenantId) {
+          locFilter += ' && tenant_id = "' + tenantId + '"'
+        } else {
+          locFilter += ' && (tenant_id = "" || tenant_id = null)'
+        }
+        var locs = $app.findRecordsByFilter('locais', locFilter, 'nome', 0, 0)
+        if (!locs || locs.length === 0) {
+          locs = $app.findRecordsByFilter('locais', 'ativo = true', 'nome', 0, 0)
+        }
+        var lines = []
+        for (var lIdx = 0; lIdx < locs.length; lIdx++) {
+          var lRec = locs[lIdx]
+          var rawName = String(lRec.getString('nome') || '').trim()
+          var rawEnd = String(lRec.getString('endereco') || '').trim()
+          if (!rawName || !rawEnd) continue
+
+          var lowerN = rawName.toLowerCase()
+          if (
+            lowerN.indexOf('galpão') !== -1 ||
+            lowerN.indexOf('galpao') !== -1 ||
+            lowerN.indexOf('e-commecer') !== -1 ||
+            lowerN.indexOf('e-commerce') !== -1
+          ) {
+            continue
+          }
+
+          var displayName = rawName.replace(/^Loja\s+/i, '').trim()
+          lines.push('• *' + displayName + '* – ' + rawEnd)
+        }
+        return lines.join('\n')
+      } catch (_) {
+        return ''
+      }
+    }
+
+    // Helper to calculate late fee for overdue days
+    var calculateOverdueFees = function (rentalRec, daysOverdue, tenantId) {
+      if (!daysOverdue || daysOverdue <= 0) {
+        return { total: 0, formatted: '', dailyRate: 0 }
+      }
+
+      var lateType = defaultLateFeeType
+      var lateVal = defaultLateFeeValue
+
+      if (tenantId) {
+        try {
+          var tSettings = $app.findRecordsByFilter(
+            'settings',
+            'tenant_id = "' + tenantId + '"',
+            '-created',
+            1,
+            0,
+          )
+          if (tSettings.length > 0) {
+            var tType = tSettings[0].getString('late_fee_type')
+            if (tType) lateType = tType
+            var tVal = tSettings[0].get('late_fee_value')
+            if (tVal !== null && tVal !== undefined && !isNaN(Number(tVal))) {
+              lateVal = Number(tVal)
+            }
+          }
+        } catch (_) {}
+      }
+
+      var rentalItems = rentalRec.get('items')
+      if (!Array.isArray(rentalItems)) {
+        try {
+          rentalItems = JSON.parse(rentalRec.getString('items') || '[]')
+        } catch (_) {
+          rentalItems = []
+        }
+      }
+      if (!Array.isArray(rentalItems)) rentalItems = []
+
+      var totalDailyRate = 0
+      for (var k = 0; k < rentalItems.length; k++) {
+        var item = rentalItems[k]
+        if (!item || typeof item !== 'object') continue
+        var itemId = String(item.itemId || item.item_id || item.inventory_id || item.id || '')
+        if (itemId === 'freight' || !itemId) continue
+        var qty = Number(item.qty || item.quantity || item.quantidade || 1)
+        if (!qty || qty < 1) qty = 1
+        var retQty = Number(item.returnedQty || item.returned_qty || 0)
+        if (retQty >= qty) continue
+        var activeQty = qty - retQty
+
+        var dPrice = Number(item.dailyPrice || item.daily_price || 0)
+        if (dPrice <= 0 && itemId) {
+          try {
+            var invRec = $app.findRecordById('inventory', itemId)
+            if (invRec) {
+              dPrice = Number(invRec.get('daily_price') || 0)
+            }
+          } catch (_) {}
+        }
+        if (dPrice > 0) {
+          totalDailyRate += dPrice * activeQty
+        }
+      }
+
+      if (totalDailyRate <= 0 || lateType === 'fixed') {
+        totalDailyRate = lateVal > 0 ? lateVal : 2
+      }
+
+      var totalFee = Math.round(totalDailyRate * daysOverdue * 100) / 100
+      return {
+        total: totalFee,
+        dailyRate: totalDailyRate,
+        formatted: formatBRL(totalFee),
       }
     }
 
@@ -391,55 +517,72 @@ routerAdd(
         : 'informar que a devolução deve ser feita pelo próprio cliente na loja física, confirmando com ' +
           returnResp
 
+      var rentalTenantId = rental.getString('tenant_id') || ''
+      var lateFeeInfo = calculateOverdueFees(rental, daysOverdue, rentalTenantId)
+      var storeLocationsText = !isSpecialProduct ? getStoreLocationsText(rentalTenantId) : ''
+
+      var overduePhrase =
+        daysOverdue > 0 && lateFeeInfo.formatted
+          ? 'venceu em *' +
+            dateFormatted +
+            '* e está em atraso há *' +
+            daysOverdue +
+            ' dias*, acumulando diárias no valor de *' +
+            lateFeeInfo.formatted +
+            '*. Precisamos definir hoje como proceder para evitar novas cobranças.'
+          : 'venceu em *' +
+            dateFormatted +
+            '* e está em atraso com acúmulo de diárias. Precisamos definir hoje como proceder.'
+
       var stageInstruction = ''
       if (targetStage === 'vencimento_hoje') {
         stageInstruction =
-          'Hoje é o dia do vencimento da locação. Apresente-se amigavelmente como Helena do Hospital Home, informe que o contrato ' +
+          'Hoje é o dia do vencimento da locação. Apresente-se amigavelmente como Helena do Hospital Home, informe que o contrato *' +
           contractNumber +
-          ' referente a ' +
+          '*, referente ao *' +
           itemsStr +
-          ' vence hoje (' +
+          '*, vence hoje (*' +
           dateFormatted +
-          '). Pergunte com cordialidade se o cliente gostaria de RENOVAR o contrato (' +
+          '*). Pergunte com cordialidade se o cliente gostaria de RENOVAR o contrato (' +
           renewalOptionsText +
           ') ou se prefere fazer a DEVOLUÇÃO (' +
           devoluçãoText +
           '). Seja objetiva, simpática e humanizada.'
       } else if (targetStage === 'atraso_d2') {
         stageInstruction =
-          'O contrato ' +
+          'O contrato *' +
           contractNumber +
-          ' referente a ' +
+          '*, referente ao *' +
           itemsStr +
-          ' venceu há 2 dias (' +
-          dateFormatted +
-          ') e consta como pendente de renovação ou devolução. Comunique com gentileza mas firmeza que precisamos regularizar a situação: opção 1 Renovar (' +
+          '*, ' +
+          overduePhrase +
+          ' Comunique com gentileza mas firmeza que precisamos regularizar a situação: opção 1 Renovar (' +
           renewalOptionsText +
           ') ou opção 2 Devolução (' +
           devoluçãoText +
           ').'
       } else if (targetStage === 'atraso_d4') {
         stageInstruction =
-          'O contrato ' +
+          'O contrato *' +
           contractNumber +
-          ' referente a ' +
+          '*, referente ao *' +
           itemsStr +
-          ' venceu há 4 dias (' +
-          dateFormatted +
-          '). Mensagem mais firme: reforce que o contrato referente a ' +
-          itemsStr +
-          ' está em atraso com acúmulo de diárias, e que precisamos definir hoje se haverá renovação (' +
+          '*, ' +
+          overduePhrase +
+          ' Mensagem firme e clara: reforce que precisamos definir hoje se haverá renovação (' +
           renewalOptionsText +
           ') ou devolução (' +
           devoluçãoText +
           ') para evitar medidas adicionais.'
       } else {
         stageInstruction =
-          'ÚLTIMO AVISO DE COBRANÇA: O contrato ' +
+          'ÚLTIMO AVISO DE COBRANÇA: O contrato *' +
           contractNumber +
-          ' referente a ' +
+          '*, referente ao *' +
           itemsStr +
-          ' está com atraso significativo. Mensagem formal e assertiva: informe que este é o último aviso antes de o contrato ser encaminhado ao setor administrativo/jurídico. Solicite retorno urgente para renovar (' +
+          '*, ' +
+          overduePhrase +
+          ' Mensagem formal e assertiva: informe que este é o último aviso antes de o contrato ser encaminhado ao setor administrativo/jurídico. Solicite retorno urgente para renovar (' +
           renewalOptionsText +
           ') ou efetuar a devolução imediata (' +
           devoluçãoText +
@@ -478,12 +621,26 @@ routerAdd(
         targetStage +
         ' (dias de atraso: ' +
         daysOverdue +
-        ').\n\n' +
-        'AVISO DE SEGURANÇA: NUNCA invente chave PIX estática (CNPJ, etc.). O PIX é gerado automaticamente pelo sistema quando o cliente responder escolhendo renovar.\n\n' +
+        ').\n' +
+        (daysOverdue > 0 && lateFeeInfo.formatted
+          ? 'VALOR EXATO DAS DIÁRIAS DE ATRASO ACUMULADAS: ' +
+            lateFeeInfo.formatted +
+            ' (' +
+            daysOverdue +
+            ' dias de atraso). Use exatamente este valor no texto: "acumulando diárias no valor de ' +
+            lateFeeInfo.formatted +
+            '". NUNCA invente outro valor.\n'
+        : '') +
+        (!isSpecialProduct && storeLocationsText
+          ? 'ENDEREÇOS DAS LOJAS FÍSICAS PARA DEVOLUÇÃO (caso o cliente escolha devolver):\n' +
+            storeLocationsText +
+            '\n'
+          : '') +
+        '\nAVISO DE SEGURANÇA: NUNCA invente chave PIX estática (CNPJ, etc.). O PIX é gerado automaticamente pelo sistema quando o cliente responder escolhendo renovar.\n\n' +
         'Instrução específica:\n' +
         stageInstruction +
         '\n\n' +
-        'Gere a mensagem que deve ser enviada diretamente ao cliente pelo WhatsApp mantendo a estrutura padrão: negritos, opções 1 Renovar / 2 Devolução, e fecho "Como prefere seguir? 💙".'
+        'Gere a mensagem que deve ser enviada diretamente ao cliente pelo WhatsApp mantendo a estrutura padrão: negritos, opções 1 Renovar / 2 Devolução, e fecho "*Como prefere seguir?* 💙".'
 
       var conversation = null
       var conversationId = null

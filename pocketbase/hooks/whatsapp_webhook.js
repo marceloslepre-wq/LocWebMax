@@ -830,6 +830,44 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
   var dateExp = matchedRental ? formatDate(matchedRental.getString('expected_return_date')) : ''
   var pNames = rAnalysis ? rAnalysis.itemNames.join(', ') : 'item locado'
 
+  var rentalTenantId = matchedRental ? matchedRental.getString('tenant_id') || '' : ''
+  var storeLocationsText = ''
+  if (!isSpecial) {
+    try {
+      var locFilter = 'ativo = true'
+      if (rentalTenantId) {
+        locFilter += ' && tenant_id = "' + rentalTenantId + '"'
+      } else {
+        locFilter += ' && (tenant_id = "" || tenant_id = null)'
+      }
+      var locs = $app.findRecordsByFilter('locais', locFilter, 'nome', 0, 0)
+      if (!locs || locs.length === 0) {
+        locs = $app.findRecordsByFilter('locais', 'ativo = true', 'nome', 0, 0)
+      }
+      var lines = []
+      for (var lIdx = 0; lIdx < locs.length; lIdx++) {
+        var lRec = locs[lIdx]
+        var rawName = String(lRec.getString('nome') || '').trim()
+        var rawEnd = String(lRec.getString('endereco') || '').trim()
+        if (!rawName || !rawEnd) continue
+
+        var lowerN = rawName.toLowerCase()
+        if (
+          lowerN.indexOf('galpão') !== -1 ||
+          lowerN.indexOf('galpao') !== -1 ||
+          lowerN.indexOf('e-commecer') !== -1 ||
+          lowerN.indexOf('e-commerce') !== -1
+        ) {
+          continue
+        }
+
+        var displayName = rawName.replace(/^Loja\s+/i, '').trim()
+        lines.push('• *' + displayName + '* – ' + rawEnd)
+      }
+      storeLocationsText = lines.join('\n')
+    } catch (_) {}
+  }
+
   var promptWithContext =
     '[SISTEMA - CONTEXTO DO CONTRATO DO CLIENTE]\n' +
     'Cliente: ' +
@@ -854,6 +892,11 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     (isSpecial
       ? '- 15 dias: NÃO DISPONÍVEL (produto especial de 30 dias)\n'
       : '- 15 dias: ' + (rAnalysis ? rAnalysis.renewal15Formatted : 'Consulte a loja') + '\n') +
+    (!isSpecial && storeLocationsText
+      ? 'ENDEREÇOS DAS LOJAS FÍSICAS PARA DEVOLUÇÃO (caso o cliente escolha devolver):\n' +
+        storeLocationsText +
+        '\n'
+      : '') +
     'REGRA CRÍTICA DE PAGAMENTO: NUNCA forneça chave PIX ou CNPJ. Se o cliente pedir PIX ou quiser renovar, diga que o sistema está gerando o QR Code PIX oficial Mercado Pago com o valor exato.\n\n' +
     'Mensagem recebida do cliente:\n"' +
     messageText +
