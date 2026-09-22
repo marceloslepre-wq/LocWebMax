@@ -77,32 +77,12 @@ routerAdd(
     }
 
     // Helper to calculate late fee for overdue days
+    // REGRA DO USUÁRIO: O valor da diária de atraso NÃO é taxa fixa global — é a soma do
+    // "Valor Diário (R$)" real de cada item locado ativo no Estoque x quantidade ativa em posse do cliente.
+    // Se nenhum item tiver valor diário resolvível no Estoque, NÃO exibir valor genérico inventado.
     var calculateOverdueFees = function (rentalRec, daysOverdue, tenantId) {
       if (!daysOverdue || daysOverdue <= 0) {
-        return { total: 0, formatted: '', dailyRate: 0 }
-      }
-
-      var lateType = defaultLateFeeType
-      var lateVal = defaultLateFeeValue
-
-      if (tenantId) {
-        try {
-          var tSettings = $app.findRecordsByFilter(
-            'settings',
-            'tenant_id = "' + tenantId + '"',
-            '-created',
-            1,
-            0,
-          )
-          if (tSettings.length > 0) {
-            var tType = tSettings[0].getString('late_fee_type')
-            if (tType) lateType = tType
-            var tVal = tSettings[0].get('late_fee_value')
-            if (tVal !== null && tVal !== undefined && !isNaN(Number(tVal))) {
-              lateVal = Number(tVal)
-            }
-          }
-        } catch (_) {}
+        return { total: 0, formatted: '', dailyRate: 0, hasCalculatedValue: false }
       }
 
       var rentalItems = rentalRec.get('items')
@@ -116,33 +96,88 @@ routerAdd(
       if (!Array.isArray(rentalItems)) rentalItems = []
 
       var totalDailyRate = 0
+      var resolvedItemsCount = 0
+
       for (var k = 0; k < rentalItems.length; k++) {
         var item = rentalItems[k]
         if (!item || typeof item !== 'object') continue
         var itemId = String(item.itemId || item.item_id || item.inventory_id || item.id || '')
-        if (itemId === 'freight' || !itemId) continue
+        if (itemId === 'freight' || itemId === '' || itemId === 'undefined') continue
+
         var qty = Number(item.qty || item.quantity || item.quantidade || 1)
         if (!qty || qty < 1) qty = 1
         var retQty = Number(item.returnedQty || item.returned_qty || 0)
-        if (retQty >= qty) continue
+        if (!retQty || retQty < 0) retQty = 0
+        if (retQty >= qty) continue // item já totalmente devolvido
         var activeQty = qty - retQty
 
-        var dPrice = Number(item.dailyPrice || item.daily_price || 0)
-        if (dPrice <= 0 && itemId) {
+        var itemName = item.name || item.description || item.productName || item.product_name || ''
+        var itemCode = String(item.code || item.sku || item.product_code || '').trim()
+
+        var inv = null
+        if (itemId) {
           try {
-            var invRec = $app.findRecordById('inventory', itemId)
-            if (invRec) {
-              dPrice = Number(invRec.get('daily_price') || 0)
+            inv = $app.findRecordById('inventory', itemId)
+          } catch (_) {}
+        }
+
+        if (!inv && itemCode) {
+          try {
+            var foundByCode = $app.findRecordsByFilter(
+              'inventory',
+              'code = "' + itemCode + '"',
+              '-created',
+              1,
+              0,
+            )
+            if (foundByCode.length > 0) inv = foundByCode[0]
+          } catch (_) {}
+        }
+
+        if (!inv && itemName) {
+          try {
+            var cleanSearch = itemName.replace(/[^\w\s]/gi, '').trim()
+            if (cleanSearch) {
+              var foundByName = $app.findRecordsByFilter(
+                'inventory',
+                'name ~ "' + cleanSearch + '"',
+                '-created',
+                1,
+                0,
+              )
+              if (foundByName.length > 0) inv = foundByName[0]
             }
           } catch (_) {}
         }
+
+        var dPrice = 0
+        if (inv) {
+          dPrice = Number(inv.get('daily_price') || 0)
+          if (dPrice <= 0) {
+            var mPrice = Number(inv.get('monthly_price') || 0)
+            if (mPrice > 0) {
+              dPrice = Math.round((mPrice / 30) * 10000) / 10000
+            }
+          }
+        }
+
+        if (dPrice <= 0) {
+          dPrice = Number(item.dailyPrice || item.daily_price || 0)
+        }
+
         if (dPrice > 0) {
           totalDailyRate += dPrice * activeQty
+          resolvedItemsCount++
         }
       }
 
-      if (totalDailyRate <= 0 || lateType === 'fixed') {
-        totalDailyRate = lateVal > 0 ? lateVal : 2
+      if (resolvedItemsCount === 0 || totalDailyRate <= 0) {
+        return {
+          total: 0,
+          dailyRate: 0,
+          formatted: '',
+          hasCalculatedValue: false,
+        }
       }
 
       var totalFee = Math.round(totalDailyRate * daysOverdue * 100) / 100
@@ -150,9 +185,9 @@ routerAdd(
         total: totalFee,
         dailyRate: totalDailyRate,
         formatted: formatBRL(totalFee),
+        hasCalculatedValue: true,
       }
     }
-
     var apiUrl = $secrets.get('EVOLUTION_API_URL') || ''
     var apiKey = $secrets.get('EVOLUTION_API_KEY') || ''
     var instance = $secrets.get('EVOLUTION_INSTANCE') || ''
@@ -532,7 +567,9 @@ routerAdd(
             '*. Precisamos definir hoje como proceder para evitar novas cobranças.'
           : 'venceu em *' +
             dateFormatted +
-            '* e está em atraso com acúmulo de diárias. Precisamos definir hoje como proceder.'
+            '* e está em atraso há *' +
+            daysOverdue +
+            ' dias*. Precisamos definir hoje como proceder para evitar novas cobranças.'
 
       var stageInstruction = ''
       if (targetStage === 'vencimento_hoje') {
@@ -623,13 +660,13 @@ routerAdd(
         daysOverdue +
         ').\n' +
         (daysOverdue > 0 && lateFeeInfo.formatted
-          ? 'VALOR EXATO DAS DIÁRIAS DE ATRASO ACUMULADAS: ' +
+          ? 'VALOR EXATO DAS DIÁRIAS DE ATRASO ACUMULADAS (calculado pela soma das diárias reais dos produtos no estoque): ' +
             lateFeeInfo.formatted +
             ' (' +
             daysOverdue +
             ' dias de atraso). Use exatamente este valor no texto: "acumulando diárias no valor de ' +
             lateFeeInfo.formatted +
-            '". NUNCA invente outro valor.\n'
+            '". NUNCA recalcule ou invente outro valor.\n'
           : '') +
         (!isSpecialProduct && storeLocationsText
           ? 'ENDEREÇOS DAS LOJAS FÍSICAS PARA DEVOLUÇÃO (caso o cliente escolha devolver):\n' +
