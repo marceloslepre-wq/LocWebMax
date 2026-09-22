@@ -10,6 +10,7 @@ routerAdd(
     var amount = Number(body.amount || 0)
     var payerEmail = body.payer_email || ''
     var description = body.description || ''
+    var renewalDays = Number(body.days || body.renewal_days || 0)
 
     if (!rentalId) {
       throw new BadRequestError('Dados invalidos', {
@@ -57,6 +58,7 @@ routerAdd(
     }
 
     var contractNumber = rental.getString('contract_number') || rentalId.substring(0, 8)
+    var tenantId = rental.getString('tenant_id') || ''
 
     if (!payerEmail) {
       try {
@@ -66,7 +68,9 @@ routerAdd(
     }
 
     if (!description) {
-      description = 'Locacao ' + contractNumber
+      description = renewalDays
+        ? 'Renovação ' + renewalDays + ' dias - Locação ' + contractNumber
+        : 'Locacao ' + contractNumber
     }
 
     var accessToken = $secrets.get('MERCADO_PAGO_ACCESS_TOKEN') || ''
@@ -80,13 +84,21 @@ routerAdd(
       notificationUrl = siteUrl.replace(/\/+$/, '') + '/backend/v1/payments/mp-webhook'
     }
 
-    var expirationDate = new Date(Date.now() + 30 * 60 * 1000)
+    // 24 hours expiration
+    var expirationDate = new Date(Date.now() + 24 * 60 * 60 * 1000)
+
+    var externalRef = JSON.stringify({
+      rental_id: rentalId,
+      tenant_id: tenantId,
+      days: renewalDays || 30,
+      contract_number: contractNumber,
+    })
 
     var paymentData = {
       transaction_amount: amount,
       description: description,
       payment_method_id: 'pix',
-      external_reference: rentalId,
+      external_reference: externalRef,
       date_of_expiration: expirationDate.toISOString(),
     }
 
@@ -199,6 +211,7 @@ routerAdd(
       payment.set('pix_qr_code', pixQrCode)
       payment.set('pix_copy_paste', pixCopyPaste)
       payment.set('pix_expiration', pixExpiration)
+      if (tenantId) payment.set('tenant_id', tenantId)
       txApp.save(payment)
 
       txResult.duplicate = false

@@ -1,4 +1,17 @@
 cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
+  // ATENÇÃO: A rotina diária está PAUSADA a pedido do usuário (Marcelo) para validação
+  // prévia do fluxo de pagamento PIX e mensagens humanizadas.
+  // Para reativar, remova esta trava ou defina HELENA_DAILY_ACTIVE no ambiente/configuração.
+  var HELENA_DAILY_ACTIVE = false
+  if (!HELENA_DAILY_ACTIVE) {
+    $app
+      .logger()
+      .info(
+        'helena_daily_cobranca: cron job pausado aguardando validação do Marcelo. Execução ignorada.',
+      )
+    return
+  }
+
   // Use Brazilian Timezone (UTC-3: America/Sao_Paulo) so calculations match local day
   // Cron 0 12 * * * UTC = 09:00:00 BRT
   var getBrtDate = function () {
@@ -72,6 +85,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
 
   var SPECIAL_REFS = ['820', '830', '840', '821', '831', '841', '900', '800', '730', '720', '652']
 
+  // Robust rental item and price analysis
   var buildRentalItemAnalysis = function (rentalRec) {
     var rentalItems = rentalRec.get('items')
     if (!Array.isArray(rentalItems)) {
@@ -86,6 +100,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     var itemNames = []
     var codes = []
     var hasSpecialProduct = false
+    var totalMonthlyPrice = 0
 
     for (var j = 0; j < rentalItems.length; j++) {
       var rawItem = rentalItems[j]
@@ -99,20 +114,69 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       var returnedQty = Number(rawItem.returnedQty || rawItem.returned_qty || 0)
       if (!returnedQty || returnedQty < 0) returnedQty = 0
       if (returnedQty >= qty) continue // already returned
+      var activeQty = qty - returnedQty
 
       var itemName =
         rawItem.name || rawItem.description || rawItem.productName || rawItem.product_name || ''
       var itemCode = String(rawItem.code || rawItem.sku || rawItem.product_code || '').trim()
 
-      try {
-        var inv = $app.findRecordById('inventory', itemId)
-        if (inv) {
-          var invName = inv.getString('name')
-          var invCode = inv.getString('code')
-          if (invName) itemName = invName
-          if (invCode) itemCode = String(invCode).trim()
-        }
-      } catch (_) {}
+      var inv = null
+      if (itemId) {
+        try {
+          inv = $app.findRecordById('inventory', itemId)
+        } catch (_) {}
+      }
+
+      if (!inv && itemCode) {
+        try {
+          var foundByCode = $app.findRecordsByFilter(
+            'inventory',
+            'code = "' + itemCode + '"',
+            '-created',
+            1,
+            0,
+          )
+          if (foundByCode.length > 0) inv = foundByCode[0]
+        } catch (_) {}
+      }
+
+      if (!inv && itemName) {
+        try {
+          var cleanSearch = itemName.replace(/[^\w\s]/gi, '').trim()
+          if (cleanSearch) {
+            var foundByName = $app.findRecordsByFilter(
+              'inventory',
+              'name ~ "' + cleanSearch + '"',
+              '-created',
+              1,
+              0,
+            )
+            if (foundByName.length > 0) inv = foundByName[0]
+          }
+        } catch (_) {}
+      }
+
+      var itemMonthly = 0
+      if (inv) {
+        var invName = inv.getString('name')
+        var invCode = String(inv.getString('code') || '').trim()
+        if (invName) itemName = invName
+        if (invCode) itemCode = invCode
+        itemMonthly = Number(inv.get('monthly_price') || 0)
+      } else {
+        itemMonthly = Number(rawItem.monthlyPrice || rawItem.monthly_price || 0)
+      }
+
+      // Fallback: if monthly_price is 0, estimate from dailyPrice * 30
+      if (itemMonthly <= 0) {
+        var dailyP = Number(
+          rawItem.dailyPrice || rawItem.daily_price || (inv ? inv.get('daily_price') : 0) || 0,
+        )
+        if (dailyP > 0) itemMonthly = Math.round(dailyP * 30)
+      }
+
+      totalMonthlyPrice += itemMonthly * activeQty
+
       if (!itemName) itemName = 'Item ' + itemId
 
       itemName = String(itemName)
@@ -123,20 +187,33 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
 
       if (itemCode) {
         codes.push(itemCode)
-        if (SPECIAL_REFS.indexOf(itemCode) !== -1) {
-          hasSpecialProduct = true
+        for (var sIdx = 0; sIdx < SPECIAL_REFS.length; sIdx++) {
+          var sRef = SPECIAL_REFS[sIdx]
+          if (
+            itemCode === sRef ||
+            itemCode.indexOf(sRef) !== -1 ||
+            String(rawItem.name || '').indexOf(sRef) !== -1
+          ) {
+            hasSpecialProduct = true
+            break
+          }
         }
       }
 
-      var displayQty = qty - returnedQty
-      if (displayQty < 1) displayQty = qty
-      itemNames.push(displayQty + ' x ' + itemName)
+      itemNames.push((activeQty > 1 ? activeQty + ' x ' : '') + itemName)
     }
+
+    var renewal30 = Math.round(totalMonthlyPrice * 100) / 100
+    var renewal15 = Math.round((totalMonthlyPrice / 2) * 100) / 100
 
     return {
       itemNames: itemNames,
       codes: codes,
       hasSpecialProduct: hasSpecialProduct,
+      renewal30: renewal30,
+      renewal15: renewal15,
+      renewal30Formatted: formatBRL(renewal30),
+      renewal15Formatted: formatBRL(renewal15),
     }
   }
 
@@ -182,7 +259,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     var contractNumber = rental.getString('contract_number') || rentalId
     var actualReturn = rental.getString('actual_return_date')
 
-    // Double check: if returned, sold or not active/atrasado, skip!
     if (
       actualReturn ||
       currentStatus === 'Devolvido' ||
@@ -209,10 +285,8 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     } else if (daysOverdue === 7) {
       targetStage = 'atraso_d7'
     } else if (daysOverdue > 7) {
-      // Check if already marked as esgotado/repassado_loja
       targetStage = 'esgotado'
     } else {
-      // Not a trigger day (e.g. daysOverdue = 1, 3, 5, 6)
       continue
     }
 
@@ -231,8 +305,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       }
     } catch (_) {}
 
-    // Check anti-duplication:
-    // 1) If already contacted today for this rental, skip!
+    // Anti-duplication check:
     if (cobrancaRec) {
       var lastDate = cobrancaRec.getString('last_contact_date')
       if (lastDate === todayStr) {
@@ -241,7 +314,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
           .info('helena_daily_cobranca: already contacted today', 'contract', contractNumber)
         continue
       }
-      // 2) If already reached this stage or beyond
       var currentStage = cobrancaRec.getString('stage')
       if (currentStage === targetStage) {
         continue
@@ -251,7 +323,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       }
     }
 
-    // Handle final stage escalation (+7 days exceeded): flag to store team
     if (targetStage === 'esgotado') {
       try {
         var pendCol = $app.findCollectionByNameOrId('helena_pendencias')
@@ -287,7 +358,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       continue
     }
 
-    // Customer lookup
     var customer = null
     try {
       customer = $app.findRecordById('customers', rental.getString('customer_id'))
@@ -302,7 +372,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     if (!sanitizedPhone) continue
 
     var customerName = customer.getString('name')
-    var totalFormatted = formatBRL(rental.get('total') || 0)
     var analysis = buildRentalItemAnalysis(rental)
     var itemsList = analysis.itemNames
     var itemsStr = itemsList.length > 0 ? itemsList.join(', ') : 'item locado'
@@ -310,8 +379,14 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     var dateFormatted = formatDate(expectedRaw)
 
     var renewalOptionsText = isSpecialProduct
-      ? 'oferecer APENAS renovação por 30 dias (produto com locação exclusiva de 30 dias, NÃO oferecer 15 dias)'
-      : 'oferecer renovação por 15 ou 30 dias via PIX'
+      ? 'oferecer APENAS renovação por 30 dias no valor exato de ' +
+        analysis.renewal30Formatted +
+        ' (produto com locação exclusiva de 30 dias, NUNCA oferecer 15 dias)'
+      : 'oferecer renovação por 15 dias (' +
+        analysis.renewal15Formatted +
+        ') ou 30 dias (' +
+        analysis.renewal30Formatted +
+        ') via PIX'
 
     var devoluçãoText = isSpecialProduct
       ? 'informar que para devolução a equipe da loja agendará a retirada/coleta na residência do cliente com ' +
@@ -319,7 +394,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       : 'informar que a devolução deve ser feita pelo próprio cliente na loja física, confirmando com ' +
         returnResp
 
-    // Stage description for agent instructions
     var stageInstruction = ''
     if (targetStage === 'vencimento_hoje') {
       stageInstruction =
@@ -390,10 +464,14 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         ? 'SIM (apenas 30 dias na renovação; retirada agendada na residência)'
         : 'NÃO (renovação por 15 ou 30 dias; devolução pelo cliente na loja)') +
       '.\n' +
-      'Valor do contrato atual: ' +
-      totalFormatted +
-      '.\n' +
-      'Data de vencimento: ' +
+      'VALORES EXATOS DE RENOVAÇÃO DO ESTOQUE (MANDATÓRIO: NUNCA INVENTE OUTROS VALORES OU CHAVE PIX):\n' +
+      '- 30 dias: ' +
+      analysis.renewal30Formatted +
+      '\n' +
+      (isSpecialProduct
+        ? '- 15 dias: NÃO PERMITIDO PARA ESTE PRODUTO\n'
+        : '- 15 dias: ' + analysis.renewal15Formatted + '\n') +
+      'Data de vencimento do contrato: ' +
       dateFormatted +
       '.\n' +
       'Nome da responsável por devoluções: ' +
@@ -404,12 +482,12 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       ' (dias de atraso: ' +
       daysOverdue +
       ').\n\n' +
+      'AVISO DE SEGURANÇA: NUNCA invente chave PIX estática (CNPJ, etc.). O PIX é gerado automaticamente pelo sistema quando o cliente responder escolhendo renovar.\n\n' +
       'Instrução específica:\n' +
       stageInstruction +
       '\n\n' +
       'Gere a mensagem que deve ser enviada diretamente ao cliente pelo WhatsApp mantendo a estrutura padrão: negritos, opções 1 Renovar / 2 Devolução, e fecho "Como prefere seguir? 💙".'
 
-    // Resolve or create whatsapp conversation thread
     var conversation = null
     var conversationId = null
     try {
@@ -427,13 +505,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     } catch (errChat) {
       var errDailyMsg = errChat ? errChat.message || String(errChat) : 'unknown error'
       var errDailyStack = errChat && errChat.stack ? String(errChat.stack) : ''
-      console.error(
-        'helena_daily_cobranca: agent call failed for contract ' +
-          contractNumber +
-          ': ' +
-          errDailyMsg +
-          (errDailyStack ? ' | stack: ' + errDailyStack : ''),
-      )
       $app
         .logger()
         .error(
@@ -442,8 +513,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
           contractNumber,
           'err',
           errDailyMsg,
-          'stack',
-          errDailyStack,
         )
       continue
     }
@@ -475,7 +544,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         )
     }
 
-    // Multi-tenant instance resolution: check if rental belongs to specific tenant
     var targetInstance = instance
     var rentalTenantId = rental.getString('tenant_id') || ''
     if (rentalTenantId) {
@@ -488,7 +556,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       } catch (_) {}
     }
 
-    // Send WhatsApp via Evolution API
     var endpoint = apiUrl.replace(/\/+$/, '') + '/message/sendText/' + targetInstance
     var sendOk = false
     try {
@@ -507,16 +574,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       })
       if (res.statusCode >= 200 && res.statusCode < 300) {
         sendOk = true
-      } else {
-        $app
-          .logger()
-          .error(
-            'helena_daily_cobranca: Evolution API error',
-            'status',
-            res.statusCode,
-            'body',
-            String(res.body || ''),
-          )
       }
     } catch (errHttp) {
       $app
@@ -528,7 +585,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         )
     }
 
-    // Save or update helena_cobranca tracking record
     try {
       var cobCol = $app.findCollectionByNameOrId('helena_cobranca')
       var recToSave = cobrancaRec || new Record(cobCol)
@@ -542,16 +598,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       recToSave.set('status', sendOk ? 'em_conversa' : 'falha_envio')
       recToSave.set('notes', 'Contato automático via Helena (' + targetStage + ')')
       $app.save(recToSave)
-
-      $app
-        .logger()
-        .info(
-          'helena_daily_cobranca: success for contract',
-          'contract',
-          contractNumber,
-          'stage',
-          targetStage,
-        )
     } catch (errSaveCob) {
       $app
         .logger()
@@ -562,7 +608,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         )
     }
 
-    // If target stage was atraso_d7, also create pendência for the store
     if (targetStage === 'atraso_d7') {
       try {
         var pendCol2 = $app.findCollectionByNameOrId('helena_pendencias')

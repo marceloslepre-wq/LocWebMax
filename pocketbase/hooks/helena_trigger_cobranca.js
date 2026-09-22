@@ -66,6 +66,7 @@ routerAdd(
 
     var SPECIAL_REFS = ['820', '830', '840', '821', '831', '841', '900', '800', '730', '720', '652']
 
+    // Robust rental item and price analysis
     var buildRentalItemAnalysis = function (rentalRec) {
       var rentalItems = rentalRec.get('items')
       if (!Array.isArray(rentalItems)) {
@@ -80,6 +81,7 @@ routerAdd(
       var itemNames = []
       var codes = []
       var hasSpecialProduct = false
+      var totalMonthlyPrice = 0
 
       for (var j = 0; j < rentalItems.length; j++) {
         var rawItem = rentalItems[j]
@@ -93,20 +95,68 @@ routerAdd(
         var returnedQty = Number(rawItem.returnedQty || rawItem.returned_qty || 0)
         if (!returnedQty || returnedQty < 0) returnedQty = 0
         if (returnedQty >= qty) continue
+        var activeQty = qty - returnedQty
 
         var itemName =
           rawItem.name || rawItem.description || rawItem.productName || rawItem.product_name || ''
         var itemCode = String(rawItem.code || rawItem.sku || rawItem.product_code || '').trim()
 
-        try {
-          var inv = $app.findRecordById('inventory', itemId)
-          if (inv) {
-            var invName = inv.getString('name')
-            var invCode = inv.getString('code')
-            if (invName) itemName = invName
-            if (invCode) itemCode = String(invCode).trim()
-          }
-        } catch (_) {}
+        var inv = null
+        if (itemId) {
+          try {
+            inv = $app.findRecordById('inventory', itemId)
+          } catch (_) {}
+        }
+
+        if (!inv && itemCode) {
+          try {
+            var foundByCode = $app.findRecordsByFilter(
+              'inventory',
+              'code = "' + itemCode + '"',
+              '-created',
+              1,
+              0,
+            )
+            if (foundByCode.length > 0) inv = foundByCode[0]
+          } catch (_) {}
+        }
+
+        if (!inv && itemName) {
+          try {
+            var cleanSearch = itemName.replace(/[^\w\s]/gi, '').trim()
+            if (cleanSearch) {
+              var foundByName = $app.findRecordsByFilter(
+                'inventory',
+                'name ~ "' + cleanSearch + '"',
+                '-created',
+                1,
+                0,
+              )
+              if (foundByName.length > 0) inv = foundByName[0]
+            }
+          } catch (_) {}
+        }
+
+        var itemMonthly = 0
+        if (inv) {
+          var invName = inv.getString('name')
+          var invCode = String(inv.getString('code') || '').trim()
+          if (invName) itemName = invName
+          if (invCode) itemCode = invCode
+          itemMonthly = Number(inv.get('monthly_price') || 0)
+        } else {
+          itemMonthly = Number(rawItem.monthlyPrice || rawItem.monthly_price || 0)
+        }
+
+        if (itemMonthly <= 0) {
+          var dailyP = Number(
+            rawItem.dailyPrice || rawItem.daily_price || (inv ? inv.get('daily_price') : 0) || 0,
+          )
+          if (dailyP > 0) itemMonthly = Math.round(dailyP * 30)
+        }
+
+        totalMonthlyPrice += itemMonthly * activeQty
+
         if (!itemName) itemName = 'Item ' + itemId
 
         itemName = String(itemName)
@@ -117,20 +167,33 @@ routerAdd(
 
         if (itemCode) {
           codes.push(itemCode)
-          if (SPECIAL_REFS.indexOf(itemCode) !== -1) {
-            hasSpecialProduct = true
+          for (var sIdx = 0; sIdx < SPECIAL_REFS.length; sIdx++) {
+            var sRef = SPECIAL_REFS[sIdx]
+            if (
+              itemCode === sRef ||
+              itemCode.indexOf(sRef) !== -1 ||
+              String(rawItem.name || '').indexOf(sRef) !== -1
+            ) {
+              hasSpecialProduct = true
+              break
+            }
           }
         }
 
-        var displayQty = qty - returnedQty
-        if (displayQty < 1) displayQty = qty
-        itemNames.push(displayQty + ' x ' + itemName)
+        itemNames.push((activeQty > 1 ? activeQty + ' x ' : '') + itemName)
       }
+
+      var renewal30 = Math.round(totalMonthlyPrice * 100) / 100
+      var renewal15 = Math.round((totalMonthlyPrice / 2) * 100) / 100
 
       return {
         itemNames: itemNames,
         codes: codes,
         hasSpecialProduct: hasSpecialProduct,
+        renewal30: renewal30,
+        renewal15: renewal15,
+        renewal30Formatted: formatBRL(renewal30),
+        renewal15Formatted: formatBRL(renewal15),
       }
     }
 
@@ -306,7 +369,6 @@ routerAdd(
       }
 
       var customerName = customer.getString('name')
-      var totalFormatted = formatBRL(rental.get('total') || 0)
       var analysis = buildRentalItemAnalysis(rental)
       var itemsList = analysis.itemNames
       var itemsStr = itemsList.length > 0 ? itemsList.join(', ') : 'item locado'
@@ -314,8 +376,14 @@ routerAdd(
       var dateFormatted = formatDate(expectedRaw)
 
       var renewalOptionsText = isSpecialProduct
-        ? 'oferecer APENAS renovação por 30 dias (produto com locação exclusiva de 30 dias, NÃO oferecer 15 dias)'
-        : 'oferecer renovação por 15 ou 30 dias via PIX'
+        ? 'oferecer APENAS renovação por 30 dias no valor de ' +
+          analysis.renewal30Formatted +
+          ' (produto com locação exclusiva de 30 dias, NÃO oferecer 15 dias)'
+        : 'oferecer renovação por 15 dias (' +
+          analysis.renewal15Formatted +
+          ') ou 30 dias (' +
+          analysis.renewal30Formatted +
+          ') via PIX'
 
       var devoluçãoText = isSpecialProduct
         ? 'informar que para devolução a equipe da loja agendará a retirada/coleta na residência do cliente com ' +
@@ -393,10 +461,14 @@ routerAdd(
           ? 'SIM (apenas 30 dias na renovação; retirada agendada na residência)'
           : 'NÃO (renovação por 15 ou 30 dias; devolução pelo cliente na loja)') +
         '.\n' +
-        'Valor do contrato atual: ' +
-        totalFormatted +
-        '.\n' +
-        'Data de vencimento: ' +
+        'VALORES EXATOS DE RENOVAÇÃO DO ESTOQUE (MANDATÓRIO: NUNCA INVENTE OUTROS VALORES OU CHAVE PIX):\n' +
+        '- 30 dias: ' +
+        analysis.renewal30Formatted +
+        '\n' +
+        (isSpecialProduct
+          ? '- 15 dias: NÃO PERMITIDO PARA ESTE PRODUTO\n'
+          : '- 15 dias: ' + analysis.renewal15Formatted + '\n') +
+        'Data de vencimento do contrato: ' +
         dateFormatted +
         '.\n' +
         'Nome da responsável por devoluções: ' +
@@ -407,6 +479,7 @@ routerAdd(
         ' (dias de atraso: ' +
         daysOverdue +
         ').\n\n' +
+        'AVISO DE SEGURANÇA: NUNCA invente chave PIX estática (CNPJ, etc.). O PIX é gerado automaticamente pelo sistema quando o cliente responder escolhendo renovar.\n\n' +
         'Instrução específica:\n' +
         stageInstruction +
         '\n\n' +
@@ -429,18 +502,10 @@ routerAdd(
       } catch (errChat) {
         var errTrigMsg = errChat ? errChat.message || String(errChat) : 'unknown error'
         var errTrigStack = errChat && errChat.stack ? String(errChat.stack) : ''
-        console.error(
-          'helena_trigger_cobranca: agent call failed for contract ' +
-            contractNumber +
-            ': ' +
-            errTrigMsg +
-            (errTrigStack ? ' | stack: ' + errTrigStack : ''),
-        )
         results.push({
           contract: contractNumber,
           error: 'agent_chat_failed',
           details: errTrigMsg,
-          stack: errTrigStack,
         })
         continue
       }
@@ -464,12 +529,9 @@ routerAdd(
           }
         } catch (_) {}
 
-        // Send WhatsApp via Evolution API
-        var endpoint = apiUrl.replace(/\/+$/, '') + '/message/sendText/' + instance
         var sendOk = false
         if (apiUrl && apiKey && instance) {
           try {
-            // Multi-tenant instance resolution
             var targetInstance = instance
             var rentalTenantId = rental.getString('tenant_id') || ''
             if (rentalTenantId) {
@@ -525,6 +587,9 @@ routerAdd(
         days_overdue: daysOverdue,
         dry_run: dryRun,
         generated_message: messageText,
+        renewal30: analysis.renewal30,
+        renewal15: analysis.renewal15,
+        is_special: isSpecialProduct,
       })
     }
 
