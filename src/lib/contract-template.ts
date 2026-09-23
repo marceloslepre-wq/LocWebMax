@@ -438,8 +438,37 @@ export function renderContractHtml(params: RenderContractParams): string {
   const now = new Date()
   const currentDateFull = `${now.getDate().toString().padStart(2, '0')} de ${months[now.getMonth()]} de ${now.getFullYear()}`
 
-  const getItemId = (ri: any) => ri.itemId || ri.item_id || ri.id || ''
-  const regularItems = items.filter((ri: any) => getItemId(ri) !== 'freight')
+  const getItemId = (ri: any) =>
+    String(ri?.itemId || ri?.item_id || ri?.inventory_id || ri?.id || '').trim()
+
+  const isRealItem = (ri: any) => {
+    if (!ri || typeof ri !== 'object') return false
+    const id = getItemId(ri)
+    if (id === 'freight') return false
+
+    const name = String(ri.name || ri.productName || ri.product_name || '').trim()
+    const code = String(ri.code || ri.sku || ri.product_code || '').trim()
+    const price = Number(ri.totalPrice || ri.total_price || ri.dailyPrice || ri.daily_price || 0)
+
+    const inv = inventory.find((i: any) => i.id === id)
+    if (inv) return true
+
+    const isGhost =
+      (!id || id === '-') &&
+      (!code || code === '-') &&
+      (!name || name === '-' || name.toLowerCase() === 'item removido') &&
+      price === 0
+
+    if (isGhost) return false
+
+    const hasRealId = !!id && id !== '-'
+    const hasRealCode = !!code && code !== '-'
+    const hasRealName = !!name && name !== '-' && name.toLowerCase() !== 'item removido'
+
+    return hasRealId || hasRealCode || hasRealName
+  }
+
+  const regularItems = items.filter((ri: any) => getItemId(ri) !== 'freight' && isRealItem(ri))
   const freightItem = items.find((ri: any) => getItemId(ri) === 'freight')
   const freightValue = freightItem
     ? Number(freightItem.totalPrice || freightItem.total_price || 0)
@@ -463,7 +492,7 @@ export function renderContractHtml(params: RenderContractParams): string {
       const qty = ri.qty ?? ri.quantity ?? 1
       return `<tr>
         <td style="border: 1px solid #9ca3af; padding: 8px 6px; text-align: center;">${qty}</td>
-        <td style="border: 1px solid #9ca3af; padding: 8px;">${item?.name || ri.name || 'Item Removido'}</td>
+        <td style="border: 1px solid #9ca3af; padding: 8px;">${item?.name || ri.name || 'Item'}</td>
         <td style="border: 1px solid #9ca3af; padding: 8px;">${item?.code || ri.code || '-'}</td>
         <td style="border: 1px solid #9ca3af; padding: 8px; text-align: center;">${start}</td>
         <td style="border: 1px solid #9ca3af; padding: 8px; text-align: center;">${end}</td>
@@ -493,7 +522,7 @@ export function renderContractHtml(params: RenderContractParams): string {
           const item = inventory.find((i: any) => i.id === itemId)
           const salePrice = Number(item?.salePrice || item?.sale_price || 0)
           return `<tr>
-          <td style="border: 1px solid #9ca3af; padding: 8px;">${item?.name || ri.name || 'Item Removido'}</td>
+          <td style="border: 1px solid #9ca3af; padding: 8px;">${item?.name || ri.name || 'Item'}</td>
           <td style="border: 1px solid #9ca3af; padding: 8px; text-align: right; font-weight: 500;">${formatBRL(salePrice)}</td>
         </tr>`
         })

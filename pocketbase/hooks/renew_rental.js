@@ -82,7 +82,50 @@ routerAdd(
       } catch (_) {}
     }
 
-    var newItems = body.items || rawItems
+    var candidateItems = body.items || rawItems
+    if (!Array.isArray(candidateItems)) candidateItems = []
+
+    // Higienização contra itens vazios/fantasmas ({})
+    var sanitizedNewItems = []
+    for (var ci = 0; ci < candidateItems.length; ci++) {
+      var itCandidate = candidateItems[ci]
+      if (!itCandidate || typeof itCandidate !== 'object') continue
+      var cId = String(
+        itCandidate.itemId ||
+          itCandidate.item_id ||
+          itCandidate.inventory_id ||
+          itCandidate.id ||
+          '',
+      ).trim()
+      if (cId === 'freight') {
+        sanitizedNewItems.push(itCandidate)
+        continue
+      }
+      var cName = String(
+        itCandidate.name || itCandidate.productName || itCandidate.product_name || '',
+      ).trim()
+      var cCode = String(
+        itCandidate.code || itCandidate.sku || itCandidate.product_code || '',
+      ).trim()
+      var cPrice = Number(
+        itCandidate.totalPrice ||
+          itCandidate.total_price ||
+          itCandidate.dailyPrice ||
+          itCandidate.daily_price ||
+          0,
+      )
+      var isGhostCandidate =
+        (!cId || cId === '-') &&
+        (!cCode || cCode === '-') &&
+        (!cName || cName === '-' || cName.toLowerCase() === 'item removido') &&
+        cPrice === 0
+
+      if (!isGhostCandidate && (!!cId || !!cCode || !!cName)) {
+        sanitizedNewItems.push(itCandidate)
+      }
+    }
+    var newItems = sanitizedNewItems.length > 0 ? sanitizedNewItems : candidateItems
+
     var newExpectedReturnDate =
       body.expected_return_date || rental.getString('expected_return_date')
     var newTotal = body.total !== undefined ? Number(body.total) : rental.get('total') || 0

@@ -199,11 +199,35 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
     if (!rental || error) return
     setSaving(true)
 
+    // Filtrar primeiro quaisquer itens fantasmas/vazios do array
+    const sanitizedBaseItems = (rental.items || []).filter((item: any) => {
+      if (!item || typeof item !== 'object') return false
+      const itemId = String(
+        item.itemId || item.item_id || item.inventory_id || item.id || '',
+      ).trim()
+      if (itemId === 'freight') return true
+      const name = String(item.name || item.productName || item.product_name || '').trim()
+      const code = String(item.code || item.sku || item.product_code || '').trim()
+      const price = Number(
+        item.totalPrice || item.total_price || item.dailyPrice || item.daily_price || 0,
+      )
+      const isGhost =
+        (!itemId || itemId === '-') &&
+        (!code || code === '-') &&
+        (!name || name === '-' || name.toLowerCase() === 'item removido') &&
+        price === 0
+      return !isGhost && (!!itemId || !!code || !!name)
+    })
+
     // Cada item selecionado é renovado a partir do seu vencimento individual
     // se quickDays estiver definido (ex: +30 dias adiciona 30 dias à data de retorno daquele item).
     // Se o usuário selecionou uma data específica no input, usamos o período adicional ou a data direta.
-    const updatedItems = rental.items.map((item: any, index: number) => {
-      if (!selected.has(index) || item.itemId === 'freight') return item
+    const updatedItems = sanitizedBaseItems.map((item: any, index: number) => {
+      const isSelected = selected.has(index)
+      const itemId = String(
+        item.itemId || item.item_id || item.inventory_id || item.id || '',
+      ).trim()
+      if (!isSelected || itemId === 'freight') return item
 
       const currentItemReturn = getItemReturnDate(
         item,

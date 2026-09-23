@@ -117,8 +117,19 @@
     padding: 0 !important;
   }
 
-  .print\:hidden {
+  .print\:hidden,
+  aside,
+  [data-sidebar='sidebar'],
+  .group\/sidebar-wrapper > [data-state],
+  .group\/sidebar-wrapper > div:first-child,
+  header {
     display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
   }
 
   #root,
@@ -126,11 +137,9 @@
   [data-sidebar-wrapper],
   .group\/sidebar-wrapper,
   main,
-  header,
   section,
   article,
-  .flex-1,
-  div {
+  .flex-1 {
     overflow: visible !important;
   }
 

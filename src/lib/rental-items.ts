@@ -90,14 +90,66 @@ export function normalizeRentalItem(raw: any): NormalizedRentalItem {
   return result
 }
 
+export function isRealRentalItem(item: any): boolean {
+  if (!item || typeof item !== 'object') return false
+  const itemId = String(item.itemId || item.item_id || item.inventory_id || item.id || '').trim()
+  if (itemId === 'freight') return true
+
+  const name = String(item.name || item.productName || item.product_name || '').trim()
+  const code = String(item.code || item.sku || item.product_code || '').trim()
+  const price = Number(
+    item.totalPrice || item.total_price || item.dailyPrice || item.daily_price || 0,
+  )
+  const qty = Number(
+    item.qty !== undefined
+      ? item.qty
+      : item.quantity !== undefined
+        ? item.quantity
+        : item.quantidade,
+  )
+
+  const isGhost =
+    (!itemId || itemId === '-') &&
+    (!code || code === '-') &&
+    (!name || name === '-' || name.toLowerCase() === 'item removido') &&
+    price === 0
+
+  if (isGhost) return false
+
+  // Se não tem identificador real e a quantidade é inválida ou zero
+  if (
+    (!itemId || itemId === '-') &&
+    (!code || code === '-') &&
+    (!name || name === '-') &&
+    (isNaN(qty) || qty <= 0)
+  ) {
+    return false
+  }
+
+  // Deve ter ao menos ID real, ou código real, ou nome real diferente de "-" / "Item Removido"
+  const hasRealId = !!itemId && itemId !== '-'
+  const hasRealCode = !!code && code !== '-'
+  const hasRealName = !!name && name !== '-' && name.toLowerCase() !== 'item removido'
+
+  return hasRealId || hasRealCode || hasRealName
+}
+
 export function getValidRentalItems(items: any[]): NormalizedRentalItem[] {
   if (!Array.isArray(items)) return []
-  return items.map(normalizeRentalItem).filter((item) => {
-    if (item.itemId === 'freight') return false
-    const hasId = !!item.itemId && item.itemId.trim() !== ''
-    const hasName = !!item.name && item.name.trim() !== ''
-    return hasId || hasName
-  })
+  return items
+    .filter(isRealRentalItem)
+    .map(normalizeRentalItem)
+    .filter((item) => {
+      if (item.itemId === 'freight') return false
+      const hasId = !!item.itemId && item.itemId.trim() !== '' && item.itemId.trim() !== '-'
+      const hasCode = !!item.code && item.code.trim() !== '' && item.code.trim() !== '-'
+      const hasName =
+        !!item.name &&
+        item.name.trim() !== '' &&
+        item.name.trim() !== '-' &&
+        item.name.trim().toLowerCase() !== 'item removido'
+      return hasId || hasCode || hasName
+    })
 }
 
 export function findFreightItem(items: any[]): any | null {

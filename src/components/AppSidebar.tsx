@@ -86,7 +86,7 @@ export function AppSidebar() {
   }
 
   return (
-    <Sidebar className="border-r border-border bg-sidebar print:hidden">
+    <Sidebar className="border-r border-border bg-sidebar print:hidden print:!hidden overflow-hidden contain-strict">
       <SidebarHeader className="p-4 flex items-center justify-center border-b h-16">
         <div className="flex items-center gap-2 font-bold text-xl text-primary">
           <img

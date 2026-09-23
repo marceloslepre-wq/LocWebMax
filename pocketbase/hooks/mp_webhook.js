@@ -218,11 +218,37 @@ routerAdd('POST', '/backend/v1/payments/mp-webhook', (e) => {
         }
 
         // Update items' end dates ancorados no vencimento ORIGINAL DE CADA ITEM
+        // Filtrar objetos vazios ({}) para nunca propagar itens fantasmas
         var updatedItems = []
         var maxNewReturnDate = ''
         for (var i = 0; i < rawItems.length; i++) {
           var itemObj = Object.assign({}, rawItems[i])
-          if (itemObj.itemId !== 'freight') {
+          if (!itemObj || typeof itemObj !== 'object') continue
+
+          var itId = String(
+            itemObj.itemId || itemObj.item_id || itemObj.inventory_id || itemObj.id || '',
+          ).trim()
+          var itName = String(
+            itemObj.name || itemObj.productName || itemObj.product_name || '',
+          ).trim()
+          var itCode = String(itemObj.code || itemObj.sku || itemObj.product_code || '').trim()
+          var itPrice = Number(
+            itemObj.totalPrice ||
+              itemObj.total_price ||
+              itemObj.dailyPrice ||
+              itemObj.daily_price ||
+              0,
+          )
+
+          if (itId !== 'freight') {
+            var isGhost =
+              (!itId || itId === '-') &&
+              (!itCode || itCode === '-') &&
+              (!itName || itName === '-' || itName.toLowerCase() === 'item removido') &&
+              itPrice === 0
+
+            if (isGhost) continue
+
             // Obter data de vencimento específica deste item (ou fallback para currentExpected)
             var itemBaseExp =
               itemObj.endDate ||
