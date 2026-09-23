@@ -198,7 +198,13 @@ routerAdd('POST', '/backend/v1/payments/mp-webhook', (e) => {
           return formatDateYMD(now)
         }
 
+        // REGRA MARCELO: A renovação é SEMPRE ancorada no vencimento original da locação (+ 30 ou 15 dias),
+        // NUNCA na data em que o pagamento foi realizado, mesmo com pagamento dias após o vencimento.
+        // Zero cobrança de dias avulsos por atraso.
         var currentExpected = rental.getString('expected_return_date')
+        if (!currentExpected) {
+          currentExpected = rental.getString('start_date') || formatDateYMD(new Date())
+        }
         var newExpectedReturnDate = addDaysToDateStr(currentExpected, renewalDays)
 
         // Capture previous state for rental_snapshots
@@ -211,7 +217,7 @@ routerAdd('POST', '/backend/v1/payments/mp-webhook', (e) => {
           total: rental.get('total') || 0,
         }
 
-        // Update items' end dates
+        // Update items' end dates (ancorados no vencimento original)
         var updatedItems = []
         for (var i = 0; i < rawItems.length; i++) {
           var itemObj = Object.assign({}, rawItems[i])

@@ -598,6 +598,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     } catch (_) {}
 
     // Anti-duplication check:
+    // Trava anti-repetição rígida: a mesma cobrança (mesmo contrato) no máximo 1 vez por dia pela rotina diária
     if (cobrancaRec) {
       var lastDate = cobrancaRec.getString('last_contact_date')
       if (lastDate === todayStr) {
@@ -613,6 +614,70 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       if (currentStage === 'esgotado' || cobrancaRec.getString('status') === 'repassado_loja') {
         continue
       }
+    }
+
+    // Anti-duplicação global por data de contato de hoje na helena_cobranca
+    try {
+      var todayCheck = $app.findRecordsByFilter(
+        'helena_cobranca',
+        'rental_id = "' + rentalId + '" && last_contact_date = "' + todayStr + '"',
+        '-created',
+        1,
+        0,
+      )
+      if (todayCheck.length > 0) {
+        $app
+          .logger()
+          .info(
+            'helena_daily_cobranca: rental already contacted today (anti-dup check)',
+            'contract',
+            contractNumber,
+          )
+        continue
+      }
+    } catch (_) {}
+
+    // REGRA MARCELO: Se o cliente já manifestou intenção de renovar ou informou data de pagamento,
+    // não cobrar diárias de atraso e não re-enviar cobrança repetitiva com opções.
+    var customerHasRenewalIntent = false
+    if (cobrancaRec) {
+      var cStatus = cobrancaRec.getString('status') || ''
+      var cNotes = cobrancaRec.getString('notes') || ''
+      if (
+        cStatus === 'intencao_renovacao' ||
+        cStatus === 'aguardando_pagamento' ||
+        cNotes.indexOf('intencao_renovacao') !== -1 ||
+        cNotes.indexOf('aguardando_pagamento') !== -1
+      ) {
+        customerHasRenewalIntent = true
+      }
+    }
+
+    // Verificar se nas mensagens recentes do WhatsApp o cliente manifestou intenção de renovar ou agendou data
+    if (!customerHasRenewalIntent) {
+      try {
+        var recentConv = $app.findRecordsByFilter(
+          'whatsapp_conversations',
+          'phone = "' + sanitizedPhone + '"',
+          '-updated',
+          1,
+          0,
+        )
+        if (recentConv.length > 0) {
+          var lastMsg = (recentConv[0].getString('last_message') || '').toLowerCase()
+          if (
+            lastMsg.indexOf('renov') !== -1 ||
+            lastMsg.indexOf('recebo') !== -1 ||
+            lastMsg.indexOf('pagamento') !== -1 ||
+            lastMsg.indexOf('dia 2') !== -1 ||
+            lastMsg.indexOf('dia 1') !== -1 ||
+            lastMsg.indexOf('dia 3') !== -1 ||
+            lastMsg.indexOf('cristian') !== -1
+          ) {
+            customerHasRenewalIntent = true
+          }
+        }
+      } catch (_) {}
     }
 
     if (targetStage === 'esgotado') {
@@ -690,32 +755,36 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     var lateFeeInfo = calculateOverdueFees(rental, daysOverdue, rentalTenantId)
     var storeLocationsText = !isSpecialProduct ? getStoreLocationsText(rentalTenantId) : ''
 
-    var overduePhrase =
-      daysOverdue > 0 && lateFeeInfo.formatted
-        ? 'venceu em *' +
-          dateFormatted +
-          '* e está em atraso há *' +
-          daysOverdue +
-          ' dias*, acumulando diárias no valor de *' +
-          lateFeeInfo.formatted +
-          '*. Precisamos definir hoje como proceder para evitar novas cobranças.'
-        : 'venceu em *' +
-          dateFormatted +
-          '* e está em atraso há *' +
-          daysOverdue +
-          ' dias*. Precisamos definir hoje como proceder para evitar novas cobranças.'
+    // REGRA MARCELO: Diárias de atraso SÓ para quem NÃO renova.
+    // Quando o cliente manifestou intenção de renovar ou está alinhando data de pagamento,
+    // diárias NÃO são cobradas nem exibidas!
+    var showLateFees = daysOverdue > 0 && lateFeeInfo.formatted && !customerHasRenewalIntent
+
+    var overduePhrase = showLateFees
+      ? 'venceu em *' +
+        dateFormatted +
+        '* e está em atraso há *' +
+        daysOverdue +
+        ' dias*, acumulando diárias no valor de *' +
+        lateFeeInfo.formatted +
+        '*. Precisamos definir hoje como proceder para evitar novas cobranças.'
+      : 'venceu em *' +
+        dateFormatted +
+        '* e está em atraso há *' +
+        daysOverdue +
+        ' dias*. Precisamos definir hoje como proceder para evitar novas cobranças.'
 
     var renewalOptionsText = ''
-    if (analysis.hasValidPrice) {
+    if (analysis.hasValidPrice && analysis.renewal30 > 0) {
       renewalOptionsText = isSpecialProduct
         ? 'oferecer APENAS renovação por 30 dias no valor de ' +
           analysis.renewal30Formatted +
-          ' (produto especial, NUNCA oferecer 15 dias)'
+          ' (produto especial, NUNCA oferecer 15 dias e NUNCA exibir R$ 0,00)'
         : 'oferecer renovação por 15 dias (' +
           analysis.renewal15Formatted +
           ') ou 30 dias (' +
           analysis.renewal30Formatted +
-          ') via PIX'
+          ') via PIX (NUNCA exibir R$ 0,00)'
     } else {
       renewalOptionsText =
         'informar a opção de renovação dizendo que nossa equipe confirmará o valor exato para o cliente (NUNCA exibir R$ 0,00 nem inventar valores)'
@@ -777,9 +846,9 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     }
 
     var valoresContexto = ''
-    if (analysis.hasValidPrice) {
+    if (analysis.hasValidPrice && analysis.renewal30 > 0) {
       valoresContexto =
-        'VALORES EXATOS DE RENOVAÇÃO DO ESTOQUE (MANDATÓRIO: NUNCA INVENTE OUTROS VALORES OU CHAVE PIX):\n' +
+        'VALORES EXATOS DE RENOVAÇÃO DO ESTOQUE (MANDATÓRIO: NUNCA INVENTE OUTROS VALORES OU CHAVE PIX E NUNCA EXIBA R$ 0,00):\n' +
         '- 30 dias: ' +
         analysis.renewal30Formatted +
         '\n' +
@@ -788,7 +857,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
           : '- 15 dias: ' + analysis.renewal15Formatted + '\n')
     } else {
       valoresContexto =
-        'VALORES DE RENOVAÇÃO: VALOR NÃO DEFINIDO NO SISTEMA. REGRA CRÍTICA: NUNCA OFEREÇA OU EXIBA R$ 0,00! Diga que a equipe da loja confirmará o valor exato da renovação caso o cliente queira renovar.\n'
+        'VALORES DE RENOVAÇÃO: VALOR NÃO DEFINIDO NO SISTEMA. REGRA ABSOLUTA: NUNCA OFEREÇA, NUNCA COBRE E NUNCA EXIBA R$ 0,00! Diga apenas que a nossa equipe confirmará o valor exato da renovação para o cliente.\n'
     }
 
     var agentPrompt =
@@ -818,7 +887,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       ' (dias de atraso: ' +
       daysOverdue +
       ').\n' +
-      (daysOverdue > 0 && lateFeeInfo.formatted
+      (showLateFees
         ? 'VALOR EXATO DAS DIÁRIAS DE ATRASO ACUMULADAS (calculado pela soma das diárias reais dos produtos no estoque): ' +
           lateFeeInfo.formatted +
           ' (' +
@@ -826,13 +895,13 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
           ' dias de atraso). Use exatamente este valor no texto: "acumulando diárias no valor de ' +
           lateFeeInfo.formatted +
           '". NUNCA recalcule ou invente outro valor.\n'
-        : '') +
+        : 'DIÁRIAS DE ATRASO: NÃO EXIBIR DIÁRIAS (cliente em processo de renovação ou valor não aplicável).\n') +
       (!isSpecialProduct && storeLocationsText
         ? 'ENDEREÇOS DAS LOJAS FÍSICAS PARA DEVOLUÇÃO (caso o cliente escolha devolver):\n' +
           storeLocationsText +
           '\n'
         : '') +
-      '\nAVISO DE SEGURANÇA: NUNCA forneça chave PIX estática (CNPJ, etc.) e NUNCA informe valor R$ 0,00. O PIX é gerado automaticamente pelo sistema quando o cliente responder escolhendo renovar.\n\n' +
+      '\nAVISO DE SEGURANÇA E ZERO VALOR: NUNCA forneça chave PIX estática (CNPJ, etc.) e NUNCA informe valor R$ 0,00. Se os valores forem R$ 0,00, diga expressamente "nossa equipe confirmará o valor".\n\n' +
       'Instrução específica:\n' +
       stageInstruction +
       '\n\n' +
@@ -869,6 +938,22 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
 
     var messageText = agentResult.content || ''
     if (!messageText) continue
+
+    // TRAVA ANTI-ZERO PRICE DE SEGURANÇA NA SAÍDA DA HELENA:
+    // Se por qualquer razão a mensagem gerada contiver "R$ 0,00" ou "R$ 0",
+    // substitui para "a equipe confirmará o valor" antes do envio ao WhatsApp!
+    if (messageText.indexOf('R$ 0,00') !== -1 || messageText.indexOf('R$ 0') !== -1) {
+      $app
+        .logger()
+        .warn(
+          'helena_daily_cobranca: caught R$ 0,00 in generated message, sanitized before sending',
+          'contract',
+          contractNumber,
+        )
+      messageText = messageText
+        .replace(/R\$\s*0(?:,00)?/gi, 'a confirmar com a equipe')
+        .replace(/R\$\s*0\.00/gi, 'a confirmar com a equipe')
+    }
 
     var newConversationId = agentResult.conversation_id || conversationId
     try {

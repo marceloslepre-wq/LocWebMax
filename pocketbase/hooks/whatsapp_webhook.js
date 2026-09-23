@@ -1071,6 +1071,86 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       'VALORES DE RENOVAÇÃO: VALOR NÃO DEFINIDO NO SISTEMA. REGRA CRÍTICA: NUNCA OFEREÇA OU DIGA R$ 0,00! Diga apenas que nossa equipe da loja confirmará o valor exato da renovação para o cliente.\n'
   }
 
+  // REGRA MARCELO: Se o cliente explicou ou informou data de pagamento (ex.: "só recebo dia 25"),
+  // agendou com Cristiani, ou já se posicionou, Helena deve:
+  // 1) Acolher sem pressionar;
+  // 2) Esclarecer que a renovação contará do vencimento original (+30 dias) e NÃO há cobrança de dias avulsos;
+  // 3) NUNCA repetir a mensagem de cobrança padrão nem insistir com "como deseja proceder?" ou opções 1/2.
+  // Além disso, registrar a intenção na tabela helena_cobranca para que a rotina diária não cobre diárias.
+  var isExplainingPaymentDate = false
+  var detectedPayDateInfo = ''
+  var lowerIncomingForDate = lowerMsg.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (
+    lowerIncomingForDate.indexOf('recebo') !== -1 ||
+    lowerIncomingForDate.indexOf('pagamento no dia') !== -1 ||
+    lowerIncomingForDate.indexOf('pagar no dia') !== -1 ||
+    lowerIncomingForDate.indexOf('consigo pagar') !== -1 ||
+    lowerIncomingForDate.indexOf('so dia 25') !== -1 ||
+    lowerIncomingForDate.indexOf('só dia 25') !== -1 ||
+    lowerIncomingForDate.indexOf('dia 25') !== -1 ||
+    lowerIncomingForDate.indexOf('quinto dia util') !== -1 ||
+    lowerIncomingForDate.indexOf('salario') !== -1 ||
+    lowerIncomingForDate.indexOf('pre agendamento') !== -1 ||
+    lowerIncomingForDate.indexOf('agendamento do pagamento') !== -1
+  ) {
+    isExplainingPaymentDate = true
+    detectedPayDateInfo = messageText
+  }
+
+  // Se o cliente informou data de pagamento ou agendamento, registrar na helena_cobranca
+  if (isExplainingPaymentDate && matchedRental) {
+    try {
+      var cobrancaRecCheck = null
+      var foundCobsRent = $app.findRecordsByFilter(
+        'helena_cobranca',
+        'rental_id = "' + matchedRental.id + '"',
+        '-created',
+        1,
+        0,
+      )
+      if (foundCobsRent.length > 0) cobrancaRecCheck = foundCobsRent[0]
+      if (cobrancaRecCheck) {
+        cobrancaRecCheck.set('status', 'aguardando_pagamento')
+        cobrancaRecCheck.set(
+          'notes',
+          'Cliente alinhou data de pagamento: ' + messageText.substring(0, 100),
+        )
+        $app.save(cobrancaRecCheck)
+      }
+    } catch (_) {}
+  }
+
+  // TRAVA ANTI-REPETIÇÃO NO WEBHOOK:
+  // Se o cliente enviar mensagens curtas de confirmação (ex: "ok", "ta bom", "certo", "obrigado")
+  // e já recebeu resposta da Helena nos últimos 15 minutos, responder apenas de forma curta e cordial
+  // ou acolhedora ("Combinado! Qualquer dúvida estou por aqui. 💙"), NUNCA reenviando a cobrança!
+  var isShortAck =
+    lowerIncomingForDate === 'ok' ||
+    lowerIncomingForDate === 'ok!' ||
+    lowerIncomingForDate === 'ok.' ||
+    lowerIncomingForDate === 'obrigado' ||
+    lowerIncomingForDate === 'obrigada' ||
+    lowerIncomingForDate === 'ta bom' ||
+    lowerIncomingForDate === 'tá bom' ||
+    lowerIncomingForDate === 'perfeito' ||
+    lowerIncomingForDate === 'combinado' ||
+    lowerIncomingForDate === 'certo' ||
+    lowerIncomingForDate === 'valeu' ||
+    lowerIncomingForDate === 'entendido'
+
+  if (isShortAck) {
+    var ackText =
+      'Combinado! Qualquer dúvida ou quando precisar, estou à disposição por aqui. Um abraço! 💙'
+    sendWhatsAppText(phone, ackText, matchedRental ? matchedRental.getString('tenant_id') : '')
+    if (conversation) {
+      try {
+        conversation.set('last_message', messageText)
+        $app.save(conversation)
+      } catch (_) {}
+    }
+    return e.json(200, { success: true, action: 'short_ack_reply' })
+  }
+
   var promptWithContext =
     '[SISTEMA - CONTEXTO DO CONTRATO DO CLIENTE]\n' +
     'Cliente: ' +
@@ -1094,7 +1174,17 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         storeLocationsText +
         '\n'
       : '') +
-    'REGRA CRÍTICA DE PAGAMENTO: NUNCA forneça chave PIX ou CNPJ e NUNCA informe valor R$ 0,00. Se o cliente pedir PIX ou quiser renovar, diga que o sistema está gerando o QR Code PIX oficial Mercado Pago com o valor exato.\n\n' +
+    (isExplainingPaymentDate
+      ? 'ATENÇÃO CRÍTICA (REGRA DO MARCELO - CLIENTE EXPLICOU DATA DE PAGAMENTO):\n' +
+        '- O cliente informou quando fará o pagamento / recebe o salário.\n' +
+        '- ACOLHA com empatia e tranquilidade, sem pressionar.\n' +
+        '- Esclareça com clareza: a renovação do contrato será ancorada na data do vencimento original (' +
+        dateExp +
+        ') cobrindo os 30 dias de locação, portanto NÃO HÁ COBRANÇA DE DIAS AVULSOS de atraso até o dia do pagamento!\n' +
+        '- Confirme que está registrado e que no dia combinado o PIX será enviado.\n' +
+        '- NUNCA REPITA o menu padrão ("Como deseja proceder?", "1 Renovar / 2 Devolução"). NUNCA re-cobre o cliente nesta resposta!\n\n'
+      : '') +
+    'REGRA CRÍTICA DE PAGAMENTO: NUNCA forneça chave PIX estática (CNPJ, telefone) e NUNCA informe valor R$ 0,00. O PIX é 100% dinâmico gerado pelo Mercado Pago.\n\n' +
     'Mensagem recebida do cliente:\n"' +
     messageText +
     '"'
@@ -1157,7 +1247,18 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     })
   }
 
-  const responseText = agentResult.content || 'Desculpe, não consegui processar sua mensagem.'
+  var responseText = agentResult.content || 'Desculpe, não consegui processar sua mensagem.'
+
+  // TRAVA ANTI-ZERO PRICE DE SEGURANÇA NA SAÍDA DO WEBHOOK:
+  if (responseText.indexOf('R$ 0,00') !== -1 || responseText.indexOf('R$ 0') !== -1) {
+    $app
+      .logger()
+      .warn('whatsapp_webhook: caught R$ 0,00 in Helena response, sanitized', 'phone', phone)
+    responseText = responseText
+      .replace(/R\$\s*0(?:,00)?/gi, 'a confirmar com a equipe')
+      .replace(/R\$\s*0\.00/gi, 'a confirmar com a equipe')
+  }
+
   const newConversationId = agentResult.conversation_id || conversationId
 
   // Automatic detection of store escalation (Devolução or Cartão de Crédito)

@@ -527,6 +527,22 @@ routerAdd(
         }
       }
 
+      // REGRA MARCELO: Se o cliente já manifestou intenção de renovar ou informou data de pagamento,
+      // não cobrar diárias de atraso.
+      var customerHasRenewalIntent = false
+      if (cobrancaRec) {
+        var cStatus = cobrancaRec.getString('status') || ''
+        var cNotes = cobrancaRec.getString('notes') || ''
+        if (
+          cStatus === 'intencao_renovacao' ||
+          cStatus === 'aguardando_pagamento' ||
+          cNotes.indexOf('intencao_renovacao') !== -1 ||
+          cNotes.indexOf('aguardando_pagamento') !== -1
+        ) {
+          customerHasRenewalIntent = true
+        }
+      }
+
       if (targetStage === 'esgotado') {
         if (!dryRun) {
           try {
@@ -609,20 +625,22 @@ routerAdd(
       var lateFeeInfo = calculateOverdueFees(rental, daysOverdue, rentalTenantId)
       var storeLocationsText = !isSpecialProduct ? getStoreLocationsText(rentalTenantId) : ''
 
-      var overduePhrase =
-        daysOverdue > 0 && lateFeeInfo.formatted
-          ? 'venceu em *' +
-            dateFormatted +
-            '* e está em atraso há *' +
-            daysOverdue +
-            ' dias*, acumulando diárias no valor de *' +
-            lateFeeInfo.formatted +
-            '*. Precisamos definir hoje como proceder para evitar novas cobranças.'
-          : 'venceu em *' +
-            dateFormatted +
-            '* e está em atraso há *' +
-            daysOverdue +
-            ' dias*. Precisamos definir hoje como proceder para evitar novas cobranças.'
+      // REGRA MARCELO: Diárias de atraso SÓ para quem NÃO renova.
+      var showLateFees = daysOverdue > 0 && lateFeeInfo.formatted && !customerHasRenewalIntent
+
+      var overduePhrase = showLateFees
+        ? 'venceu em *' +
+          dateFormatted +
+          '* e está em atraso há *' +
+          daysOverdue +
+          ' dias*, acumulando diárias no valor de *' +
+          lateFeeInfo.formatted +
+          '*. Precisamos definir hoje como proceder para evitar novas cobranças.'
+        : 'venceu em *' +
+          dateFormatted +
+          '* e está em atraso há *' +
+          daysOverdue +
+          ' dias*. Precisamos definir hoje como proceder para evitar novas cobranças.'
 
       var stageInstruction = ''
       if (targetStage === 'vencimento_hoje') {
@@ -680,9 +698,9 @@ routerAdd(
       }
 
       var valoresContexto = ''
-      if (analysis.hasValidPrice) {
+      if (analysis.hasValidPrice && analysis.renewal30 > 0) {
         valoresContexto =
-          'VALORES EXATOS DE RENOVAÇÃO DO ESTOQUE (MANDATÓRIO: NUNCA INVENTE OUTROS VALORES OU CHAVE PIX):\n' +
+          'VALORES EXATOS DE RENOVAÇÃO DO ESTOQUE (MANDATÓRIO: NUNCA INVENTE OUTROS VALORES OU CHAVE PIX E NUNCA EXIBA R$ 0,00):\n' +
           '- 30 dias: ' +
           analysis.renewal30Formatted +
           '\n' +
@@ -691,7 +709,7 @@ routerAdd(
             : '- 15 dias: ' + analysis.renewal15Formatted + '\n')
       } else {
         valoresContexto =
-          'VALORES DE RENOVAÇÃO: VALOR NÃO DEFINIDO NO SISTEMA. REGRA CRÍTICA: NUNCA OFEREÇA OU EXIBA R$ 0,00! Diga que a equipe da loja confirmará o valor exato da renovação caso o cliente queira renovar.\n'
+          'VALORES DE RENOVAÇÃO: VALOR NÃO DEFINIDO NO SISTEMA. REGRA ABSOLUTA: NUNCA OFEREÇA, NUNCA COBRE E NUNCA EXIBA R$ 0,00! Diga apenas que a nossa equipe confirmará o valor exato da renovação para o cliente.\n'
       }
 
       var agentPrompt =
@@ -721,7 +739,7 @@ routerAdd(
         ' (dias de atraso: ' +
         daysOverdue +
         ').\n' +
-        (daysOverdue > 0 && lateFeeInfo.formatted
+        (showLateFees
           ? 'VALOR EXATO DAS DIÁRIAS DE ATRASO ACUMULADAS (calculado pela soma das diárias reais dos produtos no estoque): ' +
             lateFeeInfo.formatted +
             ' (' +
@@ -729,7 +747,7 @@ routerAdd(
             ' dias de atraso). Use exatamente este valor no texto: "acumulando diárias no valor de ' +
             lateFeeInfo.formatted +
             '". NUNCA recalcule ou invente outro valor.\n'
-          : '') +
+          : 'DIÁRIAS DE ATRASO: NÃO EXIBIR DIÁRIAS (cliente em processo de renovação ou valor não aplicável).\n') +
         (!isSpecialProduct && storeLocationsText
           ? 'ENDEREÇOS DAS LOJAS FÍSICAS PARA DEVOLUÇÃO (caso o cliente escolha devolver):\n' +
             storeLocationsText +
@@ -767,6 +785,14 @@ routerAdd(
       }
 
       var messageText = agentResult.content || ''
+
+      // TRAVA ANTI-ZERO PRICE DE SEGURANÇA NA SAÍDA DA HELENA:
+      if (messageText.indexOf('R$ 0,00') !== -1 || messageText.indexOf('R$ 0') !== -1) {
+        messageText = messageText
+          .replace(/R\$\s*0(?:,00)?/gi, 'a confirmar com a equipe')
+          .replace(/R\$\s*0\.00/gi, 'a confirmar com a equipe')
+      }
+
       var newConversationId = agentResult.conversation_id || conversationId
 
       if (!dryRun) {
