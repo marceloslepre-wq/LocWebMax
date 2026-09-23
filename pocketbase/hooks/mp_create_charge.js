@@ -113,6 +113,9 @@ routerAdd(
       paymentData.payer = { email: payerEmail }
     }
 
+    var idempotencyKey =
+      'mp-create-' + rentalId + '-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10)
+
     var res
     try {
       res = $http.send({
@@ -121,6 +124,7 @@ routerAdd(
         headers: {
           'Content-Type': 'application/json',
           Authorization: 'Bearer ' + accessToken,
+          'X-Idempotency-Key': idempotencyKey,
         },
         body: JSON.stringify(paymentData),
         timeout: 30,

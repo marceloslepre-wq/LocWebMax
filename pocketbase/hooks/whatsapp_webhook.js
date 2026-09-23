@@ -851,6 +851,14 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
             paymentData.payer = { email: rentalCustEmail }
           }
 
+          var idempotencyKey =
+            'mp-wa-' +
+            matchedRental.id +
+            '-' +
+            Date.now() +
+            '-' +
+            Math.random().toString(36).substring(2, 10)
+
           try {
             var mpRes = $http.send({
               url: 'https://api.mercadopago.com/v1/payments',
@@ -858,6 +866,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
               headers: {
                 'Content-Type': 'application/json',
                 Authorization: 'Bearer ' + mpAccessToken,
+                'X-Idempotency-Key': idempotencyKey,
               },
               body: JSON.stringify(paymentData),
               timeout: 30,
