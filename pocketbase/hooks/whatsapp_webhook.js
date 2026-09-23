@@ -334,13 +334,91 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     } catch (_) {}
   }
 
-  // IF NOT ELIGIBLE: Reject Helena service. Log ignored contact and send at most
-  // 1 polite disclaimer per number per day directing to the store.
+  // IF NOT ELIGIBLE:
+  // Helena ONLY assists clients regarding active/overdue rental contracts (renewal, return, late fees, pix).
+  // This WhatsApp number is the GENERAL contact of the store (Hospital Home), NOT an exclusive bot channel!
+  //
+  // SILENCE RULE:
+  // For trivial greetings (bom dia, boa tarde, olá, etc.), generic chatter, or messages that do NOT
+  // clearly mention rental/store business, Helena MUST REMAIN SILENT (do not reply anything).
+  //
+  // REDIRECTION RULE:
+  // ONLY if the incoming message explicitly mentions rental/store matters (e.g. wants to rent something new,
+  // quotation, store products, contract inquiry without eligible contract found), send the polite guidance
+  // message without claiming the channel is "exclusive", limited to at most 1 notice per 24 hours.
   if (!isEligible) {
+    var rawTextClean = String(messageText || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+
+    // Keywords that indicate explicit interest in rental, contracts, quotes, store products or equipment
+    var rentalKeywords = [
+      'locac', // locacao, locacoes, locar
+      'alug', // aluguel, alugar, alugo
+      'contrat', // contrato, contratos
+      'devolv', // devolver, devolucao
+      'renov', // renovar, renovacao
+      'diaria', // diaria, diarias
+      'orcamento',
+      'orcament',
+      'cotac', // cotacao
+      'preco',
+      'valor',
+      'tabela',
+      'cama',
+      'cadeira de rodas',
+      'cadeira de banho',
+      'concentrador',
+      'oxigenio',
+      'aspirador',
+      'muleta',
+      'andador',
+      'hospitalar',
+      'equipamento',
+      'loja',
+      'comprar',
+      'venda',
+      'pagamento',
+      'pix',
+      'boleto',
+      'vencimento',
+      'vencid',
+    ]
+
+    var hasRentalIntent = false
+    for (var kIdx = 0; kIdx < rentalKeywords.length; kIdx++) {
+      if (rawTextClean.indexOf(rentalKeywords[kIdx]) !== -1) {
+        hasRentalIntent = true
+        break
+      }
+    }
+
+    if (!hasRentalIntent) {
+      // Trivial greeting, out-of-scope conversation, or generic message.
+      // HELENA STAYS IN SILENCE (zero messages sent).
+      $app
+        .logger()
+        .info(
+          'whatsapp_webhook: helena silent (non-eligible client with trivial/out-of-scope message)',
+          'phone',
+          phone,
+          'message_preview',
+          messageText.substring(0, 100),
+        )
+
+      return e.json(200, {
+        success: true,
+        skipped: 'helena_silent_out_of_scope',
+      })
+    }
+
+    // Client explicitly mentioned rental/equipment/store topics, but has no eligible active/overdue contract.
     $app
       .logger()
       .info(
-        'whatsapp_webhook: non-contract message ignored (helena only attends active/overdue contracts)',
+        'whatsapp_webhook: rental topic detected for non-eligible client, evaluating 24h notice',
         'phone',
         phone,
         'message_preview',
@@ -371,7 +449,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
 
     if (shouldSendNotice) {
       const noticeText =
-        'Olá! Este canal é exclusivo para acompanhamento de contratos de locação vencendo ou vencidos da Hospital Home. Para novas locações, orçamentos ou informações gerais, por favor entre em contato diretamente com a nossa equipe de atendimento na loja. Agradecemos a compreensão!'
+        'Olá! Para novas locações, orçamentos e informações gerais, fale diretamente com nossa equipe de atendimento da loja. Sobre contratos em andamento (renovação ou devolução), posso te ajudar por aqui.'
 
       const apiUrl = $secrets.get('EVOLUTION_API_URL') || ''
       const apiKey = $secrets.get('EVOLUTION_API_KEY') || ''
@@ -408,7 +486,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
               cobRec.set('stage', 'unauthorized_non_client')
               cobRec.set('status', 'aviso_enviado')
               cobRec.set('message_sent', noticeText)
-              cobRec.set('notes', 'Mensagem de cliente sem contrato ativo ignorada pela Helena.')
+              cobRec.set('notes', 'Mensagem sobre locação direcionada para atendimento da loja.')
               $app.save(cobRec)
             }
           } catch (recErr) {
