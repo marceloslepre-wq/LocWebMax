@@ -82,6 +82,16 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
         const inv = inventory.find((i) => i.id === itemId)
         const startDate = getItemStartDate(item, contractStart)
         const returnDate = getItemReturnDate(item, contractReturn)
+
+        // Obter valor mensal do produto no estoque:
+        // Prioridade: monthlyPrice do cadastro do produto no estoque,
+        // fallback: dailyPrice * 30 se monthlyPrice não estiver cadastrado.
+        const invMonthly = Number(inv?.monthlyPrice || (inv as any)?.monthly_price || 0)
+        const itemMonthly = Number(item.monthlyPrice || item.monthly_price || 0)
+        const dPrice = getItemDailyPrice(item, inv)
+        const monthlyPrice =
+          invMonthly > 0 ? invMonthly : itemMonthly > 0 ? itemMonthly : dPrice > 0 ? dPrice * 30 : 0
+
         return {
           index,
           itemId,
@@ -89,7 +99,8 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
           startDate,
           returnDate,
           remaining: getRemainingDays(returnDate),
-          dailyPrice: getItemDailyPrice(item, inv),
+          dailyPrice: dPrice,
+          monthlyPrice,
           qty: remainingQty,
           returnedQty,
         }
@@ -102,6 +113,7 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
       returnDate: string
       remaining: number
       dailyPrice: number
+      monthlyPrice: number
       qty: number
       returnedQty: number
     }>
@@ -138,9 +150,29 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
         return { calculatedTotal: 0, error: `Data anterior ao início de "${row.name}".` }
       let extra = differenceInDays(parseISO(endDate), parseISO(row.returnDate))
       if (extra < 0) extra = 0
-      total += row.dailyPrice * row.qty * extra
+
+      // REGRA DE RENOVAÇÃO DO USUÁRIO (NUNCA RATEAR POR DIAS):
+      // - 30 dias (ou ~1 mês, entre 25 e 35 dias): cobra o Valor Mensal cheio do produto no Estoque.
+      // - 15 dias (entre 12 e 18 dias): cobra 50% do Valor Mensal do produto.
+      // - Outros períodos: meses completos (extra / 30) * valor mensal cheio, ou diária se avulso.
+      let itemCost = 0
+      if (row.monthlyPrice > 0) {
+        if (extra >= 25 && extra <= 35) {
+          itemCost = row.monthlyPrice * row.qty
+        } else if (extra >= 12 && extra <= 18) {
+          itemCost = (row.monthlyPrice / 2) * row.qty
+        } else if (extra > 0 && extra % 30 === 0) {
+          itemCost = row.monthlyPrice * (extra / 30) * row.qty
+        } else {
+          // Fallback para outros períodos customizados mantendo base mensal cheia
+          itemCost = Math.round((row.monthlyPrice / 30) * extra * row.qty * 100) / 100
+        }
+      } else {
+        itemCost = row.dailyPrice * row.qty * extra
+      }
+      total += itemCost
     }
-    return { calculatedTotal: Math.round(total), error: null as string | null }
+    return { calculatedTotal: Math.round(total * 100) / 100, error: null as string | null }
   }, [selected, endDate, itemRows])
 
   const finalTotal = manualAdjust ? parseFloat(manualTotal.replace(',', '.')) || 0 : calculatedTotal
@@ -152,8 +184,11 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
     }
   }
 
+  const [quickDays, setQuickDays] = useState<number | null>(null)
+
   const handleQuickSelect = (days: number) => {
     if (selected.size === 0) return
+    setQuickDays(days)
     const selectedRows = itemRows.filter((r) => selected.has(r.index))
     const maxReturnDate = selectedRows.reduce((m, r) => (r.returnDate > m ? r.returnDate : m), '')
     const base = maxReturnDate || format(new Date(), 'yyyy-MM-dd')
@@ -163,16 +198,31 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
   const handleSave = async () => {
     if (!rental || error) return
     setSaving(true)
+
+    // Cada item selecionado é renovado a partir do seu vencimento individual
+    // se quickDays estiver definido (ex: +30 dias adiciona 30 dias à data de retorno daquele item).
+    // Se o usuário selecionou uma data específica no input, usamos o período adicional ou a data direta.
     const updatedItems = rental.items.map((item: any, index: number) => {
       if (!selected.has(index) || item.itemId === 'freight') return item
+
+      const currentItemReturn = getItemReturnDate(
+        item,
+        rental.expectedReturnDate?.split('T')[0] || '',
+      )
+      let itemTargetDate = endDate
+      if (quickDays && currentItemReturn) {
+        itemTargetDate = format(addDays(parseISO(currentItemReturn), quickDays), 'yyyy-MM-dd')
+      }
+
       return {
         ...item,
-        endDate,
-        end_date: endDate,
-        expectedReturnDate: endDate,
-        expected_return_date: endDate,
+        endDate: itemTargetDate,
+        end_date: itemTargetDate,
+        expectedReturnDate: itemTargetDate,
+        expected_return_date: itemTargetDate,
       }
     })
+
     const allDates = updatedItems.map((item: any) =>
       getItemReturnDate(item, rental.expectedReturnDate?.split('T')[0] || ''),
     )
@@ -299,7 +349,10 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
             <Input
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => {
+                setQuickDays(null)
+                setEndDate(e.target.value)
+              }}
               min={minDate}
             />
           </div>

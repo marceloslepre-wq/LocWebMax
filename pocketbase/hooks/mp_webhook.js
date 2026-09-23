@@ -198,14 +198,14 @@ routerAdd('POST', '/backend/v1/payments/mp-webhook', (e) => {
           return formatDateYMD(now)
         }
 
-        // REGRA MARCELO: A renovação é SEMPRE ancorada no vencimento original da locação (+ 30 ou 15 dias),
+        // REGRA MARCELO: A renovação é SEMPRE ancorada no vencimento original individual de cada item (+ 30 ou 15 dias),
         // NUNCA na data em que o pagamento foi realizado, mesmo com pagamento dias após o vencimento.
+        // Produtos de um mesmo contrato podem ter datas de devolução diferentes entre si.
         // Zero cobrança de dias avulsos por atraso.
         var currentExpected = rental.getString('expected_return_date')
         if (!currentExpected) {
           currentExpected = rental.getString('start_date') || formatDateYMD(new Date())
         }
-        var newExpectedReturnDate = addDaysToDateStr(currentExpected, renewalDays)
 
         // Capture previous state for rental_snapshots
         var preRentalState = {
@@ -217,18 +217,33 @@ routerAdd('POST', '/backend/v1/payments/mp-webhook', (e) => {
           total: rental.get('total') || 0,
         }
 
-        // Update items' end dates (ancorados no vencimento original)
+        // Update items' end dates ancorados no vencimento ORIGINAL DE CADA ITEM
         var updatedItems = []
+        var maxNewReturnDate = ''
         for (var i = 0; i < rawItems.length; i++) {
           var itemObj = Object.assign({}, rawItems[i])
           if (itemObj.itemId !== 'freight') {
-            itemObj.endDate = newExpectedReturnDate
-            itemObj.end_date = newExpectedReturnDate
-            itemObj.expectedReturnDate = newExpectedReturnDate
-            itemObj.expected_return_date = newExpectedReturnDate
+            // Obter data de vencimento específica deste item (ou fallback para currentExpected)
+            var itemBaseExp =
+              itemObj.endDate ||
+              itemObj.end_date ||
+              itemObj.expectedReturnDate ||
+              itemObj.expected_return_date ||
+              currentExpected
+            var itemNewExp = addDaysToDateStr(itemBaseExp, renewalDays)
+            itemObj.endDate = itemNewExp
+            itemObj.end_date = itemNewExp
+            itemObj.expectedReturnDate = itemNewExp
+            itemObj.expected_return_date = itemNewExp
+            if (!maxNewReturnDate || itemNewExp > maxNewReturnDate) {
+              maxNewReturnDate = itemNewExp
+            }
           }
           updatedItems.push(itemObj)
         }
+
+        var newExpectedReturnDate =
+          maxNewReturnDate || addDaysToDateStr(currentExpected, renewalDays)
 
         var newTotal = Number(rental.get('total') || 0) + transactionAmount
 
