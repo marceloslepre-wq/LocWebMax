@@ -19,7 +19,10 @@ routerAdd(
     }
     if (amount <= 0) {
       throw new BadRequestError('Dados invalidos', {
-        amount: new ValidationError('invalid_value', 'O valor deve ser maior que zero.'),
+        amount: new ValidationError(
+          'invalid_value',
+          'O valor deve ser maior que zero (R$ 0,00 não permitido).',
+        ),
       })
     }
 

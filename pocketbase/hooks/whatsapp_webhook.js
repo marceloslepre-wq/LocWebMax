@@ -110,6 +110,95 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
 
   var SPECIAL_REFS = ['820', '830', '840', '821', '831', '841', '900', '800', '730', '720', '652']
 
+  // Robust product resolution in inventory table
+  var resolveInventoryProduct = function (itemId, itemCode, itemName) {
+    var inv = null
+    if (itemId && itemId !== 'freight' && itemId !== 'undefined') {
+      try {
+        inv = $app.findRecordById('inventory', itemId)
+      } catch (_) {}
+    }
+
+    if (!inv && itemCode) {
+      try {
+        var foundByCode = $app.findRecordsByFilter(
+          'inventory',
+          'code = "' + itemCode + '"',
+          '-created',
+          1,
+          0,
+        )
+        if (foundByCode.length > 0) inv = foundByCode[0]
+      } catch (_) {}
+    }
+
+    // Try extracting numeric reference / SKU inside parentheses or words e.g. "Cama 1 (840) pilati" -> 840
+    if (!inv && itemName) {
+      try {
+        var matchParen = String(itemName).match(/\((\d{2,6})\)/)
+        var refInName = matchParen ? matchParen[1] : null
+        if (!refInName) {
+          var matchRef = String(itemName).match(/\b(?:ref\.?|cód\.?|cod\.?)\s*(\d{2,6})\b/i)
+          if (matchRef) refInName = matchRef[1]
+        }
+        if (refInName) {
+          var foundByRef = $app.findRecordsByFilter(
+            'inventory',
+            'code = "' + refInName + '"',
+            '-created',
+            1,
+            0,
+          )
+          if (foundByRef.length > 0) inv = foundByRef[0]
+        }
+      } catch (_) {}
+    }
+
+    // Fallback: search by clean name
+    if (!inv && itemName) {
+      try {
+        var cleanSearch = String(itemName)
+          .replace(/[^\w\s]/gi, '')
+          .trim()
+        if (cleanSearch) {
+          var foundByName = $app.findRecordsByFilter(
+            'inventory',
+            'name ~ "' + cleanSearch + '"',
+            '-created',
+            1,
+            0,
+          )
+          if (foundByName.length > 0) inv = foundByName[0]
+        }
+      } catch (_) {}
+    }
+
+    // Fallback: search by significant words (e.g. "pilati", "repan")
+    if (!inv && itemName) {
+      try {
+        var words = String(itemName).toLowerCase().split(/\s+/)
+        for (var wIdx = 0; wIdx < words.length; wIdx++) {
+          var w = words[wIdx].replace(/[^\w]/g, '').trim()
+          if (w.length >= 5 && w !== 'hospitalar' && w !== 'locacao' && w !== 'aluguel') {
+            var foundByWord = $app.findRecordsByFilter(
+              'inventory',
+              'name ~ "' + w + '"',
+              '-created',
+              1,
+              0,
+            )
+            if (foundByWord.length > 0) {
+              inv = foundByWord[0]
+              break
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    return inv
+  }
+
   // Robust rental item and price analysis
   var analyzeRental = function (rentalRec) {
     var rentalItems = rentalRec.get('items')
@@ -126,6 +215,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     var codes = []
     var hasSpecialProduct = false
     var totalMonthlyPrice = 0
+    var hasValidPrice = false
 
     for (var j = 0; j < rentalItems.length; j++) {
       var rawItem = rentalItems[j]
@@ -145,41 +235,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         rawItem.name || rawItem.description || rawItem.productName || rawItem.product_name || ''
       var itemCode = String(rawItem.code || rawItem.sku || rawItem.product_code || '').trim()
 
-      var inv = null
-      if (itemId) {
-        try {
-          inv = $app.findRecordById('inventory', itemId)
-        } catch (_) {}
-      }
-
-      if (!inv && itemCode) {
-        try {
-          var foundByCode = $app.findRecordsByFilter(
-            'inventory',
-            'code = "' + itemCode + '"',
-            '-created',
-            1,
-            0,
-          )
-          if (foundByCode.length > 0) inv = foundByCode[0]
-        } catch (_) {}
-      }
-
-      if (!inv && itemName) {
-        try {
-          var cleanSearch = itemName.replace(/[^\w\s]/gi, '').trim()
-          if (cleanSearch) {
-            var foundByName = $app.findRecordsByFilter(
-              'inventory',
-              'name ~ "' + cleanSearch + '"',
-              '-created',
-              1,
-              0,
-            )
-            if (foundByName.length > 0) inv = foundByName[0]
-          }
-        } catch (_) {}
-      }
+      var inv = resolveInventoryProduct(itemId, itemCode, itemName)
 
       var itemMonthly = 0
       if (inv) {
@@ -188,18 +244,40 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         if (invName) itemName = invName
         if (invCode) itemCode = invCode
         itemMonthly = Number(inv.get('monthly_price') || 0)
+        if (itemMonthly <= 0) {
+          var invDaily = Number(inv.get('daily_price') || 0)
+          if (invDaily > 0) {
+            itemMonthly = Math.round(invDaily * 30 * 100) / 100
+          }
+        }
       } else {
         itemMonthly = Number(rawItem.monthlyPrice || rawItem.monthly_price || 0)
       }
 
       if (itemMonthly <= 0) {
-        var dailyP = Number(
-          rawItem.dailyPrice || rawItem.daily_price || (inv ? inv.get('daily_price') : 0) || 0,
-        )
-        if (dailyP > 0) itemMonthly = Math.round(dailyP * 30)
+        var dailyP = Number(rawItem.dailyPrice || rawItem.daily_price || 0)
+        if (dailyP > 0) itemMonthly = Math.round(dailyP * 30 * 100) / 100
       }
 
-      totalMonthlyPrice += itemMonthly * activeQty
+      if (itemMonthly <= 0) {
+        var rTotalP = Number(rawItem.totalPrice || rawItem.total_price || 0)
+        if (rTotalP > 0) {
+          var sDate = rawItem.startDate || rawItem.start_date || ''
+          var eDate = rawItem.endDate || rawItem.end_date || ''
+          if (sDate && eDate) {
+            var msDiff = new Date(eDate).getTime() - new Date(sDate).getTime()
+            var daysCount = Math.round(msDiff / (1000 * 60 * 60 * 24))
+            if (daysCount >= 25 && daysCount <= 35) {
+              itemMonthly = rTotalP / activeQty
+            }
+          }
+        }
+      }
+
+      if (itemMonthly > 0) {
+        totalMonthlyPrice += itemMonthly * activeQty
+        hasValidPrice = true
+      }
 
       if (!itemName) itemName = 'Item ' + itemId
 
@@ -211,16 +289,14 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
 
       if (itemCode) {
         codes.push(itemCode)
-        for (var sIdx = 0; sIdx < SPECIAL_REFS.length; sIdx++) {
-          var sRef = SPECIAL_REFS[sIdx]
-          if (
-            itemCode === sRef ||
-            itemCode.indexOf(sRef) !== -1 ||
-            String(rawItem.name || '').indexOf(sRef) !== -1
-          ) {
-            hasSpecialProduct = true
-            break
-          }
+      }
+
+      var nameOrCode = (itemCode + ' ' + itemName).toLowerCase()
+      for (var sIdx = 0; sIdx < SPECIAL_REFS.length; sIdx++) {
+        var sRef = SPECIAL_REFS[sIdx]
+        if (itemCode === sRef || itemCode.indexOf(sRef) !== -1 || nameOrCode.indexOf(sRef) !== -1) {
+          hasSpecialProduct = true
+          break
         }
       }
 
@@ -234,10 +310,11 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       itemNames: itemNames,
       codes: codes,
       hasSpecialProduct: hasSpecialProduct,
+      hasValidPrice: hasValidPrice && renewal30 > 0,
       renewal30: renewal30,
       renewal15: renewal15,
-      renewal30Formatted: formatBRL(renewal30),
-      renewal15Formatted: formatBRL(renewal15),
+      renewal30Formatted: renewal30 > 0 ? formatBRL(renewal30) : '',
+      renewal15Formatted: renewal15 > 0 ? formatBRL(renewal15) : '',
     }
   }
 
@@ -679,8 +756,32 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
   }
 
   // If renewal intent detected, execute DYNAMIC PIX GENERATION via Mercado Pago API
+  // REGRA CRÍTICA: Se o valor de renovação for <= 0 ou indefinido, NUNCA gerar PIX de 0!
   if (isRenewalIntent && matchedRental) {
     var renewAmount = chosenDays === 15 ? rentalAnalysis.renewal15 : rentalAnalysis.renewal30
+    if (renewAmount <= 0) {
+      // Valor não pôde ser resolvido: NÃO gerar PIX de 0. Informar ao cliente que a equipe confirmará o valor.
+      var contractNumZero = matchedRental.getString('contract_number') || matchedRental.id
+      var prodNamesStrZero = rentalAnalysis.itemNames.join(', ') || 'item locado'
+      var tenantIdZero = matchedRental.getString('tenant_id') || ''
+      var zeroPriceMsg =
+        'Perfeito! Registrei o seu interesse na *renovação por ' +
+        chosenDays +
+        ' dias* do contrato *' +
+        contractNumZero +
+        '* referente a *' +
+        prodNamesStrZero +
+        '*.\n\n' +
+        'Nossa equipe da loja confirmará o valor exato da renovação para você em instantes para que possamos emitir o QR Code PIX com segurança. Caso queira falar agora com a loja, estou à disposição! 💙'
+      sendWhatsAppText(phone, zeroPriceMsg, tenantIdZero)
+      return e.json(200, {
+        success: true,
+        action: 'pending_price_confirmation',
+        days: chosenDays,
+        contract: contractNumZero,
+      })
+    }
+
     if (renewAmount > 0) {
       var mpAccessToken = $secrets.get('MERCADO_PAGO_ACCESS_TOKEN') || ''
       if (mpAccessToken) {
@@ -946,6 +1047,21 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     } catch (_) {}
   }
 
+  var valoresContexto = ''
+  if (rAnalysis && rAnalysis.hasValidPrice) {
+    valoresContexto =
+      'VALORES EXATOS DE RENOVAÇÃO DO ESTOQUE:\n' +
+      '- 30 dias: ' +
+      rAnalysis.renewal30Formatted +
+      '\n' +
+      (isSpecial
+        ? '- 15 dias: NÃO DISPONÍVEL (produto especial de 30 dias)\n'
+        : '- 15 dias: ' + rAnalysis.renewal15Formatted + '\n')
+  } else {
+    valoresContexto =
+      'VALORES DE RENOVAÇÃO: VALOR NÃO DEFINIDO NO SISTEMA. REGRA CRÍTICA: NUNCA OFEREÇA OU DIGA R$ 0,00! Diga apenas que nossa equipe da loja confirmará o valor exato da renovação para o cliente.\n'
+  }
+
   var promptWithContext =
     '[SISTEMA - CONTEXTO DO CONTRATO DO CLIENTE]\n' +
     'Cliente: ' +
@@ -963,19 +1079,13 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     'Vencimento: ' +
     dateExp +
     '\n' +
-    'VALORES EXATOS DE RENOVAÇÃO DO ESTOQUE:\n' +
-    '- 30 dias: ' +
-    (rAnalysis ? rAnalysis.renewal30Formatted : 'Consulte a loja') +
-    '\n' +
-    (isSpecial
-      ? '- 15 dias: NÃO DISPONÍVEL (produto especial de 30 dias)\n'
-      : '- 15 dias: ' + (rAnalysis ? rAnalysis.renewal15Formatted : 'Consulte a loja') + '\n') +
+    valoresContexto +
     (!isSpecial && storeLocationsText
       ? 'ENDEREÇOS DAS LOJAS FÍSICAS PARA DEVOLUÇÃO (caso o cliente escolha devolver):\n' +
         storeLocationsText +
         '\n'
       : '') +
-    'REGRA CRÍTICA DE PAGAMENTO: NUNCA forneça chave PIX ou CNPJ. Se o cliente pedir PIX ou quiser renovar, diga que o sistema está gerando o QR Code PIX oficial Mercado Pago com o valor exato.\n\n' +
+    'REGRA CRÍTICA DE PAGAMENTO: NUNCA forneça chave PIX ou CNPJ e NUNCA informe valor R$ 0,00. Se o cliente pedir PIX ou quiser renovar, diga que o sistema está gerando o QR Code PIX oficial Mercado Pago com o valor exato.\n\n' +
     'Mensagem recebida do cliente:\n"' +
     messageText +
     '"'

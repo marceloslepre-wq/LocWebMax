@@ -77,6 +77,95 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     }
   }
 
+  // Robust product resolution in inventory table
+  var resolveInventoryProduct = function (itemId, itemCode, itemName) {
+    var inv = null
+    if (itemId && itemId !== 'freight' && itemId !== 'undefined') {
+      try {
+        inv = $app.findRecordById('inventory', itemId)
+      } catch (_) {}
+    }
+
+    if (!inv && itemCode) {
+      try {
+        var foundByCode = $app.findRecordsByFilter(
+          'inventory',
+          'code = "' + itemCode + '"',
+          '-created',
+          1,
+          0,
+        )
+        if (foundByCode.length > 0) inv = foundByCode[0]
+      } catch (_) {}
+    }
+
+    // Try extracting numeric reference / SKU inside parentheses or words e.g. "Cama 1 (840) pilati" -> 840
+    if (!inv && itemName) {
+      try {
+        var matchParen = String(itemName).match(/\((\d{2,6})\)/)
+        var refInName = matchParen ? matchParen[1] : null
+        if (!refInName) {
+          var matchRef = String(itemName).match(/\b(?:ref\.?|cód\.?|cod\.?)\s*(\d{2,6})\b/i)
+          if (matchRef) refInName = matchRef[1]
+        }
+        if (refInName) {
+          var foundByRef = $app.findRecordsByFilter(
+            'inventory',
+            'code = "' + refInName + '"',
+            '-created',
+            1,
+            0,
+          )
+          if (foundByRef.length > 0) inv = foundByRef[0]
+        }
+      } catch (_) {}
+    }
+
+    // Fallback: search by clean name
+    if (!inv && itemName) {
+      try {
+        var cleanSearch = String(itemName)
+          .replace(/[^\w\s]/gi, '')
+          .trim()
+        if (cleanSearch) {
+          var foundByName = $app.findRecordsByFilter(
+            'inventory',
+            'name ~ "' + cleanSearch + '"',
+            '-created',
+            1,
+            0,
+          )
+          if (foundByName.length > 0) inv = foundByName[0]
+        }
+      } catch (_) {}
+    }
+
+    // Fallback: search by significant words (e.g. "pilati", "repan")
+    if (!inv && itemName) {
+      try {
+        var words = String(itemName).toLowerCase().split(/\s+/)
+        for (var wIdx = 0; wIdx < words.length; wIdx++) {
+          var w = words[wIdx].replace(/[^\w]/g, '').trim()
+          if (w.length >= 5 && w !== 'hospitalar' && w !== 'locacao' && w !== 'aluguel') {
+            var foundByWord = $app.findRecordsByFilter(
+              'inventory',
+              'name ~ "' + w + '"',
+              '-created',
+              1,
+              0,
+            )
+            if (foundByWord.length > 0) {
+              inv = foundByWord[0]
+              break
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    return inv
+  }
+
   // Helper to calculate late fee for overdue days
   // REGRA DO USUÁRIO: O valor da diária de atraso NÃO é taxa fixa global — é a soma do
   // "Valor Diário (R$)" real de cada item locado ativo no Estoque x quantidade ativa em posse do cliente.
@@ -115,41 +204,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       var itemName = item.name || item.description || item.productName || item.product_name || ''
       var itemCode = String(item.code || item.sku || item.product_code || '').trim()
 
-      var inv = null
-      if (itemId) {
-        try {
-          inv = $app.findRecordById('inventory', itemId)
-        } catch (_) {}
-      }
-
-      if (!inv && itemCode) {
-        try {
-          var foundByCode = $app.findRecordsByFilter(
-            'inventory',
-            'code = "' + itemCode + '"',
-            '-created',
-            1,
-            0,
-          )
-          if (foundByCode.length > 0) inv = foundByCode[0]
-        } catch (_) {}
-      }
-
-      if (!inv && itemName) {
-        try {
-          var cleanSearch = itemName.replace(/[^\w\s]/gi, '').trim()
-          if (cleanSearch) {
-            var foundByName = $app.findRecordsByFilter(
-              'inventory',
-              'name ~ "' + cleanSearch + '"',
-              '-created',
-              1,
-              0,
-            )
-            if (foundByName.length > 0) inv = foundByName[0]
-          }
-        } catch (_) {}
-      }
+      var inv = resolveInventoryProduct(itemId, itemCode, itemName)
 
       var dPrice = 0
       if (inv) {
@@ -242,6 +297,95 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
 
   var SPECIAL_REFS = ['820', '830', '840', '821', '831', '841', '900', '800', '730', '720', '652']
 
+  // Robust product resolution in inventory table
+  var resolveInventoryProduct = function (itemId, itemCode, itemName) {
+    var inv = null
+    if (itemId && itemId !== 'freight' && itemId !== 'undefined') {
+      try {
+        inv = $app.findRecordById('inventory', itemId)
+      } catch (_) {}
+    }
+
+    if (!inv && itemCode) {
+      try {
+        var foundByCode = $app.findRecordsByFilter(
+          'inventory',
+          'code = "' + itemCode + '"',
+          '-created',
+          1,
+          0,
+        )
+        if (foundByCode.length > 0) inv = foundByCode[0]
+      } catch (_) {}
+    }
+
+    // Try extracting numeric reference / SKU inside parentheses or words e.g. "Cama 1 (840) pilati" -> 840
+    if (!inv && itemName) {
+      try {
+        var matchParen = String(itemName).match(/\((\d{2,6})\)/)
+        var refInName = matchParen ? matchParen[1] : null
+        if (!refInName) {
+          var matchRef = String(itemName).match(/\b(?:ref\.?|cód\.?|cod\.?)\s*(\d{2,6})\b/i)
+          if (matchRef) refInName = matchRef[1]
+        }
+        if (refInName) {
+          var foundByRef = $app.findRecordsByFilter(
+            'inventory',
+            'code = "' + refInName + '"',
+            '-created',
+            1,
+            0,
+          )
+          if (foundByRef.length > 0) inv = foundByRef[0]
+        }
+      } catch (_) {}
+    }
+
+    // Fallback: search by clean name or significant keywords
+    if (!inv && itemName) {
+      try {
+        var cleanSearch = String(itemName)
+          .replace(/[^\w\s]/gi, '')
+          .trim()
+        if (cleanSearch) {
+          var foundByName = $app.findRecordsByFilter(
+            'inventory',
+            'name ~ "' + cleanSearch + '"',
+            '-created',
+            1,
+            0,
+          )
+          if (foundByName.length > 0) inv = foundByName[0]
+        }
+      } catch (_) {}
+    }
+
+    // Fallback: search by significant words (e.g. "pilati", "repan")
+    if (!inv && itemName) {
+      try {
+        var words = String(itemName).toLowerCase().split(/\s+/)
+        for (var wIdx = 0; wIdx < words.length; wIdx++) {
+          var w = words[wIdx].replace(/[^\w]/g, '').trim()
+          if (w.length >= 5 && w !== 'hospitalar' && w !== 'locacao' && w !== 'aluguel') {
+            var foundByWord = $app.findRecordsByFilter(
+              'inventory',
+              'name ~ "' + w + '"',
+              '-created',
+              1,
+              0,
+            )
+            if (foundByWord.length > 0) {
+              inv = foundByWord[0]
+              break
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    return inv
+  }
+
   // Robust rental item and price analysis
   var buildRentalItemAnalysis = function (rentalRec) {
     var rentalItems = rentalRec.get('items')
@@ -258,6 +402,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     var codes = []
     var hasSpecialProduct = false
     var totalMonthlyPrice = 0
+    var hasValidPrice = false
 
     for (var j = 0; j < rentalItems.length; j++) {
       var rawItem = rentalItems[j]
@@ -277,41 +422,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         rawItem.name || rawItem.description || rawItem.productName || rawItem.product_name || ''
       var itemCode = String(rawItem.code || rawItem.sku || rawItem.product_code || '').trim()
 
-      var inv = null
-      if (itemId) {
-        try {
-          inv = $app.findRecordById('inventory', itemId)
-        } catch (_) {}
-      }
-
-      if (!inv && itemCode) {
-        try {
-          var foundByCode = $app.findRecordsByFilter(
-            'inventory',
-            'code = "' + itemCode + '"',
-            '-created',
-            1,
-            0,
-          )
-          if (foundByCode.length > 0) inv = foundByCode[0]
-        } catch (_) {}
-      }
-
-      if (!inv && itemName) {
-        try {
-          var cleanSearch = itemName.replace(/[^\w\s]/gi, '').trim()
-          if (cleanSearch) {
-            var foundByName = $app.findRecordsByFilter(
-              'inventory',
-              'name ~ "' + cleanSearch + '"',
-              '-created',
-              1,
-              0,
-            )
-            if (foundByName.length > 0) inv = foundByName[0]
-          }
-        } catch (_) {}
-      }
+      var inv = resolveInventoryProduct(itemId, itemCode, itemName)
 
       var itemMonthly = 0
       if (inv) {
@@ -320,19 +431,43 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         if (invName) itemName = invName
         if (invCode) itemCode = invCode
         itemMonthly = Number(inv.get('monthly_price') || 0)
+        // Se monthly_price estiver zerado no cadastro mas daily_price existir, calcula daily_price * 30
+        if (itemMonthly <= 0) {
+          var invDaily = Number(inv.get('daily_price') || 0)
+          if (invDaily > 0) {
+            itemMonthly = Math.round(invDaily * 30 * 100) / 100
+          }
+        }
       } else {
         itemMonthly = Number(rawItem.monthlyPrice || rawItem.monthly_price || 0)
       }
 
-      // Fallback: if monthly_price is 0, estimate from dailyPrice * 30
+      // Fallback a partir do item bruto da locação
       if (itemMonthly <= 0) {
-        var dailyP = Number(
-          rawItem.dailyPrice || rawItem.daily_price || (inv ? inv.get('daily_price') : 0) || 0,
-        )
-        if (dailyP > 0) itemMonthly = Math.round(dailyP * 30)
+        var dailyP = Number(rawItem.dailyPrice || rawItem.daily_price || 0)
+        if (dailyP > 0) itemMonthly = Math.round(dailyP * 30 * 100) / 100
       }
 
-      totalMonthlyPrice += itemMonthly * activeQty
+      // Fallback a partir do totalPrice da locação se for período mensal
+      if (itemMonthly <= 0) {
+        var rTotalP = Number(rawItem.totalPrice || rawItem.total_price || 0)
+        if (rTotalP > 0) {
+          var sDate = rawItem.startDate || rawItem.start_date || ''
+          var eDate = rawItem.endDate || rawItem.end_date || ''
+          if (sDate && eDate) {
+            var msDiff = new Date(eDate).getTime() - new Date(sDate).getTime()
+            var daysCount = Math.round(msDiff / (1000 * 60 * 60 * 24))
+            if (daysCount >= 25 && daysCount <= 35) {
+              itemMonthly = rTotalP / activeQty
+            }
+          }
+        }
+      }
+
+      if (itemMonthly > 0) {
+        totalMonthlyPrice += itemMonthly * activeQty
+        hasValidPrice = true
+      }
 
       if (!itemName) itemName = 'Item ' + itemId
 
@@ -344,16 +479,15 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
 
       if (itemCode) {
         codes.push(itemCode)
-        for (var sIdx = 0; sIdx < SPECIAL_REFS.length; sIdx++) {
-          var sRef = SPECIAL_REFS[sIdx]
-          if (
-            itemCode === sRef ||
-            itemCode.indexOf(sRef) !== -1 ||
-            String(rawItem.name || '').indexOf(sRef) !== -1
-          ) {
-            hasSpecialProduct = true
-            break
-          }
+      }
+
+      // Checagem de produto especial por código ou texto do nome
+      var nameOrCode = (itemCode + ' ' + itemName).toLowerCase()
+      for (var sIdx = 0; sIdx < SPECIAL_REFS.length; sIdx++) {
+        var sRef = SPECIAL_REFS[sIdx]
+        if (itemCode === sRef || itemCode.indexOf(sRef) !== -1 || nameOrCode.indexOf(sRef) !== -1) {
+          hasSpecialProduct = true
+          break
         }
       }
 
@@ -367,10 +501,11 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       itemNames: itemNames,
       codes: codes,
       hasSpecialProduct: hasSpecialProduct,
+      hasValidPrice: hasValidPrice && renewal30 > 0,
       renewal30: renewal30,
       renewal15: renewal15,
-      renewal30Formatted: formatBRL(renewal30),
-      renewal15Formatted: formatBRL(renewal15),
+      renewal30Formatted: renewal30 > 0 ? formatBRL(renewal30) : '',
+      renewal15Formatted: renewal15 > 0 ? formatBRL(renewal15) : '',
     }
   }
 
@@ -570,6 +705,22 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
           daysOverdue +
           ' dias*. Precisamos definir hoje como proceder para evitar novas cobranças.'
 
+    var renewalOptionsText = ''
+    if (analysis.hasValidPrice) {
+      renewalOptionsText = isSpecialProduct
+        ? 'oferecer APENAS renovação por 30 dias no valor de ' +
+          analysis.renewal30Formatted +
+          ' (produto especial, NUNCA oferecer 15 dias)'
+        : 'oferecer renovação por 15 dias (' +
+          analysis.renewal15Formatted +
+          ') ou 30 dias (' +
+          analysis.renewal30Formatted +
+          ') via PIX'
+    } else {
+      renewalOptionsText =
+        'informar a opção de renovação dizendo que nossa equipe confirmará o valor exato para o cliente (NUNCA exibir R$ 0,00 nem inventar valores)'
+    }
+
     var stageInstruction = ''
     if (targetStage === 'vencimento_hoje') {
       stageInstruction =
@@ -625,6 +776,21 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         ').'
     }
 
+    var valoresContexto = ''
+    if (analysis.hasValidPrice) {
+      valoresContexto =
+        'VALORES EXATOS DE RENOVAÇÃO DO ESTOQUE (MANDATÓRIO: NUNCA INVENTE OUTROS VALORES OU CHAVE PIX):\n' +
+        '- 30 dias: ' +
+        analysis.renewal30Formatted +
+        '\n' +
+        (isSpecialProduct
+          ? '- 15 dias: NÃO PERMITIDO PARA ESTE PRODUTO\n'
+          : '- 15 dias: ' + analysis.renewal15Formatted + '\n')
+    } else {
+      valoresContexto =
+        'VALORES DE RENOVAÇÃO: VALOR NÃO DEFINIDO NO SISTEMA. REGRA CRÍTICA: NUNCA OFEREÇA OU EXIBA R$ 0,00! Diga que a equipe da loja confirmará o valor exato da renovação caso o cliente queira renovar.\n'
+    }
+
     var agentPrompt =
       '[SISTEMA - INÍCIO DE ATENDIMENTO PROATIVO]\n' +
       'Você deve iniciar o contato no WhatsApp com o cliente ' +
@@ -640,13 +806,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         ? 'SIM (apenas 30 dias na renovação; retirada agendada na residência)'
         : 'NÃO (renovação por 15 ou 30 dias; devolução pelo cliente na loja)') +
       '.\n' +
-      'VALORES EXATOS DE RENOVAÇÃO DO ESTOQUE (MANDATÓRIO: NUNCA INVENTE OUTROS VALORES OU CHAVE PIX):\n' +
-      '- 30 dias: ' +
-      analysis.renewal30Formatted +
-      '\n' +
-      (isSpecialProduct
-        ? '- 15 dias: NÃO PERMITIDO PARA ESTE PRODUTO\n'
-        : '- 15 dias: ' + analysis.renewal15Formatted + '\n') +
+      valoresContexto +
       'Data de vencimento do contrato: ' +
       dateFormatted +
       '.\n' +
@@ -672,7 +832,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
           storeLocationsText +
           '\n'
         : '') +
-      '\nAVISO DE SEGURANÇA: NUNCA invente chave PIX estática (CNPJ, etc.). O PIX é gerado automaticamente pelo sistema quando o cliente responder escolhendo renovar.\n\n' +
+      '\nAVISO DE SEGURANÇA: NUNCA forneça chave PIX estática (CNPJ, etc.) e NUNCA informe valor R$ 0,00. O PIX é gerado automaticamente pelo sistema quando o cliente responder escolhendo renovar.\n\n' +
       'Instrução específica:\n' +
       stageInstruction +
       '\n\n' +
