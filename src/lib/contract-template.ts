@@ -10,6 +10,8 @@
  * Old rentals keep their stored HTML; new rentals use this renderer.
  */
 
+import { resolveInventoryItem } from '@/lib/rental-items'
+
 export interface RenderContractParams {
   templateHtml?: string | null
   rentalId?: string
@@ -488,16 +490,33 @@ export function renderContractHtml(params: RenderContractParams): string {
 
   let itemsListHtml = regularItems
     .map((ri: any) => {
-      const itemId = getItemId(ri)
-      const item = inventory.find((i: any) => i.id === itemId)
+      const item = resolveInventoryItem(ri, inventory)
       const start = formatDateLocal(ri.startDate || ri.start_date || params.startDate)
       const end = formatDateLocal(ri.endDate || ri.end_date || params.expectedReturnDate)
       const totalVal = formatBRL(Number(ri.totalPrice || ri.total_price || 0))
       const qty = ri.qty ?? ri.quantity ?? 1
+
+      // Nome do item: preferir o produto resolvido no estoque, senão a descrição própria do item se não for genérica vazia
+      let itemName = item?.name || ''
+      if (!itemName) {
+        const rawName = String(
+          ri.name || ri.productName || ri.product_name || ri.description || '',
+        ).trim()
+        if (rawName && rawName !== '-' && !rawName.startsWith('Equipamento Hospitalar (Locação')) {
+          itemName = rawName
+        } else if (rawName) {
+          itemName = rawName
+        } else {
+          itemName = `Equipamento Hospitalar (Locação ${rentalIdStr})`
+        }
+      }
+
+      const itemCode = item?.code || ri.code || '-'
+
       return `<tr>
         <td style="border: 1px solid #9ca3af; padding: 8px 6px; text-align: center;">${qty}</td>
-        <td style="border: 1px solid #9ca3af; padding: 8px;">${item?.name || ri.name || 'Item'}</td>
-        <td style="border: 1px solid #9ca3af; padding: 8px;">${item?.code || ri.code || '-'}</td>
+        <td style="border: 1px solid #9ca3af; padding: 8px;">${itemName}</td>
+        <td style="border: 1px solid #9ca3af; padding: 8px;">${itemCode}</td>
         <td style="border: 1px solid #9ca3af; padding: 8px; text-align: center;">${start}</td>
         <td style="border: 1px solid #9ca3af; padding: 8px; text-align: center;">${end}</td>
         <td style="border: 1px solid #9ca3af; padding: 8px; text-align: right; font-weight: 500;">${totalVal}</td>
@@ -522,11 +541,17 @@ export function renderContractHtml(params: RenderContractParams): string {
     <tbody>
       ${regularItems
         .map((ri: any) => {
-          const itemId = getItemId(ri)
-          const item = inventory.find((i: any) => i.id === itemId)
+          const item = resolveInventoryItem(ri, inventory)
           const salePrice = Number(item?.salePrice || item?.sale_price || 0)
+          let itemName = item?.name || ''
+          if (!itemName) {
+            const rawName = String(
+              ri.name || ri.productName || ri.product_name || ri.description || '',
+            ).trim()
+            itemName = rawName || `Equipamento Hospitalar (Locação ${rentalIdStr})`
+          }
           return `<tr>
-          <td style="border: 1px solid #9ca3af; padding: 8px;">${item?.name || ri.name || 'Item'}</td>
+          <td style="border: 1px solid #9ca3af; padding: 8px;">${itemName}</td>
           <td style="border: 1px solid #9ca3af; padding: 8px; text-align: right; font-weight: 500;">${formatBRL(salePrice)}</td>
         </tr>`
         })

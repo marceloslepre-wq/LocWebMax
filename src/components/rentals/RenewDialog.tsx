@@ -17,9 +17,11 @@ import { useToast } from '@/hooks/use-toast'
 import {
   getItemName,
   getItemDailyPrice,
+  getItemMonthlyPrice,
   getItemReturnDate,
   getItemStartDate,
   getRemainingDays,
+  resolveInventoryItem,
 } from '@/lib/rental-items'
 import { rentalsService } from '@/services/rentals'
 import { paymentsService } from '@/services/payments'
@@ -67,8 +69,13 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
     const contractReturn = rental.expectedReturnDate?.split('T')[0] || ''
     return rental.items
       .map((item: any, index: number) => {
-        const itemId = String(item.itemId || item.item_id || item.inventory_id || item.id || '')
-        if (itemId === 'freight' || !itemId.trim()) return null
+        const itemId = String(
+          item.itemId || item.item_id || item.inventory_id || item.id || '',
+        ).trim()
+        if (itemId === 'freight' || itemId === 'frete') return null
+
+        // Tentar resolver o produto no estoque usando a busca resiliente de 5 níveis
+        const inv = resolveInventoryItem(item, inventory)
 
         const rawQty = item.qty ?? item.quantity ?? item.quantidade
         const parsedQty = Number(rawQty !== undefined && rawQty !== null ? rawQty : 1)
@@ -79,23 +86,41 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
         // If the item has been fully returned (or 0 remaining), exclude it from renewal
         if (remainingQty <= 0) return null
 
-        const inv = inventory.find((i) => i.id === itemId)
         const startDate = getItemStartDate(item, contractStart)
         const returnDate = getItemReturnDate(item, contractReturn)
 
         // Obter valor mensal do produto no estoque:
-        // Prioridade: monthlyPrice do cadastro do produto no estoque,
-        // fallback: dailyPrice * 30 se monthlyPrice não estiver cadastrado.
-        const invMonthly = Number(inv?.monthlyPrice || (inv as any)?.monthly_price || 0)
-        const itemMonthly = Number(item.monthlyPrice || item.monthly_price || 0)
-        const dPrice = getItemDailyPrice(item, inv)
-        const monthlyPrice =
-          invMonthly > 0 ? invMonthly : itemMonthly > 0 ? itemMonthly : dPrice > 0 ? dPrice * 30 : 0
+        // Regra do usuário: 30 dias = Valor Mensal cheio do produto; 15 dias = 50%
+        // Prioridade: resolveInventoryItem -> cadastro do estoque (monthlyPrice ou dailyPrice * 30)
+        // Fallback: monthlyPrice do item do contrato -> dailyPrice do item * 30 -> totalPrice se contrato mensal
+        let monthlyPrice = getItemMonthlyPrice(item, inv)
+        let dPrice = getItemDailyPrice(item, inv)
+
+        if (monthlyPrice <= 0 && dPrice > 0) {
+          monthlyPrice = Math.round(dPrice * 30 * 100) / 100
+        }
+        if (monthlyPrice <= 0) {
+          const totalVal = Number(item.totalPrice || item.total_price || 0)
+          if (totalVal > 0) {
+            monthlyPrice = totalVal
+          }
+        }
+        if (dPrice <= 0 && monthlyPrice > 0) {
+          dPrice = Number((monthlyPrice / 30).toFixed(4))
+        }
+
+        const resolvedName = getItemName(item, inv)
+        // Se ainda for genérico mas tiver código, ou se tiver o nome do contrato
+        const displayName =
+          resolvedName ||
+          item.name ||
+          item.description ||
+          (inv ? inv.name : 'Equipamento Hospitalar')
 
         return {
           index,
-          itemId,
-          name: getItemName(item, inv),
+          itemId: inv?.id || itemId,
+          name: displayName,
           startDate,
           returnDate,
           remaining: getRemainingDays(returnDate),

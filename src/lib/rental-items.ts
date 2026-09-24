@@ -6,20 +6,144 @@ export function getItemField(item: any, camel: string, snake: string): string {
   return val.toString().replace(' ', 'T').split('T')[0]
 }
 
-export function getItemName(item: any, invItem: any): string {
-  return (
-    item.name ||
-    item.productName ||
-    item.product_name ||
-    invItem?.name ||
-    invItem?.code ||
-    item.itemId ||
-    'Item'
+/**
+ * Busca resiliente de produto no Estoque em 5 níveis:
+ * 1. itemId direto
+ * 2. Código/SKU exato
+ * 3. Referência numérica extraída do nome/descrição tipo "(840)", "ref 840", etc.
+ * 4. Nome exato ou substring significativa
+ * 5. Palavras-chave significativas (ex: "motorizada", "salutem", "fowler", "pilati", "hidrolight")
+ */
+export function resolveInventoryItem(item: any, inventory: any[] = []): any | null {
+  if (!item || !Array.isArray(inventory) || inventory.length === 0) return null
+
+  const rawId = String(item.itemId || item.item_id || item.inventory_id || item.id || '').trim()
+  if (rawId && rawId !== 'freight' && rawId !== '-') {
+    const foundById = inventory.find((i: any) => i.id === rawId)
+    if (foundById) return foundById
+  }
+
+  const rawCode = String(item.code || item.sku || item.product_code || '')
+    .trim()
+    .toLowerCase()
+  if (rawCode && rawCode !== '-') {
+    const foundByCode = inventory.find(
+      (i: any) =>
+        String(i.code || '')
+          .trim()
+          .toLowerCase() === rawCode,
+    )
+    if (foundByCode) return foundByCode
+  }
+
+  const rawName = String(
+    item.name || item.productName || item.product_name || item.description || '',
+  ).trim()
+  if (!rawName || rawName === '-' || rawName.toLowerCase() === 'item removido') {
+    return null
+  }
+
+  // 3. Referência entre parênteses tipo "(840)" ou "ref 840"
+  const matchParen = rawName.match(/\((\d{2,6})\)/)
+  const refCode = matchParen ? matchParen[1] : null
+  if (refCode) {
+    const foundByRef = inventory.find((i: any) => String(i.code || '').trim() === refCode)
+    if (foundByRef) return foundByRef
+  }
+  const matchRef = rawName.match(/\b(?:ref\.?|cód\.?|cod\.?)\s*(\d{2,6})\b/i)
+  if (matchRef && matchRef[1]) {
+    const foundByRef = inventory.find((i: any) => String(i.code || '').trim() === matchRef[1])
+    if (foundByRef) return foundByRef
+  }
+
+  // 4. Nome exato ou substring normalizada
+  const lowerName = rawName.toLowerCase()
+  const foundExactName = inventory.find(
+    (i: any) =>
+      String(i.name || '')
+        .trim()
+        .toLowerCase() === lowerName,
   )
+  if (foundExactName) return foundExactName
+
+  const foundSubstr = inventory.find((i: any) => {
+    const invName = String(i.name || '')
+      .trim()
+      .toLowerCase()
+    return (
+      (lowerName.length >= 8 && invName.includes(lowerName)) ||
+      (invName.length >= 8 && lowerName.includes(invName))
+    )
+  })
+  if (foundSubstr) return foundSubstr
+
+  // 5. Palavras-chave significativas
+  const words = lowerName.split(/[\s,()/-]+/)
+  const significant = words
+    .map((w) => w.replace(/[^\w]/g, '').trim())
+    .filter(
+      (w) =>
+        w.length >= 5 &&
+        w !== 'cadeira' &&
+        w !== 'rodas' &&
+        w !== 'hospitalar' &&
+        w !== 'locacao' &&
+        w !== 'aluguel' &&
+        w !== 'equipamento',
+    )
+  if (significant.length > 0) {
+    const foundByKeywords = inventory.find((i: any) => {
+      const invName = String(i.name || '')
+        .trim()
+        .toLowerCase()
+      return significant.every((kw) => invName.includes(kw))
+    })
+    if (foundByKeywords) return foundByKeywords
+  }
+
+  return null
+}
+
+export function getItemName(item: any, invItem: any): string {
+  const rawName = String(
+    item?.name || item?.productName || item?.product_name || item?.description || '',
+  ).trim()
+  if (rawName && rawName !== '-' && !rawName.startsWith('Equipamento Hospitalar (Locação')) {
+    return rawName
+  }
+  return invItem?.name || invItem?.code || rawName || item?.itemId || 'Item'
 }
 
 export function getItemDailyPrice(item: any, invItem: any): number {
-  return Number(item.dailyPrice ?? item.daily_price ?? invItem?.dailyPrice ?? 0)
+  const itemD = Number(item?.dailyPrice ?? item?.daily_price ?? 0)
+  if (itemD > 0) return itemD
+
+  const invD = Number(invItem?.dailyPrice ?? invItem?.daily_price ?? 0)
+  if (invD > 0) return invD
+
+  const invM = Number(invItem?.monthlyPrice ?? invItem?.monthly_price ?? 0)
+  if (invM > 0) return Number((invM / 30).toFixed(4))
+
+  const itemM = Number(item?.monthlyPrice ?? item?.monthly_price ?? 0)
+  if (itemM > 0) return Number((itemM / 30).toFixed(4))
+
+  return 0
+}
+
+export function getItemMonthlyPrice(item: any, invItem: any): number {
+  const invM = Number(invItem?.monthlyPrice ?? invItem?.monthly_price ?? 0)
+  if (invM > 0) return invM
+
+  const itemM = Number(item?.monthlyPrice ?? item?.monthly_price ?? 0)
+  if (itemM > 0) return itemM
+
+  const invD = Number(invItem?.dailyPrice ?? invItem?.daily_price ?? 0)
+  if (invD > 0) return Math.round(invD * 30 * 100) / 100
+
+  const itemD = Number(item?.dailyPrice ?? item?.daily_price ?? 0)
+  if (itemD > 0) return Math.round(itemD * 30 * 100) / 100
+
+  return 0
 }
 
 export function getItemReturnDate(item: any, contractReturnDate: string): string {
