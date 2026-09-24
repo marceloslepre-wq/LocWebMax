@@ -250,6 +250,39 @@ routerAdd(
         body.expected_return_date ||
         ''
 
+      var itemDays = 30
+      if (sDate && eDate) {
+        var msDiff = new Date(eDate).getTime() - new Date(sDate).getTime()
+        var calcDays = Math.round(msDiff / (1000 * 60 * 60 * 24))
+        if (calcDays > 0) itemDays = calcDays
+      }
+
+      // Regra obrigatória: 30d cheio, 15d 50%, múltiplos de 30d = mensal * meses
+      var computedItemCost = 0
+      if (itMonthly > 0) {
+        if (itemDays >= 25 && itemDays <= 35) {
+          computedItemCost = itMonthly * bQty
+        } else if (itemDays >= 12 && itemDays <= 18) {
+          computedItemCost = (itMonthly / 2) * bQty
+        } else if (itemDays > 0 && itemDays % 30 === 0) {
+          computedItemCost = itMonthly * (itemDays / 30) * bQty
+        } else if (itemDays >= 45) {
+          var rMonths = Math.round(itemDays / 30)
+          if (Math.abs(itemDays - rMonths * 30) <= 5) {
+            computedItemCost = itMonthly * rMonths * bQty
+          } else {
+            computedItemCost = (itMonthly / 30) * itemDays * bQty
+          }
+        } else {
+          computedItemCost = (itMonthly / 30) * itemDays * bQty
+        }
+      } else if (itDaily > 0) {
+        computedItemCost = itDaily * itemDays * bQty
+      } else {
+        computedItemCost = bTotal
+      }
+      computedItemCost = Math.round(computedItemCost * 100) / 100
+
       enrichedBackendItems.push({
         itemId: invRecord ? invRecord.id : bItemId,
         item_id: invRecord ? invRecord.id : bItemId,
@@ -261,8 +294,8 @@ routerAdd(
         daily_price: itDaily,
         monthlyPrice: itMonthly,
         monthly_price: itMonthly,
-        totalPrice: bTotal || (itMonthly > 0 ? itMonthly : itDaily * 30),
-        total_price: bTotal || (itMonthly > 0 ? itMonthly : itDaily * 30),
+        totalPrice: computedItemCost,
+        total_price: computedItemCost,
         startDate: sDate,
         start_date: sDate,
         endDate: eDate,
@@ -272,15 +305,24 @@ routerAdd(
       })
     }
 
+    var finalItemsToSave = enrichedBackendItems.length > 0 ? enrichedBackendItems : rawInputItems
+    var calculatedTotalFromItems = 0
+    for (var fti = 0; fti < finalItemsToSave.length; fti++) {
+      calculatedTotalFromItems += Number(
+        finalItemsToSave[fti].totalPrice || finalItemsToSave[fti].total_price || 0,
+      )
+    }
+    calculatedTotalFromItems = Math.round(calculatedTotalFromItems * 100) / 100
+
     const rentalsCol = $app.findCollectionByNameOrId('rentals')
     const rental = new Record(rentalsCol)
     rental.set('contract_number', contractNumber)
     rental.set('customer_id', body.customer_id || '')
-    rental.set('items', enrichedBackendItems.length > 0 ? enrichedBackendItems : rawInputItems)
+    rental.set('items', finalItemsToSave)
     rental.set('start_date', body.start_date || '')
     rental.set('expected_return_date', body.expected_return_date || '')
     rental.set('status', isImported ? body.status || 'Ativo' : 'Ativo')
-    rental.set('total', body.total || 0)
+    rental.set('total', calculatedTotalFromItems > 0 ? calculatedTotalFromItems : body.total || 0)
     rental.set('payment_method', body.payment_method || 'PIX')
     rental.set('user_id', userId)
     rental.set('custom_contract_html', body.custom_contract_html || '')
@@ -297,7 +339,7 @@ routerAdd(
         const paymentsCol = $app.findCollectionByNameOrId('payments')
         const payment = new Record(paymentsCol)
         payment.set('rental_id', rental.id)
-        payment.set('amount', body.total || 0)
+        payment.set('amount', rental.get('total') || body.total || 0)
         payment.set('payment_method', body.payment_method || 'PIX')
         payment.set('status', 'pending')
         if (callerTenantId) payment.set('tenant_id', callerTenantId)

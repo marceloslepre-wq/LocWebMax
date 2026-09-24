@@ -48,7 +48,11 @@ export type RentalItem = {
   startDate?: string
   endDate?: string
   dailyPrice?: number
+  monthlyPrice?: number
+  monthly_price?: number
+  daily_price?: number
   totalPrice?: number
+  total_price?: number
   returnedQty?: number
   returnedDate?: string
   name?: string

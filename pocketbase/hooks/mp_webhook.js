@@ -305,6 +305,8 @@ routerAdd('POST', '/backend/v1/payments/mp-webhook', (e) => {
         rental.set('expected_return_date', newExpectedReturnDate + ' 00:00:00.000Z')
         rental.set('total', newTotal)
         rental.set('status', 'Ativo')
+        rental.set('custom_contract_html', '')
+        rental.set('custom_contract_text', '')
         try {
           $app.save(rental)
           $app

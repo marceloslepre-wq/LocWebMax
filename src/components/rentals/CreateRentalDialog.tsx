@@ -67,19 +67,61 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
   const submitLockRef = useRef(false)
   const timer = useElapsedTimer()
 
+  const computeItemCostByRule = (
+    monthlyPrice: number,
+    dailyPrice: number,
+    days: number,
+    itemQty: number,
+  ) => {
+    const q = itemQty <= 0 ? 1 : itemQty
+    let unitCost = 0
+    if (monthlyPrice > 0) {
+      if (days >= 25 && days <= 35) {
+        // 30 dias = Valor Mensal cheio
+        unitCost = monthlyPrice
+      } else if (days >= 12 && days <= 18) {
+        // 15 dias = 50% do Valor Mensal
+        unitCost = monthlyPrice / 2
+      } else if (days > 0 && days % 30 === 0) {
+        // Multiplos meses (ex.: 60, 90, 120 dias)
+        unitCost = monthlyPrice * (days / 30)
+      } else if (days >= 45) {
+        const roundedMonths = Math.round(days / 30)
+        if (Math.abs(days - roundedMonths * 30) <= 5) {
+          unitCost = monthlyPrice * roundedMonths
+        } else {
+          unitCost = (monthlyPrice / 30) * days
+        }
+      } else {
+        unitCost = (monthlyPrice / 30) * days
+      }
+    } else if (dailyPrice > 0) {
+      unitCost = dailyPrice * days
+    }
+    return Math.round(unitCost * q * 100) / 100
+  }
+
   const applyDuration = (days: number) => {
     setDefaultDuration(days)
     setItems((prev) =>
       prev.map((p) => {
-        const dailyPrice = p.dailyPrice || 0
+        const inv = inventory.find((i) => i.id === p.itemId)
+        const monthlyPrice = inv?.monthlyPrice || p.monthlyPrice || 0
+        const dailyPrice =
+          inv?.dailyPrice ||
+          p.dailyPrice ||
+          (monthlyPrice > 0 ? Number((monthlyPrice / 30).toFixed(4)) : 0)
         const startStr = p.startDate || todayStr
         const endStr = addDaysToDateString(startStr, days)
         const diffDays = days <= 0 ? 1 : days
+        const total = computeItemCostByRule(monthlyPrice, dailyPrice, diffDays, p.qty)
 
         return {
           ...p,
           endDate: endStr,
-          totalPrice: dailyPrice * p.qty * diffDays,
+          monthlyPrice,
+          dailyPrice,
+          totalPrice: total,
         }
       }),
     )
@@ -148,6 +190,11 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
     const endStr = defaultDuration ? addDaysToDateString(startStr, defaultDuration) : startStr
     const diffDays = getDiffDays(startStr, endStr)
 
+    const itemMonthly = item.monthlyPrice || 0
+    const itemDaily =
+      item.dailyPrice || (itemMonthly > 0 ? Number((itemMonthly / 30).toFixed(4)) : 0)
+    const initialItemTotal = computeItemCostByRule(itemMonthly, itemDaily, diffDays, numQty)
+
     setItems((prev) => {
       const newItemId = Math.random().toString()
       return [
@@ -158,8 +205,9 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
           qty: numQty,
           startDate: startStr,
           endDate: endStr,
-          dailyPrice: item.dailyPrice || 0,
-          totalPrice: (item.dailyPrice || 0) * numQty * diffDays,
+          dailyPrice: itemDaily,
+          monthlyPrice: itemMonthly,
+          totalPrice: initialItemTotal,
         },
       ]
     })
@@ -179,11 +227,21 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
           field === 'dailyPrice' ||
           field === 'qty'
         ) {
+          const inv = inventory.find((i) => i.id === updated.itemId)
+          const mPrice = inv?.monthlyPrice || updated.monthlyPrice || 0
+          const dPrice =
+            updated.dailyPrice ||
+            inv?.dailyPrice ||
+            (mPrice > 0 ? Number((mPrice / 30).toFixed(4)) : 0)
           const startStr = updated.startDate || todayStr
           const endStr = updated.endDate || todayStr
           const diffDays = getDiffDays(startStr, endStr)
 
-          updated.totalPrice = (updated.dailyPrice || 0) * updated.qty * diffDays
+          if (field === 'dailyPrice' && !mPrice) {
+            updated.totalPrice = Math.round(dPrice * updated.qty * diffDays * 100) / 100
+          } else {
+            updated.totalPrice = computeItemCostByRule(mPrice, dPrice, diffDays, updated.qty)
+          }
         }
         return updated
       }),
@@ -267,6 +325,14 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
 
     const payloadItems = items.map((i) => {
       const invItem = inventory.find((inv) => inv.id === i.itemId)
+      const startStr = i.startDate || todayStr
+      const endStr = i.endDate || todayStr
+      const diffDays = getDiffDays(startStr, endStr)
+      const mPrice = invItem?.monthlyPrice || i.monthlyPrice || 0
+      const dPrice =
+        invItem?.dailyPrice || i.dailyPrice || (mPrice > 0 ? Number((mPrice / 30).toFixed(4)) : 0)
+      const correctTotal = computeItemCostByRule(mPrice, dPrice, diffDays, i.qty)
+
       return {
         itemId: i.itemId,
         item_id: i.itemId,
@@ -278,12 +344,12 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
         start_date: i.startDate,
         endDate: i.endDate,
         end_date: i.endDate,
-        dailyPrice: invItem?.dailyPrice || i.dailyPrice || 0,
-        daily_price: invItem?.dailyPrice || i.dailyPrice || 0,
-        monthlyPrice: invItem?.monthlyPrice || 0,
-        monthly_price: invItem?.monthlyPrice || 0,
-        totalPrice: i.totalPrice,
-        total_price: i.totalPrice,
+        dailyPrice: dPrice,
+        daily_price: dPrice,
+        monthlyPrice: mPrice,
+        monthly_price: mPrice,
+        totalPrice: correctTotal,
+        total_price: correctTotal,
       }
     })
 

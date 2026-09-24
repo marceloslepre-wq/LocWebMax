@@ -234,6 +234,8 @@ routerAdd(
     rental.set('expected_return_date', newExpectedReturnDate)
     rental.set('total', newTotal)
     rental.set('status', newStatus)
+    rental.set('custom_contract_html', '')
+    rental.set('custom_contract_text', '')
     $app.save(rental)
 
     // Limpar snapshot antigo deste contrato
