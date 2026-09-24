@@ -184,11 +184,95 @@ routerAdd(
       }
     }
 
+    // Enriquecimento e validação obrigatória dos itens no backend
+    var rawInputItems = body.items || []
+    var enrichedBackendItems = []
+    for (var bi = 0; bi < rawInputItems.length; bi++) {
+      var bItem = rawInputItems[bi]
+      if (!bItem || typeof bItem !== 'object') continue
+      var bItemId = String(
+        bItem.itemId || bItem.item_id || bItem.inventory_id || bItem.id || '',
+      ).trim()
+      var bQty = Number(bItem.qty ?? bItem.quantity ?? 1) || 1
+      var bTotal = Number(bItem.totalPrice ?? bItem.total_price ?? 0)
+
+      if (bItemId === 'freight' || bItemId === 'frete') {
+        enrichedBackendItems.push({
+          itemId: 'freight',
+          item_id: 'freight',
+          name: 'Frete',
+          code: 'FRETE',
+          qty: 1,
+          quantity: 1,
+          totalPrice: bTotal,
+          total_price: bTotal,
+        })
+        continue
+      }
+
+      var invRecord = null
+      if (bItemId) {
+        try {
+          invRecord = $app.findRecordById('inventory', bItemId)
+        } catch (_) {}
+      }
+
+      var itName = invRecord
+        ? invRecord.getString('name')
+        : String(bItem.name || bItem.product_name || '').trim()
+      var itCode = invRecord
+        ? invRecord.getString('code')
+        : String(bItem.code || bItem.sku || '').trim()
+      var itMonthly = invRecord
+        ? Number(invRecord.get('monthly_price') || 0)
+        : Number(bItem.monthlyPrice || bItem.monthly_price || 0)
+      var itDaily = invRecord
+        ? Number(invRecord.get('daily_price') || 0)
+        : Number(bItem.dailyPrice || bItem.daily_price || 0)
+
+      if (itMonthly <= 0 && itDaily > 0) {
+        itMonthly = Math.round(itDaily * 30 * 100) / 100
+      }
+      if (itDaily <= 0 && itMonthly > 0) {
+        itDaily = Number((itMonthly / 30).toFixed(4))
+      }
+
+      var sDate = bItem.startDate || bItem.start_date || body.start_date || ''
+      var eDate =
+        bItem.endDate ||
+        bItem.end_date ||
+        bItem.expectedReturnDate ||
+        bItem.expected_return_date ||
+        body.expected_return_date ||
+        ''
+
+      enrichedBackendItems.push({
+        itemId: invRecord ? invRecord.id : bItemId,
+        item_id: invRecord ? invRecord.id : bItemId,
+        code: itCode,
+        name: itName || 'Item',
+        qty: bQty,
+        quantity: bQty,
+        dailyPrice: itDaily,
+        daily_price: itDaily,
+        monthlyPrice: itMonthly,
+        monthly_price: itMonthly,
+        totalPrice: bTotal || (itMonthly > 0 ? itMonthly : itDaily * 30),
+        total_price: bTotal || (itMonthly > 0 ? itMonthly : itDaily * 30),
+        startDate: sDate,
+        start_date: sDate,
+        endDate: eDate,
+        end_date: eDate,
+        expectedReturnDate: eDate,
+        expected_return_date: eDate,
+      })
+    }
+
     const rentalsCol = $app.findCollectionByNameOrId('rentals')
     const rental = new Record(rentalsCol)
     rental.set('contract_number', contractNumber)
     rental.set('customer_id', body.customer_id || '')
-    rental.set('items', body.items || [])
+    rental.set('items', enrichedBackendItems.length > 0 ? enrichedBackendItems : rawInputItems)
     rental.set('start_date', body.start_date || '')
     rental.set('expected_return_date', body.expected_return_date || '')
     rental.set('status', isImported ? body.status || 'Ativo' : 'Ativo')

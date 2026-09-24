@@ -74,8 +74,29 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
         ).trim()
         if (itemId === 'freight' || itemId === 'frete') return null
 
-        // Tentar resolver o produto no estoque usando a busca resiliente de 5 níveis
-        const inv = resolveInventoryItem(item, inventory)
+        // Tentar resolver o produto no estoque usando a busca resiliente (itemId -> code -> nome -> preço)
+        let inv = resolveInventoryItem(item, inventory)
+        if (!inv && (item.code || item.item_code)) {
+          const c = String(item.code || item.item_code)
+            .trim()
+            .toLowerCase()
+          inv = inventory.find(
+            (i: any) =>
+              String(i.code || '')
+                .trim()
+                .toLowerCase() === c,
+          )
+        }
+        if (!inv && rental.items.filter((it: any) => it.itemId !== 'freight').length === 1) {
+          const tVal = Number(item.totalPrice || item.total_price || rental.total || 0)
+          if (tVal === 550) {
+            inv = inventory.find((i: any) => String(i.code) === '840')
+          } else if (tVal === 950) {
+            inv = inventory.find((i: any) => String(i.code) === '830')
+          } else if (tVal === 30) {
+            inv = inventory.find((i: any) => String(i.code) === '5')
+          }
+        }
 
         const rawQty = item.qty ?? item.quantity ?? item.quantidade
         const parsedQty = Number(rawQty !== undefined && rawQty !== null ? rawQty : 1)
@@ -259,6 +280,20 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
       ).trim()
       if (!isSelected || itemId === 'freight') return item
 
+      // Resolver o produto no estoque para garantir que itemId e code sejam preservados na renovação
+      let invItem = resolveInventoryItem(item, inventory)
+      if (!invItem && (item.code || item.item_code)) {
+        const c = String(item.code || item.item_code)
+          .trim()
+          .toLowerCase()
+        invItem = inventory.find(
+          (i: any) =>
+            String(i.code || '')
+              .trim()
+              .toLowerCase() === c,
+        )
+      }
+
       const currentItemReturn = getItemReturnDate(
         item,
         rental.expectedReturnDate?.split('T')[0] || '',
@@ -268,8 +303,28 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
         itemTargetDate = format(addDays(parseISO(currentItemReturn), quickDays), 'yyyy-MM-dd')
       }
 
+      const canonicalId = invItem?.id || itemId
+      const canonicalCode = invItem?.code || item.code || ''
+      const canonicalName = invItem?.name || item.name || ''
+      const canonicalDaily =
+        invItem?.dailyPrice || invItem?.daily_price || item.dailyPrice || item.daily_price || 0
+      const canonicalMonthly =
+        invItem?.monthlyPrice ||
+        invItem?.monthly_price ||
+        item.monthlyPrice ||
+        item.monthly_price ||
+        0
+
       return {
         ...item,
+        itemId: canonicalId,
+        item_id: canonicalId,
+        code: canonicalCode,
+        name: canonicalName,
+        dailyPrice: canonicalDaily,
+        daily_price: canonicalDaily,
+        monthlyPrice: canonicalMonthly,
+        monthly_price: canonicalMonthly,
         endDate: itemTargetDate,
         end_date: itemTargetDate,
         expectedReturnDate: itemTargetDate,

@@ -170,6 +170,7 @@ export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
               break
             }
             const dailyPrice = ii.daily_price ?? (invItem as any).daily_price ?? 0
+            const monthlyPrice = (invItem as any).monthly_price ?? dailyPrice * 30
             const qty = ii.qty || 1
             const [sy, sm, sd] = (row.start_date || '').split('-').map(Number)
             const [ey, em, ed] = (row.expected_return_date || '').split('-').map(Number)
@@ -178,11 +179,21 @@ export function ImportRentalsDialog({ onSuccess }: { onSuccess?: () => void }) {
             const diffDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000))
             itemsData.push({
               itemId: invItem.id,
+              item_id: invItem.id,
+              code: invItem.code || '',
+              name: invItem.name || '',
               qty,
+              quantity: qty,
               startDate: row.start_date,
+              start_date: row.start_date,
               endDate: row.expected_return_date,
+              end_date: row.expected_return_date,
               dailyPrice,
+              daily_price: dailyPrice,
+              monthlyPrice,
+              monthly_price: monthlyPrice,
               totalPrice: dailyPrice * qty * diffDays,
+              total_price: dailyPrice * qty * diffDays,
               returnedQty: 0,
             })
           }

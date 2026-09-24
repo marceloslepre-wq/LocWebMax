@@ -265,20 +265,38 @@ export function CreateRentalDialog({ onCreated }: { onCreated?: (rental: Rental)
 
     const newId = `LOC-${Math.floor(1000 + Math.random() * 9000)}`
 
-    const payloadItems = items.map((i) => ({
-      itemId: i.itemId,
-      qty: i.qty,
-      startDate: i.startDate,
-      endDate: i.endDate,
-      dailyPrice: i.dailyPrice,
-      totalPrice: i.totalPrice,
-    }))
+    const payloadItems = items.map((i) => {
+      const invItem = inventory.find((inv) => inv.id === i.itemId)
+      return {
+        itemId: i.itemId,
+        item_id: i.itemId,
+        code: invItem?.code || i.code || '',
+        name: invItem?.name || i.name || '',
+        qty: i.qty,
+        quantity: i.qty,
+        startDate: i.startDate,
+        start_date: i.startDate,
+        endDate: i.endDate,
+        end_date: i.endDate,
+        dailyPrice: invItem?.dailyPrice || i.dailyPrice || 0,
+        daily_price: invItem?.dailyPrice || i.dailyPrice || 0,
+        monthlyPrice: invItem?.monthlyPrice || 0,
+        monthly_price: invItem?.monthlyPrice || 0,
+        totalPrice: i.totalPrice,
+        total_price: i.totalPrice,
+      }
+    })
 
     if (freight > 0) {
       payloadItems.push({
         itemId: 'freight',
+        item_id: 'freight',
+        name: 'Frete',
+        code: 'FRETE',
         qty: 1,
+        quantity: 1,
         totalPrice: freight,
+        total_price: freight,
       } as any)
     }
 

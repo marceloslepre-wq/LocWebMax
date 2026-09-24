@@ -258,6 +258,27 @@ routerAdd('POST', '/backend/v1/payments/mp-webhook', (e) => {
             if (!maxNewReturnDate || itemNewExp > maxNewReturnDate) {
               maxNewReturnDate = itemNewExp
             }
+
+            // Enriquecer dados se houver cadastro no estoque
+            if (itId) {
+              try {
+                var invRecMp = $app.findRecordById('inventory', itId)
+                if (invRecMp) {
+                  if (!itemObj.name) itemObj.name = invRecMp.getString('name')
+                  if (!itemObj.code) itemObj.code = invRecMp.getString('code')
+                  var invDaily = Number(invRecMp.get('daily_price') || 0)
+                  var invMonthly = Number(invRecMp.get('monthly_price') || 0)
+                  if (invDaily > 0 && (!itemObj.dailyPrice || !itemObj.daily_price)) {
+                    itemObj.dailyPrice = invDaily
+                    itemObj.daily_price = invDaily
+                  }
+                  if (invMonthly > 0 && (!itemObj.monthlyPrice || !itemObj.monthly_price)) {
+                    itemObj.monthlyPrice = invMonthly
+                    itemObj.monthly_price = invMonthly
+                  }
+                }
+              } catch (_) {}
+            }
           }
           updatedItems.push(itemObj)
         }

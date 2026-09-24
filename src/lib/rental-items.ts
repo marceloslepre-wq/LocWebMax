@@ -101,6 +101,21 @@ export function resolveInventoryItem(item: any, inventory: any[] = []): any | nu
     if (foundByKeywords) return foundByKeywords
   }
 
+  // 6. Match por valor monetário mensal ou diário
+  const monthly = Number(item.monthlyPrice ?? item.monthly_price ?? 0)
+  const daily = Number(item.dailyPrice ?? item.daily_price ?? 0)
+  const effectiveMonthly = monthly > 0 ? monthly : daily > 0 ? daily * 30 : 0
+  if (effectiveMonthly > 0) {
+    const foundByPrice = inventory.find(
+      (i: any) =>
+        Math.abs(
+          Number(i.monthlyPrice || i.monthly_price || (i.dailyPrice || i.daily_price || 0) * 30) -
+            effectiveMonthly,
+        ) < 0.01,
+    )
+    if (foundByPrice) return foundByPrice
+  }
+
   return null
 }
 

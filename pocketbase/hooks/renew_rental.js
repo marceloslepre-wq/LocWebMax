@@ -135,12 +135,98 @@ routerAdd(
     }
     var newItems = sanitizedNewItems.length > 0 ? sanitizedNewItems : candidateItems
 
+    // Enriquecer itens da renovação contra o estoque para garantir itemId, code, name e monthlyPrice
+    var enrichedRenewItems = []
+    for (var rni = 0; rni < newItems.length; rni++) {
+      var rItem = newItems[rni]
+      if (!rItem || typeof rItem !== 'object') continue
+      var rItemId = String(
+        rItem.itemId || rItem.item_id || rItem.inventory_id || rItem.id || '',
+      ).trim()
+      var rQty = Number(rItem.qty ?? rItem.quantity ?? 1) || 1
+      var rTotal = Number(rItem.totalPrice ?? rItem.total_price ?? 0)
+
+      if (rItemId === 'freight' || rItemId === 'frete') {
+        enrichedRenewItems.push(rItem)
+        continue
+      }
+
+      var invRecRenew = null
+      if (rItemId) {
+        try {
+          invRecRenew = $app.findRecordById('inventory', rItemId)
+        } catch (_) {}
+      }
+
+      var rName = invRecRenew
+        ? invRecRenew.getString('name')
+        : String(rItem.name || rItem.product_name || '').trim()
+      var rCode = invRecRenew
+        ? invRecRenew.getString('code')
+        : String(rItem.code || rItem.sku || '').trim()
+      var rMonthly = invRecRenew
+        ? Number(invRecRenew.get('monthly_price') || 0)
+        : Number(rItem.monthlyPrice || rItem.monthly_price || 0)
+      var rDaily = invRecRenew
+        ? Number(invRecRenew.get('daily_price') || 0)
+        : Number(rItem.dailyPrice || rItem.daily_price || 0)
+
+      if (rMonthly <= 0 && rDaily > 0) {
+        rMonthly = Math.round(rDaily * 30 * 100) / 100
+      }
+      if (rDaily <= 0 && rMonthly > 0) {
+        rDaily = Number((rMonthly / 30).toFixed(4))
+      }
+
+      var sDate = rItem.startDate || rItem.start_date || rental.getString('start_date') || ''
+      var eDate =
+        rItem.endDate ||
+        rItem.end_date ||
+        rItem.expectedReturnDate ||
+        rItem.expected_return_date ||
+        body.expected_return_date ||
+        rental.getString('expected_return_date') ||
+        ''
+
+      var rEnriched = {
+        itemId: invRecRenew ? invRecRenew.id : rItemId,
+        item_id: invRecRenew ? invRecRenew.id : rItemId,
+        code: rCode,
+        name: rName || 'Item',
+        qty: rQty,
+        quantity: rQty,
+        dailyPrice: rDaily,
+        daily_price: rDaily,
+        monthlyPrice: rMonthly,
+        monthly_price: rMonthly,
+        totalPrice: rTotal || (rMonthly > 0 ? rMonthly : rDaily * 30),
+        total_price: rTotal || (rMonthly > 0 ? rMonthly : rDaily * 30),
+        startDate: sDate,
+        start_date: sDate,
+        endDate: eDate,
+        end_date: eDate,
+        expectedReturnDate: eDate,
+        expected_return_date: eDate,
+      }
+      if (rItem.returnedQty !== undefined || rItem.returned_qty !== undefined) {
+        rEnriched.returnedQty = Number(rItem.returnedQty ?? rItem.returned_qty ?? 0)
+        rEnriched.returned_qty = rEnriched.returnedQty
+      }
+      if (rItem.returnedDate || rItem.returned_date) {
+        rEnriched.returnedDate = rItem.returnedDate || rItem.returned_date
+        rEnriched.returned_date = rEnriched.returnedDate
+      }
+      enrichedRenewItems.push(rEnriched)
+    }
+
+    var finalItemsToSave = enrichedRenewItems.length > 0 ? enrichedRenewItems : newItems
+
     var newExpectedReturnDate =
       body.expected_return_date || rental.getString('expected_return_date')
     var newTotal = body.total !== undefined ? Number(body.total) : rental.get('total') || 0
     var newStatus = body.status || 'Ativo'
 
-    rental.set('items', newItems)
+    rental.set('items', finalItemsToSave)
     rental.set('expected_return_date', newExpectedReturnDate)
     rental.set('total', newTotal)
     rental.set('status', newStatus)
