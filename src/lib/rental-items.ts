@@ -92,13 +92,24 @@ export function normalizeRentalItem(raw: any): NormalizedRentalItem {
 
 export function isRealRentalItem(item: any): boolean {
   if (!item || typeof item !== 'object') return false
+  const keys = Object.keys(item)
+  if (keys.length === 0) return false
+
   const itemId = String(item.itemId || item.item_id || item.inventory_id || item.id || '').trim()
   if (itemId === 'freight') return true
 
-  const name = String(item.name || item.productName || item.product_name || '').trim()
+  const name = String(
+    item.name || item.productName || item.product_name || item.description || '',
+  ).trim()
   const code = String(item.code || item.sku || item.product_code || '').trim()
   const price = Number(
-    item.totalPrice || item.total_price || item.dailyPrice || item.daily_price || 0,
+    item.totalPrice ||
+      item.total_price ||
+      item.dailyPrice ||
+      item.daily_price ||
+      item.monthlyPrice ||
+      item.monthly_price ||
+      0,
   )
   const qty = Number(
     item.qty !== undefined
@@ -108,30 +119,14 @@ export function isRealRentalItem(item: any): boolean {
         : item.quantidade,
   )
 
-  const isGhost =
-    (!itemId || itemId === '-') &&
-    (!code || code === '-') &&
-    (!name || name === '-' || name.toLowerCase() === 'item removido') &&
-    price === 0
+  // Um item só é fantasma se for um objeto estritamente vazio ou totalmente destituído de dados
+  const hasAnyId = !!itemId && itemId !== '-'
+  const hasAnyCode = !!code && code !== '-'
+  const hasAnyName = !!name && name !== '-' && name.toLowerCase() !== 'item removido'
+  const hasAnyPrice = !isNaN(price) && price > 0
+  const hasAnyQty = !isNaN(qty) && qty > 0
 
-  if (isGhost) return false
-
-  // Se não tem identificador real e a quantidade é inválida ou zero
-  if (
-    (!itemId || itemId === '-') &&
-    (!code || code === '-') &&
-    (!name || name === '-') &&
-    (isNaN(qty) || qty <= 0)
-  ) {
-    return false
-  }
-
-  // Deve ter ao menos ID real, ou código real, ou nome real diferente de "-" / "Item Removido"
-  const hasRealId = !!itemId && itemId !== '-'
-  const hasRealCode = !!code && code !== '-'
-  const hasRealName = !!name && name !== '-' && name.toLowerCase() !== 'item removido'
-
-  return hasRealId || hasRealCode || hasRealName
+  return hasAnyId || hasAnyCode || hasAnyName || hasAnyPrice || hasAnyQty
 }
 
 export function getValidRentalItems(items: any[]): NormalizedRentalItem[] {
@@ -148,7 +143,8 @@ export function getValidRentalItems(items: any[]): NormalizedRentalItem[] {
         item.name.trim() !== '' &&
         item.name.trim() !== '-' &&
         item.name.trim().toLowerCase() !== 'item removido'
-      return hasId || hasCode || hasName
+      const hasPrice = typeof item.totalPrice === 'number' && item.totalPrice > 0
+      return hasId || hasCode || hasName || hasPrice
     })
 }
 
@@ -156,8 +152,10 @@ export function findFreightItem(items: any[]): any | null {
   if (!Array.isArray(items)) return null
   return (
     items.find((ri: any) => {
-      const id = ri.itemId || ri.item_id || ri.inventory_id || ri.id || ''
-      return id === 'freight'
+      const id = String(ri?.itemId || ri?.item_id || ri?.inventory_id || ri?.id || '')
+        .trim()
+        .toLowerCase()
+      return id === 'freight' || id === 'frete'
     }) || null
   )
 }

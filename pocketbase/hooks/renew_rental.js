@@ -90,6 +90,7 @@ routerAdd(
     for (var ci = 0; ci < candidateItems.length; ci++) {
       var itCandidate = candidateItems[ci]
       if (!itCandidate || typeof itCandidate !== 'object') continue
+      if (Object.keys(itCandidate).length === 0) continue
       var cId = String(
         itCandidate.itemId ||
           itCandidate.item_id ||
@@ -97,12 +98,16 @@ routerAdd(
           itCandidate.id ||
           '',
       ).trim()
-      if (cId === 'freight') {
+      if (cId === 'freight' || cId === 'frete') {
         sanitizedNewItems.push(itCandidate)
         continue
       }
       var cName = String(
-        itCandidate.name || itCandidate.productName || itCandidate.product_name || '',
+        itCandidate.name ||
+          itCandidate.productName ||
+          itCandidate.product_name ||
+          itCandidate.description ||
+          '',
       ).trim()
       var cCode = String(
         itCandidate.code || itCandidate.sku || itCandidate.product_code || '',
@@ -112,15 +117,19 @@ routerAdd(
           itCandidate.total_price ||
           itCandidate.dailyPrice ||
           itCandidate.daily_price ||
+          itCandidate.monthlyPrice ||
+          itCandidate.monthly_price ||
           0,
       )
-      var isGhostCandidate =
-        (!cId || cId === '-') &&
-        (!cCode || cCode === '-') &&
-        (!cName || cName === '-' || cName.toLowerCase() === 'item removido') &&
-        cPrice === 0
+      var cQty = Number(
+        itCandidate.qty !== undefined
+          ? itCandidate.qty
+          : itCandidate.quantity !== undefined
+            ? itCandidate.quantity
+            : 0,
+      )
 
-      if (!isGhostCandidate && (!!cId || !!cCode || !!cName)) {
+      if (!!cId || !!cCode || !!cName || cPrice > 0 || cQty > 0) {
         sanitizedNewItems.push(itCandidate)
       }
     }

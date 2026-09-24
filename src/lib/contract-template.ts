@@ -443,29 +443,33 @@ export function renderContractHtml(params: RenderContractParams): string {
 
   const isRealItem = (ri: any) => {
     if (!ri || typeof ri !== 'object') return false
+    if (Object.keys(ri).length === 0) return false
     const id = getItemId(ri)
     if (id === 'freight') return false
 
-    const name = String(ri.name || ri.productName || ri.product_name || '').trim()
+    const name = String(ri.name || ri.productName || ri.product_name || ri.description || '').trim()
     const code = String(ri.code || ri.sku || ri.product_code || '').trim()
-    const price = Number(ri.totalPrice || ri.total_price || ri.dailyPrice || ri.daily_price || 0)
+    const price = Number(
+      ri.totalPrice ||
+        ri.total_price ||
+        ri.dailyPrice ||
+        ri.daily_price ||
+        ri.monthlyPrice ||
+        ri.monthly_price ||
+        0,
+    )
+    const qty = Number(ri.qty ?? ri.quantity ?? ri.quantidade ?? 0)
 
     const inv = inventory.find((i: any) => i.id === id)
     if (inv) return true
 
-    const isGhost =
-      (!id || id === '-') &&
-      (!code || code === '-') &&
-      (!name || name === '-' || name.toLowerCase() === 'item removido') &&
-      price === 0
-
-    if (isGhost) return false
-
     const hasRealId = !!id && id !== '-'
     const hasRealCode = !!code && code !== '-'
     const hasRealName = !!name && name !== '-' && name.toLowerCase() !== 'item removido'
+    const hasRealPrice = !isNaN(price) && price > 0
+    const hasRealQty = !isNaN(qty) && qty > 0
 
-    return hasRealId || hasRealCode || hasRealName
+    return hasRealId || hasRealCode || hasRealName || hasRealPrice || hasRealQty
   }
 
   const regularItems = items.filter((ri: any) => getItemId(ri) !== 'freight' && isRealItem(ri))

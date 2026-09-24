@@ -199,24 +199,29 @@ export function RenewDialog({ rental, open, onOpenChange, onRenewed }: RenewDial
     if (!rental || error) return
     setSaving(true)
 
-    // Filtrar primeiro quaisquer itens fantasmas/vazios do array
+    // Filtrar apenas se for objeto estritamente vazio
     const sanitizedBaseItems = (rental.items || []).filter((item: any) => {
       if (!item || typeof item !== 'object') return false
+      if (Object.keys(item).length === 0) return false
       const itemId = String(
         item.itemId || item.item_id || item.inventory_id || item.id || '',
       ).trim()
-      if (itemId === 'freight') return true
-      const name = String(item.name || item.productName || item.product_name || '').trim()
+      if (itemId === 'freight' || itemId === 'frete') return true
+      const name = String(
+        item.name || item.productName || item.product_name || item.description || '',
+      ).trim()
       const code = String(item.code || item.sku || item.product_code || '').trim()
       const price = Number(
-        item.totalPrice || item.total_price || item.dailyPrice || item.daily_price || 0,
+        item.totalPrice ||
+          item.total_price ||
+          item.dailyPrice ||
+          item.daily_price ||
+          item.monthlyPrice ||
+          item.monthly_price ||
+          0,
       )
-      const isGhost =
-        (!itemId || itemId === '-') &&
-        (!code || code === '-') &&
-        (!name || name === '-' || name.toLowerCase() === 'item removido') &&
-        price === 0
-      return !isGhost && (!!itemId || !!code || !!name)
+      const qty = Number(item.qty ?? item.quantity ?? item.quantidade ?? 0)
+      return !!itemId || !!code || !!name || price > 0 || qty > 0
     })
 
     // Cada item selecionado é renovado a partir do seu vencimento individual

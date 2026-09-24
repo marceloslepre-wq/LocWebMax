@@ -240,14 +240,8 @@ routerAdd('POST', '/backend/v1/payments/mp-webhook', (e) => {
               0,
           )
 
-          if (itId !== 'freight') {
-            var isGhost =
-              (!itId || itId === '-') &&
-              (!itCode || itCode === '-') &&
-              (!itName || itName === '-' || itName.toLowerCase() === 'item removido') &&
-              itPrice === 0
-
-            if (isGhost) continue
+          if (itId !== 'freight' && itId !== 'frete') {
+            if (Object.keys(itemObj).length === 0) continue
 
             // Obter data de vencimento específica deste item (ou fallback para currentExpected)
             var itemBaseExp =
