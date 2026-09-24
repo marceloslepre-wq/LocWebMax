@@ -119,9 +119,9 @@
 
   .print\:hidden,
   aside,
+  [data-sidebar],
   [data-sidebar='sidebar'],
-  .group\/sidebar-wrapper > [data-state],
-  .group\/sidebar-wrapper > div:first-child,
+  [data-sidebar-trigger],
   header {
     display: none !important;
     visibility: hidden !important;
@@ -136,6 +136,7 @@
   #root > div,
   [data-sidebar-wrapper],
   .group\/sidebar-wrapper,
+  .group\/sidebar-wrapper > div,
   main,
   section,
   article,
@@ -147,6 +148,7 @@
   #root > div,
   [data-sidebar-wrapper],
   .group\/sidebar-wrapper,
+  .group\/sidebar-wrapper > div,
   main,
   .flex-1 {
     display: block !important;
