@@ -1,5 +1,19 @@
 migrate(
   (app) => {
+    // Migration 0073: NEUTRALIZADA / DESATIVADA
+    // O corpo destrutivo que sobrescrevia contratos foi neutralizado para segurança.
+    // A restauração oficial e enriquecimento dos itens é realizada na Migration 0075.
+    console.log('Migration 0073: neutralizada - corpo destrutivo desativado.')
+    return
+  },
+  (app) => {
+    // Reversão
+  },
+)
+
+/* CONTEÚDO ORIGINAL NEUTRALIZADO:
+migrate(
+  (app) => {
     // Migration 0073: Correção Cirúrgica e Definitiva de Valores dos Contratos
     // Regras de negócio estritas:
     // 1. Resolver cada item pelo código / produto do Estoque de forma unívoca:
@@ -343,3 +357,4 @@ migrate(
     // Reversão
   },
 )
+*/

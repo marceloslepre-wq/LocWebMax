@@ -1,5 +1,18 @@
 migrate(
   (app) => {
+    // Migration 0072: NEUTRALIZADA / DESATIVADA
+    // O corpo foi neutralizado para prevenir qualquer sobrescrita indevida de dados.
+    console.log('Migration 0072: neutralizada - corpo desativado.')
+    return
+  },
+  (app) => {
+    // Reversão
+  },
+)
+
+/* CONTEÚDO ORIGINAL NEUTRALIZADO:
+migrate(
+  (app) => {
     // Migration 0072: Correção de valores de itens e totais de contratos divergentes do Estoque
     // Regras de negócio mandatórias:
     // 1. Período de ~30 dias (25 a 35 dias) = Valor Mensal cheio do Estoque.
@@ -473,3 +486,4 @@ migrate(
     // Reversão não-destrutiva
   },
 )
+*/
