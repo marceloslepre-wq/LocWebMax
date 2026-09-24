@@ -211,18 +211,22 @@ routerAdd(
       }
 
       var invRecord = null
-      if (bItemId) {
+      if (bItemId && bItemId !== 'freight') {
         try {
           invRecord = $app.findRecordById('inventory', bItemId)
+        } catch (_) {}
+      }
+      var bCode = String(bItem.code || bItem.sku || '').trim()
+      if (!invRecord && bCode && bCode !== '-') {
+        try {
+          invRecord = $app.findFirstRecordByData('inventory', 'code', bCode)
         } catch (_) {}
       }
 
       var itName = invRecord
         ? invRecord.getString('name')
         : String(bItem.name || bItem.product_name || '').trim()
-      var itCode = invRecord
-        ? invRecord.getString('code')
-        : String(bItem.code || bItem.sku || '').trim()
+      var itCode = invRecord ? invRecord.getString('code') : bCode
       var itMonthly = invRecord
         ? Number(invRecord.get('monthly_price') || 0)
         : Number(bItem.monthlyPrice || bItem.monthly_price || 0)

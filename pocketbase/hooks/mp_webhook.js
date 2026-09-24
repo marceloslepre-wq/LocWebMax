@@ -260,24 +260,37 @@ routerAdd('POST', '/backend/v1/payments/mp-webhook', (e) => {
             }
 
             // Enriquecer dados se houver cadastro no estoque
-            if (itId) {
+            var invRecMp = null
+            if (itId && itId !== 'freight') {
               try {
-                var invRecMp = $app.findRecordById('inventory', itId)
-                if (invRecMp) {
-                  if (!itemObj.name) itemObj.name = invRecMp.getString('name')
-                  if (!itemObj.code) itemObj.code = invRecMp.getString('code')
-                  var invDaily = Number(invRecMp.get('daily_price') || 0)
-                  var invMonthly = Number(invRecMp.get('monthly_price') || 0)
-                  if (invDaily > 0 && (!itemObj.dailyPrice || !itemObj.daily_price)) {
-                    itemObj.dailyPrice = invDaily
-                    itemObj.daily_price = invDaily
-                  }
-                  if (invMonthly > 0 && (!itemObj.monthlyPrice || !itemObj.monthly_price)) {
-                    itemObj.monthlyPrice = invMonthly
-                    itemObj.monthly_price = invMonthly
-                  }
-                }
+                invRecMp = $app.findRecordById('inventory', itId)
               } catch (_) {}
+            }
+            var mpCode = String(itemObj.code || itemObj.sku || '').trim()
+            if (!invRecMp && mpCode && mpCode !== '-') {
+              try {
+                invRecMp = $app.findFirstRecordByData('inventory', 'code', mpCode)
+              } catch (_) {}
+            }
+            if (invRecMp) {
+              itemObj.itemId = invRecMp.id
+              itemObj.item_id = invRecMp.id
+              if (!itemObj.name || itemObj.name.indexOf('Equipamento Hospitalar') !== -1) {
+                itemObj.name = invRecMp.getString('name')
+              }
+              if (!itemObj.code || itemObj.code === '-') {
+                itemObj.code = invRecMp.getString('code')
+              }
+              var invDaily = Number(invRecMp.get('daily_price') || 0)
+              var invMonthly = Number(invRecMp.get('monthly_price') || 0)
+              if (invDaily > 0 && (!itemObj.dailyPrice || !itemObj.daily_price)) {
+                itemObj.dailyPrice = invDaily
+                itemObj.daily_price = invDaily
+              }
+              if (invMonthly > 0 && (!itemObj.monthlyPrice || !itemObj.monthly_price)) {
+                itemObj.monthlyPrice = invMonthly
+                itemObj.monthly_price = invMonthly
+              }
             }
           }
           updatedItems.push(itemObj)

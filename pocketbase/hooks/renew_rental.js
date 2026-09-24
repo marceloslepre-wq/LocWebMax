@@ -152,18 +152,22 @@ routerAdd(
       }
 
       var invRecRenew = null
-      if (rItemId) {
+      if (rItemId && rItemId !== 'freight') {
         try {
           invRecRenew = $app.findRecordById('inventory', rItemId)
+        } catch (_) {}
+      }
+      var rCodeIn = String(rItem.code || rItem.sku || '').trim()
+      if (!invRecRenew && rCodeIn && rCodeIn !== '-') {
+        try {
+          invRecRenew = $app.findFirstRecordByData('inventory', 'code', rCodeIn)
         } catch (_) {}
       }
 
       var rName = invRecRenew
         ? invRecRenew.getString('name')
         : String(rItem.name || rItem.product_name || '').trim()
-      var rCode = invRecRenew
-        ? invRecRenew.getString('code')
-        : String(rItem.code || rItem.sku || '').trim()
+      var rCode = invRecRenew ? invRecRenew.getString('code') : rCodeIn
       var rMonthly = invRecRenew
         ? Number(invRecRenew.get('monthly_price') || 0)
         : Number(rItem.monthlyPrice || rItem.monthly_price || 0)
