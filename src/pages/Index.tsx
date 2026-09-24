@@ -41,9 +41,17 @@ export default function Index() {
 
     if (error) {
       setIsSubmitting(false)
+      const isNetworkError =
+        (error instanceof TypeError && error.message === 'Failed to fetch') ||
+        (error &&
+          typeof error === 'object' &&
+          'status' in error &&
+          (error as { status: number }).status === 0)
       toast({
         title: 'Erro de Autenticação',
-        description: 'Email ou senha inválidos. Tente novamente.',
+        description: isNetworkError
+          ? 'Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.'
+          : 'Email ou senha inválidos. Tente novamente.',
         variant: 'destructive',
       })
     }
