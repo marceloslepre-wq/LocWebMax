@@ -1,92 +1,63 @@
 routerAdd('GET', '/backend/v1/rentals-check-restored', (e) => {
-  var targets = [
-    'LOC-00537',
-    'LOC-00478',
-    'LOC-00001',
-    'LOC-00536',
-    'LOC-00533',
-    'LOC-00473',
-    'LOC-00532',
-    'LOC-00530',
-    'LOC-00488',
-    'LOC-00534',
-    'LOC-00535',
-    'LOC-00529',
-    'LOC-00525',
-  ]
+  var logs = $app.findRecordsByFilter(
+    'logs_suporte_master',
+    'user_agent ~ "PROVA_MIGRATION_0082_V2"',
+    '-created',
+    1,
+    0,
+  )
+  var rawUA = logs.length > 0 ? logs[0].getString('user_agent') : ''
+  var proof = null
+  if (rawUA) {
+    try {
+      proof = JSON.parse(rawUA.replace('PROVA_MIGRATION_0082_V2: ', ''))
+    } catch (_) {}
+  }
 
-  var filterExpr = targets
-    .map(function (c) {
-      return 'contract_number = "' + c + '"'
-    })
-    .join(' || ')
-
-  var records = $app.findRecordsByFilter('rentals', filterExpr, 'contract_number', 50, 0)
-
-  var results = []
-  for (var i = 0; i < records.length; i++) {
-    var r = records[i]
-    var rawItems = r.get('items')
-    var parsedItems = []
-    if (typeof rawItems === 'string') {
+  var rec117 = $app.findFirstRecordByData('rentals', 'contract_number', 'LOC-00117')
+  var parseJson = function (val) {
+    if (!val) return []
+    if (typeof val === 'string') {
       try {
-        parsedItems = JSON.parse(rawItems)
-      } catch (_) {}
-    } else if (Array.isArray(rawItems)) {
-      parsedItems = rawItems
+        return JSON.parse(val)
+      } catch (_) {
+        return []
+      }
     }
-
-    var itemsSummary = []
-    for (var k = 0; k < parsedItems.length; k++) {
-      var it = parsedItems[k]
-      if (!it) continue
-      itemsSummary.push({
-        code: String(it.code || ''),
-        name: String(it.name || ''),
-        itemId: String(it.itemId || it.item_id || ''),
-        qty: Number(it.qty || it.quantity || 1),
-        dailyPrice: Number(it.dailyPrice || it.daily_price || 0),
-        monthlyPrice: Number(it.monthlyPrice || it.monthly_price || 0),
-        totalPrice: Number(it.totalPrice || it.total_price || 0),
-      })
+    if (Array.isArray(val)) {
+      if (val.length > 0 && typeof val[0] === 'number') {
+        var str = ''
+        for (var i = 0; i < val.length; i++) str += String.fromCharCode(val[i])
+        try {
+          return JSON.parse(str)
+        } catch (_) {
+          return []
+        }
+      }
+      return val
     }
-
-    results.push({
-      id: r.id,
-      contract_number: r.getString('contract_number'),
-      status: r.getString('status'),
-      total: Number(r.get('total') || 0),
-      items_count: itemsSummary.length,
-      items: itemsSummary,
-    })
+    return []
   }
 
   var allRentals = $app.findRecordsByFilter('rentals', "id != ''", '', 0, 0)
-  var zeroRentals = 0
-  var withItemsRentals = 0
-
-  for (var j = 0; j < allRentals.length; j++) {
-    var curR = allRentals[j]
-    var curItems = curR.get('items')
-    var curArr = []
-    if (typeof curItems === 'string') {
-      try {
-        curArr = JSON.parse(curItems)
-      } catch (_) {}
-    } else if (Array.isArray(curItems)) {
-      curArr = curItems
-    }
-    if (curArr.length > 0 && Number(curR.get('total') || 0) > 0) {
-      withItemsRentals++
-    } else {
-      zeroRentals++
+  var countEmptyItems = 0
+  for (var r = 0; r < allRentals.length; r++) {
+    var itList = parseJson(allRentals[r].get('items'))
+    if (!Array.isArray(itList) || itList.length === 0) {
+      countEmptyItems++
     }
   }
 
   return e.json(200, {
-    total_rentals: allRentals.length,
-    rentals_with_items_and_total: withItemsRentals,
-    rentals_zero: zeroRentals,
-    contracts: results,
+    loc_00117: {
+      id: rec117.id,
+      contract_number: rec117.getString('contract_number'),
+      total: rec117.get('total'),
+      status: rec117.getString('status'),
+      items: parseJson(rec117.get('items')),
+    },
+    totalRentals: allRentals.length,
+    countEmptyItems: countEmptyItems,
+    proof: proof,
   })
 })
