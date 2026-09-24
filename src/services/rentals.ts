@@ -98,4 +98,8 @@ export const rentalsService = {
 
     return this._lastUpdateOverduePromise
   },
+  async getNoSourceActiveRentalIds(rentalsList: any[], forceRefresh = false) {
+    const { fetchNoSourceRentalIds } = await import('@/lib/rental-history-source')
+    return fetchNoSourceRentalIds(rentalsList, forceRefresh)
+  },
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import useMainStore, { Rental } from '@/stores/main'
 import { formatDatePtBR, formatDateCompact } from '@/lib/utils'
@@ -56,6 +56,10 @@ export default function Rentals() {
   const [statusFilter, setStatusFilter] = useState('Todos')
   const [returnDateStart, setReturnDateStart] = useState('')
   const [returnDateEnd, setReturnDateEnd] = useState('')
+
+  // Contratos sem fonte histórica calculados dinamicamente
+  const [noSourceActiveIds, setNoSourceActiveIds] = useState<Set<string>>(new Set())
+  const [isLoadingNoSource, setIsLoadingNoSource] = useState(false)
 
   const [selectedRental, setSelectedRental] = useState<Rental | null>(null)
   const [returnOpen, setReturnOpen] = useState(false)
@@ -150,9 +154,40 @@ export default function Rentals() {
     }
   }, [rentals, updateRental])
 
+  // Carrega dinamicamente os IDs sem fonte histórica ao abrir a página ou quando rentals mudarem
+  useEffect(() => {
+    if (rentals.length === 0) return
+
+    let isMounted = true
+    setIsLoadingNoSource(true)
+
+    rentalsService
+      .getNoSourceActiveRentalIds(rentals)
+      .then((res) => {
+        if (isMounted && res) {
+          setNoSourceActiveIds(res.noSourceActiveIds)
+        }
+      })
+      .catch((err) => {
+        console.error('Erro ao buscar contratos sem fonte histórica:', err)
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingNoSource(false)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [rentals])
+
   const formatDateStr = (dateStr?: string) => {
     return formatDatePtBR(dateStr)
   }
+
+  const isNoSourceFilter =
+    statusFilter === 'A auditorar' ||
+    statusFilter === 'Sem fonte histórica' ||
+    statusFilter === 'A auditorar (sem fonte histórica)'
 
   const filtered = rentals.filter((r) => {
     const c = customers.find((cust) => cust.id === rentalField(r, 'customerId', 'customer_id'))
@@ -168,8 +203,8 @@ export default function Rentals() {
     const matchesStatus =
       statusFilter === 'Todos'
         ? true
-        : statusFilter === 'A auditorar'
-          ? r.status === 'Devolvido' && !rentalField(r, 'actualReturnDate', 'actual_return_date')
+        : isNoSourceFilter
+          ? r.status === 'Ativo' && noSourceActiveIds.has(r.id)
           : r.status === statusFilter
 
     let matchesReturnDate = true
@@ -295,7 +330,7 @@ export default function Rentals() {
             />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px] bg-background">
+            <SelectTrigger className="w-[260px] bg-background">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -304,7 +339,10 @@ export default function Rentals() {
               <SelectItem value="Atrasado">Atrasados</SelectItem>
               <SelectItem value="Devolvido">Devolvidos</SelectItem>
               <SelectItem value="Vendido">Vendidos</SelectItem>
-              <SelectItem value="A auditorar">A auditorar (Temporário)</SelectItem>
+              <SelectItem value="A auditorar">
+                A auditorar (sem fonte histórica){' '}
+                {noSourceActiveIds.size > 0 ? `(${noSourceActiveIds.size})` : ''}
+              </SelectItem>
             </SelectContent>
           </Select>
           <div className="flex items-center gap-2">
@@ -326,14 +364,26 @@ export default function Rentals() {
             />
           </div>
         </div>
-        {statusFilter === 'A auditorar' && (
-          <div className="px-4 py-2 bg-amber-50 border-b text-sm text-amber-800 flex items-center gap-2 print:hidden">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>
-              <strong>Filtro temporário:</strong> Exibindo contratos marcados como
-              &quot;Devolvido&quot; sem data de devolução registrada. Remova este filtro após
-              concluir a auditoria.
-            </span>
+        {isNoSourceFilter && (
+          <div className="px-4 py-2.5 bg-amber-50 border-b text-sm text-amber-900 flex flex-wrap items-center justify-between gap-2 print:hidden">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>
+                <strong>Contratos Ativos sem fonte histórica:</strong> Exibindo{' '}
+                <strong>{filtered.length}</strong>{' '}
+                {filtered.length === 1 ? 'contrato ativo' : 'contratos ativos'}{' '}
+                {noSourceActiveIds.size > 0 && filtered.length !== noSourceActiveIds.size
+                  ? `(de um total de ${noSourceActiveIds.size} ativos sem fonte)`
+                  : ''}{' '}
+                cujos itens não possuem correspondência em snapshots ou auditoria. Use para
+                conferência contrato a contrato contra o ZapSign.
+              </span>
+            </div>
+            {isLoadingNoSource && (
+              <span className="text-xs text-amber-700 animate-pulse font-medium">
+                Atualizando lista...
+              </span>
+            )}
           </div>
         )}
         <CardContent className="p-0">
