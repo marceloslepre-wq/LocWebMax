@@ -245,8 +245,19 @@ export default function Rentals() {
   }
 
   const exportData = () => {
-    // Abrangência do export: contratos ATIVOS e ATRASADOS
-    const targetRentals = rentals.filter((r) => r.status === 'Ativo' || r.status === 'Atrasado')
+    // Respeita os filtros ativos na tela.
+    // Se nenhum filtro estiver ativo (status 'Todos', busca vazia e sem datas),
+    // mantém o comportamento padrão de exportar contratos Ativos e Atrasados.
+    const hasFilterActive =
+      statusFilter !== 'Todos' ||
+      Boolean(search?.trim()) ||
+      Boolean(globalSearch?.trim()) ||
+      Boolean(returnDateStart) ||
+      Boolean(returnDateEnd)
+
+    const targetRentals = hasFilterActive
+      ? filtered
+      : rentals.filter((r) => r.status === 'Ativo' || r.status === 'Atrasado')
 
     // Modelo exato pedido pelo usuário (tabela 2 – DO PREÇO E PRAZO DE LOCAÇÃO):
     // 1. Número do contrato (ex.: LOC-00534)
