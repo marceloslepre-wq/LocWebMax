@@ -39,6 +39,7 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { handleExport } from '@/lib/export'
+import { resolveInventoryItem } from '@/lib/rental-items'
 import { CreateRentalDialog } from '@/components/rentals/CreateRentalDialog'
 import { ReturnDialog } from '@/components/rentals/ReturnDialog'
 import { RentalsReportDialog } from '@/components/rentals/RentalsReportDialog'
@@ -220,37 +221,145 @@ export default function Rentals() {
     return matchesSearch && matchesStatus && matchesReturnDate
   })
 
+  const formatDateOnly = (dateStr?: string | null): string => {
+    if (!dateStr) return '-'
+    const cleanStr = String(dateStr).split('T')[0].split(' ')[0]
+    const [y, m, d] = cleanStr.split('-')
+    if (!y || !m || !d) return formatDateStr(dateStr) || '-'
+    return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`
+  }
+
+  const formatBRLCurrency = (value: number): string => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(value || 0)
+  }
+
+  const getTodayISO = () => {
+    const today = new Date()
+    const y = today.getFullYear()
+    const m = String(today.getMonth() + 1).padStart(2, '0')
+    const d = String(today.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+
   const exportData = () => {
-    const headers = ['Contrato', 'Cliente', 'Telefone', 'Retirada', 'Previsão', 'Status', 'Total']
-    const data = filtered.map((r) => {
+    // Abrangência do export: contratos ATIVOS e ATRASADOS
+    const targetRentals = rentals.filter((r) => r.status === 'Ativo' || r.status === 'Atrasado')
+
+    // Modelo exato pedido pelo usuário (tabela 2 – DO PREÇO E PRAZO DE LOCAÇÃO):
+    // 1. Número do contrato (ex.: LOC-00534)
+    // 2. Nome do cliente
+    // 3. Retirada (data de início)
+    // 4. Previsão (previsão de devolução)
+    // 5. SKU / Código do produto (conforme cadastro no Estoque)
+    // 6. Quantidade
+    // 7. Descrição do equipamento (Nome dos Modelos do Estoque)
+    // 8. Valor (valor do item/contrato em R$)
+    const headers = [
+      'Número do Contrato',
+      'Nome do Cliente',
+      'Retirada',
+      'Previsão',
+      'SKU / Código',
+      'Quantidade',
+      'Descrição do Equipamento',
+      'Valor',
+    ]
+
+    const data: any[][] = []
+
+    targetRentals.forEach((r) => {
+      const contractNumber =
+        rentalField(r, 'contractNumber', 'contract_number') ||
+        rentalField(r, 'trackingCode', 'tracking_code') ||
+        r.id.split('-')[0].toUpperCase()
+
       const c = customers.find((cust) => cust.id === rentalField(r, 'customerId', 'customer_id'))
+      const customerName = c?.name || '-'
 
-      let formattedPhone = ''
-      if (c) {
-        const rawPhone =
-          c.phone_cell || (c as any).phoneCell || c.phone_res || (c as any).phoneRes || ''
-        const cleaned = rawPhone.replace(/\D/g, '')
-        if (cleaned.length === 11) {
-          formattedPhone = `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7, 11)}`
-        } else if (cleaned.length === 10) {
-          formattedPhone = `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6, 10)}`
-        } else {
-          formattedPhone = rawPhone
-        }
+      const contractStartDate = formatDateOnly(rentalField(r, 'startDate', 'start_date'))
+      const contractExpectedDate = formatDateOnly(
+        rentalField(r, 'expectedReturnDate', 'expected_return_date'),
+      )
+
+      // Itens reais do contrato (desconsiderando frete)
+      const rawItems = Array.isArray(r.items) ? r.items : []
+      const regularItems = rawItems.filter((ri: any) => {
+        const id = String(ri?.itemId || ri?.item_id || ri?.inventory_id || ri?.id || '')
+          .trim()
+          .toLowerCase()
+        return id !== 'freight' && id !== 'frete'
+      })
+
+      if (regularItems.length === 0) {
+        // Contrato sem itens detalhados ou com itens vazios: gera uma linha com os dados gerais
+        data.push([
+          contractNumber,
+          customerName,
+          contractStartDate,
+          contractExpectedDate,
+          '-',
+          1,
+          'Equipamento sem cadastro de item',
+          formatBRLCurrency(r.total || 0),
+        ])
+      } else {
+        // Se o contrato tiver VÁRIOS itens, gera uma linha por item
+        regularItems.forEach((ri: any) => {
+          // Busca produto vinculado no Estoque (inventory)
+          const invItem = resolveInventoryItem(ri, inventory)
+
+          // 1. SKU / Código: prioridade para o código do Estoque, senão do item
+          const sku = String(invItem?.code || ri.code || ri.sku || '-').trim() || '-'
+
+          // 2. Quantidade
+          const rawQty = ri.qty ?? ri.quantity ?? ri.quantidade ?? 1
+          const qty = Number(rawQty) > 0 ? Number(rawQty) : 1
+
+          // 3. Descrição do equipamento: prioridade absoluta para o nome no Estoque (inventory.name)
+          const desc = String(
+            invItem?.name ||
+              ri.name ||
+              ri.productName ||
+              ri.product_name ||
+              ri.description ||
+              'Equipamento',
+          ).trim()
+
+          // 4. Datas do item (ou do contrato se não especificada no item)
+          const itemStart = formatDateOnly(
+            ri.startDate || ri.start_date || rentalField(r, 'startDate', 'start_date'),
+          )
+          const itemEnd = formatDateOnly(
+            ri.endDate ||
+              ri.end_date ||
+              ri.expectedReturnDate ||
+              ri.expected_return_date ||
+              rentalField(r, 'expectedReturnDate', 'expected_return_date'),
+          )
+
+          // 5. Valor: valor total do item (ou se for 1 item e valor estiver zerado, valor do contrato)
+          let itemVal = Number(ri.totalPrice ?? ri.total_price ?? 0)
+          if (itemVal <= 0 && regularItems.length === 1 && r.total > 0) {
+            itemVal = r.total
+          }
+
+          data.push([
+            contractNumber,
+            customerName,
+            itemStart,
+            itemEnd,
+            sku,
+            qty,
+            desc,
+            formatBRLCurrency(itemVal),
+          ])
+        })
       }
-
-      return [
-        rentalField(r, 'contractNumber', 'contract_number') || r.id.split('-')[0].toUpperCase(),
-        c?.name || '-',
-        formattedPhone || '-',
-        formatDateStr(rentalField(r, 'startDate', 'start_date')),
-        getItemReturnDates(r)
-          .map((d) => formatDateStr(d))
-          .join(', '),
-        r.status,
-        `R$ ${r.total.toFixed(2)}`,
-      ]
     })
+
     return { headers, data }
   }
 
@@ -274,7 +383,8 @@ export default function Rentals() {
               <DropdownMenuItem
                 onClick={() => {
                   const { headers, data } = exportData()
-                  handleExport('csv', 'locacoes', headers, data)
+                  const filename = `locacoes-${getTodayISO()}`
+                  handleExport('csv', filename, headers, data)
                 }}
               >
                 Exportar CSV
@@ -282,7 +392,8 @@ export default function Rentals() {
               <DropdownMenuItem
                 onClick={() => {
                   const { headers, data } = exportData()
-                  handleExport('excel', 'locacoes', headers, data)
+                  const filename = `locacoes-${getTodayISO()}`
+                  handleExport('excel', filename, headers, data)
                 }}
               >
                 Exportar Excel (.xlsx)
@@ -290,9 +401,10 @@ export default function Rentals() {
               <DropdownMenuItem
                 onClick={() => {
                   const { headers, data } = exportData()
+                  const filename = `locacoes-${getTodayISO()}`
                   handleExport(
                     'pdf',
-                    'locacoes',
+                    filename,
                     headers,
                     data,
                     settings.companyName,

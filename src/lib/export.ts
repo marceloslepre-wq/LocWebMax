@@ -15,27 +15,51 @@ export function downloadCSV(filename: string, headers: string[], data: any[][]) 
   document.body.removeChild(link)
 }
 
-export function downloadExcel(filename: string, headers: string[], data: any[][]) {
-  const table = `
-    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-    <head><meta charset="utf-8"></head>
-    <body>
-      <table>
-        <tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr>
-        ${data.map((row) => `<tr>${row.map((cell) => `<td>${cell ?? ''}</td>`).join('')}</tr>`).join('')}
-      </table>
-    </body>
-    </html>
-  `
-  const blob = new Blob([table], { type: 'application/vnd.ms-excel' })
+import * as XLSX from 'xlsx'
+
+export function downloadExcel(
+  filename: string,
+  headers: string[],
+  data: any[][],
+  sheetName: string = 'Locações',
+) {
+  // Cria worksheet a partir dos headers e matriz de dados
+  const aoa = [headers, ...data]
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+
+  // Ajusta largura estimada das colunas
+  const colWidths = headers.map((h, colIdx) => {
+    let maxLen = String(h ?? '').length
+    for (let r = 0; r < data.length; r++) {
+      const valStr = String(data[r]?.[colIdx] ?? '')
+      if (valStr.length > maxLen) maxLen = valStr.length
+    }
+    return { wch: Math.min(Math.max(maxLen + 3, 10), 60) }
+  })
+  ws['!cols'] = colWidths
+
+  // Cria workbook
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 31))
+
+  // Gera array buffer real em formato OOXML/zip (.xlsx)
+  const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+
+  // Blob com MIME type oficial do formato XLSX OpenXML
+  const blob = new Blob([excelBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
+  const cleanFilename = filename.toLowerCase().endsWith('.xlsx') ? filename : `${filename}.xlsx`
   link.setAttribute('href', url)
-  link.setAttribute('download', `${filename}.xlsx`)
+  link.setAttribute('download', cleanFilename)
   link.style.visibility = 'hidden'
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
+  URL.revokeObjectURL(url)
 }
 
 export function printPDF(
