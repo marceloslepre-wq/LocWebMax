@@ -10,26 +10,18 @@ export interface ExcelRentalRow {
   sku: string
   quantity: number
   description: string
-  rawValor: any
-  parsedValor: number
 }
 
 export interface ValidatedItem {
   rowNumber: number
   sku: string
   quantity: number
-  sheetDescription: string
-  sheetValor: number
   // Dados do Estoque (inventory)
   inventoryId: string
   inventoryName: string
   monthlyPrice: number
   dailyPrice: number
-  // Regra do prazo inicial
-  durationDays: 15 | 30 | 'divergente'
-  unitInitialPrice: number
   itemTotalPrice: number
-  divergenceReason?: string
 }
 
 export interface RentalCorrectionPlan {
@@ -43,8 +35,6 @@ export interface RentalCorrectionPlan {
   proposedItems: any[]
   hasSkuNotFound: boolean
   skuNotFoundCodes: string[]
-  hasPriceDivergence: boolean
-  priceDivergenceReasons: string[]
   hasDateDivergence: boolean
   dateDivergenceDetails?: {
     currentStart: string
@@ -52,7 +42,7 @@ export interface RentalCorrectionPlan {
     currentExpected: string
     sheetExpected: string
   }
-  applyDateChanges: boolean // por padrão false (regra 5: preservar datas existentes a menos que usuário marque)
+  applyDateChanges: boolean // por padrão false (preservar datas existentes a menos que usuário marque)
   selected: boolean
   status: 'valid' | 'warning' | 'error'
   statusMessages: string[]
@@ -186,17 +176,20 @@ export async function parseAndValidateCorrectionExcel(
   let colSku = -1
   let colQty = -1
   let colDesc = -1
-  let colValor = -1
 
   for (let i = 0; i < Math.min(10, aoa.length); i++) {
     const row = aoa[i].map((c) =>
       String(c || '')
         .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
         .trim(),
     )
-    const cIdx = row.findIndex((c) => c.includes('contrato') || c.includes('número'))
+    const cIdx = row.findIndex(
+      (c) => c.includes('contrato') || c.includes('numero') || c.includes('locacao'),
+    )
     const skuIdx = row.findIndex(
-      (c) => c.includes('sku') || c.includes('código') || c.includes('codigo'),
+      (c) => c.includes('sku') || c.includes('codigo') || c.includes('cod'),
     )
     if (cIdx >= 0 && skuIdx >= 0) {
       headerIndex = i
@@ -204,23 +197,21 @@ export async function parseAndValidateCorrectionExcel(
       colSku = skuIdx
       colCustomer = row.findIndex((c) => c.includes('cliente') || c.includes('nome'))
       colStart = row.findIndex(
-        (c) => c.includes('retirada') || c.includes('início') || c.includes('inicio'),
+        (c) => c.includes('retirada') || c.includes('inicio') || c.includes('data'),
       )
-      colExpected = row.findIndex((c) => c.includes('previs') || c.includes('devolu'))
+      colExpected = row.findIndex(
+        (c) => c.includes('previs') || c.includes('devolu') || c.includes('termino'),
+      )
       colQty = row.findIndex((c) => c.includes('qtd') || c.includes('quant'))
       colDesc = row.findIndex(
         (c) => c.includes('descri') || c.includes('equipamento') || c.includes('produto'),
-      )
-      colValor = row.findIndex(
-        (c) => c.includes('valor') || c.includes('preço') || c.includes('preco'),
       )
       break
     }
   }
 
-  // Fallback se não achou cabeçalho clássico mas tem pelo menos 8 colunas como no export padrão
+  // Fallback se não achou cabeçalho clássico
   if (headerIndex === -1) {
-    // Assumir primeira linha como cabeçalho
     headerIndex = 0
     colContract = 0
     colCustomer = 1
@@ -229,7 +220,6 @@ export async function parseAndValidateCorrectionExcel(
     colSku = 4
     colQty = 5
     colDesc = 6
-    colValor = 7
   }
 
   // Extrair linhas de dados
@@ -241,11 +231,11 @@ export async function parseAndValidateCorrectionExcel(
     const contractRaw = String(r[colContract] || '').trim()
     const skuRaw = String(r[colSku] || '').trim()
 
-    // Ignora linhas completamente vazias
+    // Ignora linhas completamente vazias ou sem número de contrato
     if (!contractRaw && !skuRaw) continue
     if (!contractRaw) continue
 
-    const qtyRaw = r[colQty]
+    const qtyRaw = colQty >= 0 ? r[colQty] : undefined
     let qty = 1
     if (qtyRaw !== undefined && qtyRaw !== null && String(qtyRaw).trim() !== '') {
       const parsedQty = parseInt(String(qtyRaw).trim(), 10)
@@ -254,20 +244,15 @@ export async function parseAndValidateCorrectionExcel(
       }
     }
 
-    const valorRaw = r[colValor]
-    const valorParsed = parseSheetCurrency(valorRaw)
-
     parsedRows.push({
       rowNumber: i + 1,
       contractNumber: contractRaw.toUpperCase(),
-      customerName: String(r[colCustomer] || '').trim(),
-      startDateStr: parseSheetDate(r[colStart]),
-      expectedReturnDateStr: parseSheetDate(r[colExpected]),
+      customerName: colCustomer >= 0 ? String(r[colCustomer] || '').trim() : '',
+      startDateStr: colStart >= 0 ? parseSheetDate(r[colStart]) : '',
+      expectedReturnDateStr: colExpected >= 0 ? parseSheetDate(r[colExpected]) : '',
       sku: skuRaw,
       quantity: qty,
-      description: String(r[colDesc] || '').trim(),
-      rawValor: valorRaw,
-      parsedValor: valorParsed,
+      description: colDesc >= 0 ? String(r[colDesc] || '').trim() : '',
     })
   }
 
@@ -345,8 +330,6 @@ export async function parseAndValidateCorrectionExcel(
         proposedItems: [],
         hasSkuNotFound: false,
         skuNotFoundCodes: [],
-        hasPriceDivergence: false,
-        priceDivergenceReasons: [],
         hasDateDivergence: false,
         applyDateChanges: false,
         selected: false,
@@ -390,8 +373,6 @@ export async function parseAndValidateCorrectionExcel(
     // Validar itens das linhas da planilha
     let hasSkuNotFound = false
     const skuNotFoundCodes: string[] = []
-    let hasPriceDivergence = false
-    const priceDivergenceReasons: string[] = []
     const proposedItems: any[] = []
     let sumProposedEquipTotal = 0
 
@@ -415,51 +396,14 @@ export async function parseAndValidateCorrectionExcel(
       }
 
       // Regra 1: O NOME e VALOR MENSAL vêm SEMPRE do cadastro do Estoque (collection inventory) pelo SKU
+      // Diária = mensal ÷ 30. Sem exceção, sem prorrata de 15 dias.
       const invName = String(invRec.name || '').trim()
       const invMonthly = Number(invRec.monthly_price || 0)
       const invDaily =
         invMonthly > 0 ? Number((invMonthly / 30).toFixed(4)) : Number(invRec.daily_price || 0)
 
-      // Regra 2: A coluna "Valor" da planilha determina o PRAZO INICIAL:
-      // se valor = metade do mensal do cadastro → 15 dias
-      // se valor = mensal integral → 30 dias
-      // Atenção: se quantidade > 1, a planilha pode ter o valor unitário OU o valor total multiplicado pela quantidade.
-      // Verificamos ambas as hipóteses contra o cadastro para tolerância matemática.
-      const sheetVal = row.parsedValor
-      const halfMonthly = Number((invMonthly * 0.5).toFixed(2))
-      const fullMonthly = Number(invMonthly.toFixed(2))
-
-      let durationDays: 15 | 30 | 'divergente' = 'divergente'
-      let itemPriceUnit = fullMonthly
-
-      // Teste com valor unitário (sheetVal)
-      if (Math.abs(sheetVal - halfMonthly) <= 0.05) {
-        durationDays = 15
-        itemPriceUnit = halfMonthly
-      } else if (Math.abs(sheetVal - fullMonthly) <= 0.05) {
-        durationDays = 30
-        itemPriceUnit = fullMonthly
-      } else if (row.quantity > 1) {
-        // Teste se sheetVal é o total para a quantidade inteira
-        const unitVal = sheetVal / row.quantity
-        if (Math.abs(unitVal - halfMonthly) <= 0.05) {
-          durationDays = 15
-          itemPriceUnit = halfMonthly
-        } else if (Math.abs(unitVal - fullMonthly) <= 0.05) {
-          durationDays = 30
-          itemPriceUnit = fullMonthly
-        }
-      }
-
-      if (durationDays === 'divergente') {
-        hasPriceDivergence = true
-        priceDivergenceReasons.push(
-          `SKU ${cleanSku} (${invName}): Valor na planilha (R$ ${sheetVal.toFixed(2)}) não corresponde a 15 dias (R$ ${halfMonthly.toFixed(2)}) nem a 30 dias (R$ ${fullMonthly.toFixed(2)}) do cadastro mensal (R$ ${invMonthly.toFixed(2)}).`,
-        )
-      }
-
-      // Preço total do item = preço unitário do prazo inicial * quantidade
-      const itemTotalPrice = Number((itemPriceUnit * row.quantity).toFixed(2))
+      // Total do item = valor mensal do cadastro * quantidade
+      const itemTotalPrice = Number((invMonthly * row.quantity).toFixed(2))
       sumProposedEquipTotal += itemTotalPrice
 
       const newItem = {
@@ -491,10 +435,10 @@ export async function parseAndValidateCorrectionExcel(
       proposedItems.push(fItem)
     }
 
-    // Regra 2: Total do contrato deve ficar SOMENTE o valor do prazo inicial + frete preservado
+    // Total do contrato = soma dos valores mensais dos produtos + frete preservado
     const newTotal = Number((sumProposedEquipTotal + freightPreserved).toFixed(2))
 
-    // Regra 5: Verificar divergência de datas entre planilha e contrato
+    // Verificar divergência de datas entre planilha e contrato
     const sheetFirstRow = rows[0]
     const sheetStart = sheetFirstRow.startDateStr
     const sheetExpected = sheetFirstRow.expectedReturnDateStr
@@ -516,11 +460,6 @@ export async function parseAndValidateCorrectionExcel(
       statusMessages.push(
         `SKU inexistente no Estoque: [${skuNotFoundCodes.join(', ')}]. Cadastre o produto antes de aplicar este contrato.`,
       )
-    }
-
-    if (hasPriceDivergence) {
-      if (status !== 'error') status = 'warning'
-      statusMessages.push(...priceDivergenceReasons)
     }
 
     if (hasDateDivergence) {
@@ -551,8 +490,6 @@ export async function parseAndValidateCorrectionExcel(
       proposedItems,
       hasSkuNotFound,
       skuNotFoundCodes,
-      hasPriceDivergence,
-      priceDivergenceReasons,
       hasDateDivergence,
       dateDivergenceDetails: {
         currentStart: originalStartDate,
@@ -561,8 +498,8 @@ export async function parseAndValidateCorrectionExcel(
         sheetExpected,
       },
       applyDateChanges: false,
-      // Contratos com SKU inexistente ou divergência de preço começam desmarcados por segurança
-      selected: status === 'valid',
+      // Contratos com SKU inexistente começam desmarcados por segurança; válidos e warnings começam marcados
+      selected: status !== 'error',
       status,
       statusMessages,
       rawRentalRecord: rentalRec,

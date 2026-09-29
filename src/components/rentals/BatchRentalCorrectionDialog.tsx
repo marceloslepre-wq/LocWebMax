@@ -249,8 +249,8 @@ export function BatchRentalCorrectionDialog({
                   Importador de Correção em Lote de Contratos
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  Auditoria de contratos via Excel: busca de produto e preço no Estoque pelo SKU,
-                  ajuste do prazo inicial e gravação canônica com snapshots de prova.
+                  Auditoria de contratos via Excel: busca de produto e Valor Mensal no Estoque pelo
+                  SKU e gravação canônica com snapshots de prova.
                 </DialogDescription>
               </div>
             </div>
@@ -282,7 +282,7 @@ export function BatchRentalCorrectionDialog({
                   <Loader2 className="w-10 h-10 animate-spin text-primary" />
                   <p className="text-sm font-medium">Lendo planilha e consultando o Estoque...</p>
                   <p className="text-xs text-muted-foreground">
-                    Cruzando SKUs, calculando prazos iniciais e validando divergências.
+                    Cruzando SKUs, consultando Valor Mensal no Estoque e agrupando contratos.
                   </p>
                 </div>
               ) : (
@@ -313,21 +313,22 @@ export function BatchRentalCorrectionDialog({
               </div>
               <ul className="list-disc list-inside space-y-1 pl-1 text-blue-800">
                 <li>
-                  <strong>Fonte da Verdade:</strong> O NOME do equipamento e o VALOR MENSAL vêm{' '}
-                  <strong>SEMPRE do cadastro do Estoque</strong> pelo SKU informado na coluna.
+                  <strong>Fonte da Verdade do Produto e Preço:</strong> O NOME do equipamento e o
+                  VALOR MENSAL vêm <strong>SEMPRE do cadastro de Estoque</strong> pelo SKU
+                  informado. A diária é mensal ÷ 30.
                 </li>
                 <li>
-                  <strong>Prazo Inicial:</strong> Se o valor na planilha = metade do mensal → 15
-                  dias; se integral → 30 dias. O total do contrato fica{' '}
-                  <strong>somente o valor do prazo inicial</strong>.
+                  <strong>Valor da Planilha Não Utilizado:</strong> Não é feita dedução de 15/30
+                  dias por valor — o total do contrato e o item assumem integralmente o Valor Mensal
+                  do cadastro de Estoque.
                 </li>
                 <li>
-                  <strong>Múltiplos Produtos:</strong> Contrato com várias linhas na planilha recebe{' '}
-                  <strong>todos os produtos</strong> dessas linhas.
+                  <strong>Múltiplos Produtos:</strong> Linhas repetidas com o mesmo Número do
+                  Contrato agrupam múltiplos produtos no mesmo contrato.
                 </li>
                 <li>
-                  <strong>Datas e Frete:</strong> As datas e valores de frete existentes nos
-                  contratos são rigorosamente preservados.
+                  <strong>Datas e Frete Preservados:</strong> As datas e valores de frete existentes
+                  nos contratos são preservados por padrão.
                 </li>
                 <li>
                   <strong>Rastreabilidade Canônica:</strong> Gravação via ORM canônico com snapshots
@@ -539,9 +540,15 @@ export function BatchRentalCorrectionDialog({
                                         <span className="truncate max-w-[220px] font-medium text-emerald-900 dark:text-emerald-300">
                                           [{pi.code}] {pi.name} (x{pi.qty})
                                         </span>
-                                        <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                                        <span
+                                          className="font-bold text-emerald-700 dark:text-emerald-400"
+                                          title={`Valor Mensal: R$ ${Number(pi.monthlyPrice || 0).toFixed(2)}`}
+                                        >
                                           R${' '}
                                           {Number(pi.totalPrice || pi.total_price || 0).toFixed(2)}
+                                          <span className="text-[10px] font-normal text-muted-foreground ml-1">
+                                            (R$ {Number(pi.monthlyPrice || 0).toFixed(2)}/mês)
+                                          </span>
                                         </span>
                                       </div>
                                     ))}
