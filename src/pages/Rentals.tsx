@@ -24,6 +24,7 @@ import {
   Trash2,
   ArrowLeftRight,
   AlertTriangle,
+  FileSpreadsheet,
 } from 'lucide-react'
 import {
   Select,
@@ -48,21 +49,41 @@ import { ReceiptDialog } from '@/components/rentals/ReceiptDialog'
 import { ExchangeDialog } from '@/components/rentals/ExchangeDialog'
 import { rentalsService } from '@/services/rentals'
 import { ImportRentalsDialog } from '@/components/rentals/ImportRentalsDialog'
+import { BatchRentalCorrectionDialog } from '@/components/rentals/BatchRentalCorrectionDialog'
 import { calculateLateFee } from '@/lib/late-fee'
+import { useAuth } from '@/hooks/use-auth'
 
 export default function Rentals() {
-  const { rentals, customers, globalSearch, settings, deleteRental, updateRental, inventory } =
-    useMainStore()
+  const {
+    rentals,
+    customers,
+    globalSearch,
+    settings,
+    deleteRental,
+    updateRental,
+    inventory,
+    refreshRentals,
+  } = useMainStore()
+  const { user } = useAuth()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('Todos')
   const [returnDateStart, setReturnDateStart] = useState('')
   const [returnDateEnd, setReturnDateEnd] = useState('')
+
+  // Acesso restrito ao papel Admin / Master
+  const isAdminOrMaster =
+    user?.role === 'Administrador' ||
+    user?.role === 'Master' ||
+    user?.role === 'Gestor' ||
+    user?.role === 'admin' ||
+    user?.role === 'master'
 
   // Contratos sem fonte histórica calculados dinamicamente
   const [noSourceActiveIds, setNoSourceActiveIds] = useState<Set<string>>(new Set())
   const [isLoadingNoSource, setIsLoadingNoSource] = useState(false)
 
   const [selectedRental, setSelectedRental] = useState<Rental | null>(null)
+  const [batchCorrectionOpen, setBatchCorrectionOpen] = useState(false)
   const [returnOpen, setReturnOpen] = useState(false)
   const [renewOpen, setRenewOpen] = useState(false)
   const [exchangeOpen, setExchangeOpen] = useState(false)
@@ -427,6 +448,17 @@ export default function Rentals() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          {isAdminOrMaster && (
+            <Button
+              variant="outline"
+              onClick={() => setBatchCorrectionOpen(true)}
+              className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+              title="Importar planilha com correções de SKU/valores auditados em lote"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2" />
+              Importar correção
+            </Button>
+          )}
           <ImportRentalsDialog />
           <RentalsReportDialog />
           <CreateRentalDialog
@@ -756,6 +788,17 @@ export default function Rentals() {
         }}
       />
       <ExchangeDialog rental={selectedRental} open={exchangeOpen} onOpenChange={setExchangeOpen} />
+      {isAdminOrMaster && (
+        <BatchRentalCorrectionDialog
+          open={batchCorrectionOpen}
+          onOpenChange={setBatchCorrectionOpen}
+          onSuccess={() => {
+            if (refreshRentals) {
+              refreshRentals().catch(() => {})
+            }
+          }}
+        />
+      )}
       <ReceiptDialog
         rental={receiptRental}
         open={receiptOpen}

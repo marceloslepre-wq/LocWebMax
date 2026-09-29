@@ -165,6 +165,8 @@ interface MainStore {
   deleteRental: (id: string) => Promise<void>
   loadItemAssets: (id: string) => Promise<Asset[]>
   refreshUsers: () => Promise<void>
+  refreshRentals: () => Promise<void>
+  refreshInventory: () => Promise<void>
 }
 
 function mapInventoryRow(row: any): InventoryItem {
@@ -1042,6 +1044,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         deleteRental,
         loadItemAssets,
         refreshUsers,
+        refreshRentals,
+        refreshInventory,
       },
     },
     children,
