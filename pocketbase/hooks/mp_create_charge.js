@@ -70,6 +70,45 @@ routerAdd(
       } catch (_) {}
     }
 
+    function sanitizePayerEmail(raw) {
+      if (!raw) return ''
+      var str = String(raw).trim()
+      if (!str) return ''
+      var atIdx = str.lastIndexOf('@')
+      if (atIdx > 0) {
+        var local = str.substring(0, atIdx).trim()
+        var domain = str.substring(atIdx + 1).trim()
+        local = local.replace(/^[.\s_-]+|[.\s_-]+$/g, '')
+        local = local.replace(/\.{2,}/g, '.')
+        domain = domain.replace(/^[.\s]+|[.\s]+$/g, '')
+        if (local && domain) {
+          str = local + '@' + domain
+        } else {
+          str = (local + '@' + domain).replace(/^@|@$/g, '')
+        }
+      }
+      return str.trim()
+    }
+
+    function isValidPayerEmail(str) {
+      if (!str) return false
+      var re =
+        /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/
+      return re.test(str.trim())
+    }
+
+    if (payerEmail) {
+      payerEmail = sanitizePayerEmail(payerEmail)
+      if (payerEmail && !isValidPayerEmail(payerEmail)) {
+        throw new BadRequestError('Dados invalidos', {
+          payer_email: new ValidationError(
+            'invalid_email',
+            'O e-mail do cliente está inválido e precisa ser corrigido no cadastro.',
+          ),
+        })
+      }
+    }
+
     if (!description) {
       description = renewalDays
         ? 'Renovação ' + renewalDays + ' dias - Locação ' + contractNumber

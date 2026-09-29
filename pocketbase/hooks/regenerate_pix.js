@@ -27,6 +27,30 @@ routerAdd(
     var rentalId = payment.getString('rental_id')
     var payerEmail = payment.getString('payer_email') || ''
 
+    if (payerEmail) {
+      var str = String(payerEmail).trim()
+      var atIdx = str.lastIndexOf('@')
+      if (atIdx > 0) {
+        var local = str
+          .substring(0, atIdx)
+          .trim()
+          .replace(/^[.\s_-]+|[.\s_-]+$/g, '')
+          .replace(/\.{2,}/g, '.')
+        var domain = str
+          .substring(atIdx + 1)
+          .trim()
+          .replace(/^[.\s]+|[.\s]+$/g, '')
+        str = local && domain ? local + '@' + domain : (local + '@' + domain).replace(/^@|@$/g, '')
+      }
+      var emailRe =
+        /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/
+      if (emailRe.test(str.trim())) {
+        payerEmail = str.trim()
+      } else {
+        payerEmail = ''
+      }
+    }
+
     var expirationDate = new Date(Date.now() + 30 * 60 * 1000)
 
     var paymentData = {

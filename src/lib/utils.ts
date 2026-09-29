@@ -98,6 +98,49 @@ export function formatDateCompact(dateStr?: string): string {
   return format(date, 'dd/MM/yy')
 }
 
+/**
+ * Sanitiza e valida e-mail para envio ao Mercado Pago e outros gateways.
+ * Remove espaços, pontos/caracteres de borda adjacentes ao '@', trailing dots, etc.
+ * Exemplo: "fabiolamontovani.@gmail.com" -> "fabiolamontovani@gmail.com"
+ */
+export function sanitizeEmail(rawEmail?: string | null): string {
+  if (!rawEmail) return ''
+  let email = String(rawEmail).trim()
+  if (!email) return ''
+
+  // Se tiver '@', sanitizar a parte local (antes do @) e a parte de domínio (depois do @)
+  const atIndex = email.lastIndexOf('@')
+  if (atIndex > 0) {
+    let localPart = email.slice(0, atIndex).trim()
+    let domainPart = email.slice(atIndex + 1).trim()
+
+    // Remove pontos finais e pontuação de borda no final ou início da localPart
+    // Ex: "fabiolamontovani." -> "fabiolamontovani"
+    localPart = localPart.replace(/^[.\s_-]+|[.\s_-]+$/g, '')
+    // Remove pontos consecutivos na localPart se houver
+    localPart = localPart.replace(/\.{2,}/g, '.')
+
+    // Remove pontos no início ou fim do domínio
+    domainPart = domainPart.replace(/^[.\s]+|[.\s]+$/g, '')
+
+    if (localPart && domainPart) {
+      email = `${localPart}@${domainPart}`
+    } else {
+      email = `${localPart}@${domainPart}`.replace(/^@|@$/g, '')
+    }
+  }
+
+  return email.trim()
+}
+
+export function isValidEmail(email?: string | null): boolean {
+  if (!email) return false
+  // Regex simples e robusto de e-mail (RFC 5322 simplificada)
+  const re =
+    /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/
+  return re.test(email.trim())
+}
+
 export function hexToHSL(H: string) {
   let r = 0,
     g = 0,

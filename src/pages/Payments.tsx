@@ -52,7 +52,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { cn, formatDatePtBR } from '@/lib/utils'
+import { cn, formatDatePtBR, sanitizeEmail, isValidEmail } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
 import { useRealtime } from '@/hooks/use-realtime'
 import { paymentsService } from '@/services/payments'
@@ -174,12 +174,27 @@ export default function Payments() {
       return
     }
 
+    // Validação do e-mail do pagador
+    const cleanPayerEmail = sanitizeEmail(payerEmail)
+    if (cleanPayerEmail && !isValidEmail(cleanPayerEmail)) {
+      setFieldErrors({
+        payer_email: 'E-mail do pagador inválido — corrija o cadastro do cliente',
+      })
+      toast({
+        title: 'E-mail inválido',
+        description: 'E-mail do pagador inválido — corrija o cadastro do cliente',
+        variant: 'destructive',
+      })
+      setSubmitting(false)
+      return
+    }
+
     try {
       const result = await paymentsService.createCharge({
         rental_id: rentalId,
         amount: numAmount,
         payment_type: paymentType,
-        payer_email: payerEmail,
+        payer_email: cleanPayerEmail || undefined,
         description,
         tenant_id: activeTenantId || undefined,
       })
@@ -725,13 +740,28 @@ export default function Payments() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label>Email do Pagador</Label>
+                <Label className={cn(fieldErrors.payer_email && 'text-destructive')}>
+                  Email do Pagador
+                </Label>
                 <Input
                   type="email"
                   value={payerEmail}
-                  onChange={(e) => setPayerEmail(e.target.value)}
+                  onChange={(e) => {
+                    setPayerEmail(e.target.value)
+                    if (fieldErrors.payer_email) {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev }
+                        delete next.payer_email
+                        return next
+                      })
+                    }
+                  }}
+                  className={cn(fieldErrors.payer_email && 'border-destructive')}
                   placeholder="email@exemplo.com"
                 />
+                {fieldErrors.payer_email && (
+                  <span className="text-sm text-destructive">{fieldErrors.payer_email}</span>
+                )}
               </div>
 
               <div className="grid gap-2">
