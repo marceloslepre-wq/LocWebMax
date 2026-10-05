@@ -257,6 +257,26 @@ export default function Rentals() {
     }).format(value || 0)
   }
 
+  const formatCustomerPhone = (customer?: any): string => {
+    if (!customer) return ''
+    const rawPhone =
+      customer.phone_cell ||
+      customer.phoneCell ||
+      customer.phone_res ||
+      customer.phoneRes ||
+      customer.phone_com ||
+      customer.phoneCom
+    if (!rawPhone) return ''
+    const cleaned = String(rawPhone).replace(/\D/g, '')
+    if (cleaned.length === 11) {
+      return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7, 11)}`
+    }
+    if (cleaned.length === 10) {
+      return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6, 10)}`
+    }
+    return String(rawPhone)
+  }
+
   const getTodayISO = () => {
     const today = new Date()
     const y = today.getFullYear()
@@ -280,18 +300,20 @@ export default function Rentals() {
       ? filtered
       : rentals.filter((r) => r.status === 'Ativo' || r.status === 'Atrasado')
 
-    // Modelo exato pedido pelo usuário (tabela 2 – DO PREÇO E PRAZO DE LOCAÇÃO):
+    // Modelo com inclusão do Telefone do cliente logo após Nome do Cliente:
     // 1. Número do contrato (ex.: LOC-00534)
     // 2. Nome do cliente
-    // 3. Retirada (data de início)
-    // 4. Previsão (previsão de devolução)
-    // 5. SKU / Código do produto (conforme cadastro no Estoque)
-    // 6. Quantidade
-    // 7. Descrição do equipamento (Nome dos Modelos do Estoque)
-    // 8. Valor (valor do item/contrato em R$)
+    // 3. Telefone (telefone formatado ou vazio se não cadastrado)
+    // 4. Retirada (data de início)
+    // 5. Previsão (previsão de devolução)
+    // 6. SKU / Código do produto (conforme cadastro no Estoque)
+    // 7. Quantidade
+    // 8. Descrição do equipamento (Nome dos Modelos do Estoque)
+    // 9. Valor (valor do item/contrato em R$)
     const headers = [
       'Número do Contrato',
       'Nome do Cliente',
+      'Telefone',
       'Retirada',
       'Previsão',
       'SKU / Código',
@@ -310,6 +332,7 @@ export default function Rentals() {
 
       const c = customers.find((cust) => cust.id === rentalField(r, 'customerId', 'customer_id'))
       const customerName = c?.name || '-'
+      const customerPhone = formatCustomerPhone(c)
 
       const contractStartDate = formatDateOnly(rentalField(r, 'startDate', 'start_date'))
       const contractExpectedDate = formatDateOnly(
@@ -330,6 +353,7 @@ export default function Rentals() {
         data.push([
           contractNumber,
           customerName,
+          customerPhone,
           contractStartDate,
           contractExpectedDate,
           '-',
@@ -381,6 +405,7 @@ export default function Rentals() {
           data.push([
             contractNumber,
             customerName,
+            customerPhone,
             itemStart,
             itemEnd,
             sku,
@@ -566,25 +591,7 @@ export default function Rentals() {
                   const customer = customers.find(
                     (c) => c.id === rentalField(rental, 'customerId', 'customer_id'),
                   )
-
-                  let formattedPhone = null
-                  if (customer) {
-                    const rawPhone =
-                      customer.phone_cell ||
-                      (customer as any).phoneCell ||
-                      customer.phone_res ||
-                      (customer as any).phoneRes
-                    if (rawPhone) {
-                      const cleaned = rawPhone.replace(/\D/g, '')
-                      if (cleaned.length === 11) {
-                        formattedPhone = `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7, 11)}`
-                      } else if (cleaned.length === 10) {
-                        formattedPhone = `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6, 10)}`
-                      } else {
-                        formattedPhone = rawPhone
-                      }
-                    }
-                  }
+                  const formattedPhone = formatCustomerPhone(customer)
 
                   return (
                     <TableRow key={rental.id} className="group hover:bg-muted/30">
