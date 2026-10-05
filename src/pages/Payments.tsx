@@ -108,7 +108,26 @@ export default function Payments() {
     (r: any) => r.status === 'Ativo' || r.status === 'Atrasado',
   )
 
-  const getPublicPaymentUrl = (id: string) => `${window.location.origin}/pagar/${id}`
+  const getPublicPaymentUrl = (identifier: string) =>
+    `${window.location.origin}/pagar/${identifier}`
+
+  const getStablePaymentUrl = (paymentOrDuplicate: any) => {
+    if (!paymentOrDuplicate) return ''
+    const rental =
+      paymentOrDuplicate.expand?.rental_id ||
+      rentals.find(
+        (r: any) => r.id === (paymentOrDuplicate.rental_id || paymentOrDuplicate.rentalId),
+      )
+    const contractNum = rental?.contractNumber || rental?.contract_number
+    if (contractNum) {
+      return getPublicPaymentUrl(contractNum)
+    }
+    const rentalId = rental?.id || paymentOrDuplicate.rental_id || paymentOrDuplicate.rentalId
+    if (rentalId) {
+      return getPublicPaymentUrl(rentalId)
+    }
+    return getPublicPaymentUrl(paymentOrDuplicate.id)
+  }
 
   const { activeTenantId } = useMainStore()
 
@@ -211,8 +230,13 @@ export default function Payments() {
       })
 
       if (result.id) {
-        const publicUrl = getPublicPaymentUrl(result.id)
         const rental = rentals.find((r: any) => r.id === rentalId)
+        const contractNum = rental?.contractNumber || (rental as any)?.contract_number
+        const publicUrl = contractNum
+          ? getPublicPaymentUrl(contractNum)
+          : rentalId
+            ? getPublicPaymentUrl(rentalId)
+            : getPublicPaymentUrl(result.id)
         const customer = rental
           ? customers.find((c: any) => c.id === (rental.customerId || (rental as any).customer_id))
           : null
@@ -303,7 +327,7 @@ export default function Payments() {
   }
 
   const handleCopyLink = async (payment: any) => {
-    const url = getPublicPaymentUrl(payment.id)
+    const url = getStablePaymentUrl(payment)
     try {
       await navigator.clipboard.writeText(url)
       setCopiedPaymentId(payment.id)
@@ -322,7 +346,7 @@ export default function Payments() {
   }
 
   const handleSendWhatsApp = async (payment: any) => {
-    const url = getPublicPaymentUrl(payment.id)
+    const url = getStablePaymentUrl(payment)
     const phone = getCustomerPhone(payment)
     const name = getCustomerName(payment)
     if (!phone) {
@@ -354,7 +378,7 @@ export default function Payments() {
 
   const handleCopyDuplicateLink = async () => {
     if (!duplicatePayment) return
-    const url = getPublicPaymentUrl(duplicatePayment.id)
+    const url = getStablePaymentUrl(duplicatePayment)
     try {
       await navigator.clipboard.writeText(url)
       toast({
@@ -582,7 +606,7 @@ export default function Payments() {
                   </Button>
                   <Button size="sm" variant="outline" asChild>
                     <a
-                      href={getPublicPaymentUrl(duplicatePayment.id)}
+                      href={getStablePaymentUrl(duplicatePayment)}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -877,7 +901,7 @@ export default function Payments() {
                       <div className="flex items-center justify-center gap-1">
                         <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
                           <a
-                            href={getPublicPaymentUrl(payment.id)}
+                            href={getStablePaymentUrl(payment)}
                             target="_blank"
                             rel="noopener noreferrer"
                           >

@@ -16,14 +16,25 @@ interface PublicPaymentData {
   pix_copy_paste: string
   pix_expiration: string
   created: string
+  rental_id?: string
+  contract_number?: string
+  customer_name?: string
 }
 
 function PaymentContent() {
   const { paymentId } = useParams<{ paymentId: string }>()
   const [payment, setPayment] = useState<PublicPaymentData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isNotFound, setIsNotFound] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [pollFailures, setPollFailures] = useState(0)
+
+  const isTerminal =
+    isNotFound ||
+    pollFailures >= 3 ||
+    payment?.status === 'Aprovado' ||
+    payment?.status === 'Rejeitado'
 
   useEffect(() => {
     if (!paymentId) return
@@ -34,10 +45,17 @@ function PaymentContent() {
         if (active) {
           setPayment(data)
           setError(null)
+          setIsNotFound(false)
+          setPollFailures(0)
         }
-      } catch {
-        if (active && !payment) {
-          setError('Não foi possível carregar os dados do pagamento.')
+      } catch (err: any) {
+        if (active) {
+          const status = err?.status || err?.response?.status
+          if (status === 404) {
+            setIsNotFound(true)
+          } else {
+            setError('Não foi possível carregar os dados do pagamento.')
+          }
         }
       } finally {
         if (active) setLoading(false)
@@ -50,18 +68,23 @@ function PaymentContent() {
   }, [paymentId])
 
   useEffect(() => {
-    if (!paymentId || !payment) return
-    if (payment.status === 'Aprovado' || payment.status === 'Rejeitado') return
+    if (!paymentId || !payment || isTerminal) return
     const interval = setInterval(async () => {
       try {
         const data = await paymentsService.getPublicPayment(paymentId)
         setPayment(data)
-      } catch {
-        // silent
+        setPollFailures(0)
+      } catch (err: any) {
+        const status = err?.status || err?.response?.status
+        if (status === 404) {
+          setIsNotFound(true)
+        } else {
+          setPollFailures((prev) => prev + 1)
+        }
       }
     }, 5000)
     return () => clearInterval(interval)
-  }, [paymentId, payment?.status])
+  }, [paymentId, payment?.status, isTerminal])
 
   const formatCurrency = (value: number) =>
     Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -100,6 +123,38 @@ function PaymentContent() {
     )
   }
 
+  if (isNotFound) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <Card className="max-w-md w-full text-center shadow-lg">
+          <CardContent className="pt-8 pb-8 space-y-5 flex flex-col items-center">
+            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center">
+              <Clock className="w-9 h-9 text-amber-600" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-bold text-slate-800">Link de pagamento indisponível</h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Este link de pagamento não é mais válido ou já foi atualizado pelo atendente. Por
+                favor, solicite um novo link atualizado à nossa equipe.
+              </p>
+            </div>
+            <Button
+              className="w-full mt-2"
+              onClick={() => {
+                const message = encodeURIComponent(
+                  'Olá, preciso de um novo link atualizado para o pagamento da minha locação.',
+                )
+                window.open(`https://wa.me/5527999046961?text=${message}`, '_blank')
+              }}
+            >
+              Falar com nossa equipe no WhatsApp
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   if (error || !payment) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -108,6 +163,9 @@ function PaymentContent() {
             <AlertCircle className="w-14 h-14 text-destructive" />
             <h2 className="text-xl font-bold">Erro ao carregar</h2>
             <p className="text-muted-foreground">{error || 'Pagamento não encontrado.'}</p>
+            <Button onClick={() => window.location.reload()} variant="outline">
+              Tentar novamente
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -177,14 +235,23 @@ function PaymentContent() {
           <div className="text-center space-y-1">
             <h1 className="text-xl font-bold">Pagamento via PIX</h1>
             <p className="text-sm text-muted-foreground">Hospital Home</p>
+            {payment.contract_number && (
+              <p className="text-xs font-semibold text-primary">
+                Contrato {payment.contract_number}
+              </p>
+            )}
           </div>
 
           <div className="bg-primary/5 rounded-lg p-4 space-y-1 text-center">
             <p className="text-sm text-muted-foreground">Valor a pagar</p>
             <p className="text-3xl font-bold text-primary">{formatCurrency(payment.amount)}</p>
-            {payment.description && (
+            {payment.description ? (
               <p className="text-xs text-muted-foreground mt-1">{payment.description}</p>
-            )}
+            ) : payment.contract_number ? (
+              <p className="text-xs text-muted-foreground mt-1">
+                Locação {payment.contract_number}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-3">
