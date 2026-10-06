@@ -266,10 +266,12 @@ routerAdd(
     // Recalcular total do contrato pela regra do Marcelo:
     // soma dos valores mensais dos itens regulares + frete se houver
     var newRentalTotal = 0
+    var hasFreightItem = false
     for (var k = 0; k < updatedItems.length; k++) {
       var itemTot = updatedItems[k]
       var kId = String(itemTot.itemId || itemTot.item_id || '').trim()
-      if (kId === 'freight') {
+      if (kId === 'freight' || kId === 'frete') {
+        hasFreightItem = true
         newRentalTotal += Number(itemTot.totalPrice || itemTot.total_price || 0)
       } else {
         var mP = Number(itemTot.monthlyPrice || itemTot.monthly_price || 0)
@@ -281,6 +283,34 @@ routerAdd(
         }
       }
     }
+
+    // Se não havia item de frete explícito nos items mas o total original tinha frete embutido
+    // (diferença entre o total anterior e os itens mensais anteriores), preservar o frete residual
+    if (!hasFreightItem) {
+      var prevItemsTotal = 0
+      for (var pIdx = 0; pIdx < items.length; pIdx++) {
+        var prevIt = items[pIdx]
+        if (!prevIt || typeof prevIt !== 'object') continue
+        var pId = String(prevIt.itemId || prevIt.item_id || '').trim()
+        if (pId !== 'freight' && pId !== 'frete') {
+          var pMonthly = Number(prevIt.monthlyPrice || prevIt.monthly_price || 0)
+          var pQty = Number(prevIt.qty ?? prevIt.quantity ?? 1) || 1
+          if (pMonthly > 0) {
+            prevItemsTotal += pMonthly * pQty
+          } else {
+            prevItemsTotal += Number(prevIt.totalPrice || prevIt.total_price || 0)
+          }
+        }
+      }
+      var prevTotalVal = Number(rental.get('total') || 0)
+      if (prevTotalVal > prevItemsTotal && prevItemsTotal > 0) {
+        var implicitFreight = prevTotalVal - prevItemsTotal
+        if (implicitFreight > 0) {
+          newRentalTotal += implicitFreight
+        }
+      }
+    }
+
     if (newRentalTotal > 0) {
       rental.set('total', Math.round(newRentalTotal * 100) / 100)
     }
