@@ -20,6 +20,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useToast } from '@/hooks/use-toast'
 import useMainStore, { Rental } from '@/stores/main'
 import { rentalsService } from '@/services/rentals'
+import { resolveInventoryItem, getItemName } from '@/lib/rental-items'
 import { differenceInDays, parseISO, addDays, format, startOfDay } from 'date-fns'
 import { getErrorMessage, extractFieldErrors, type FieldErrors } from '@/lib/pocketbase/errors'
 
@@ -77,16 +78,19 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
     )
     if (!item) return null
 
-    const invItem = inventory.find((i) => i.id === selectedOldItemId)
+    const invItem =
+      inventory.find((i) => i.id === selectedOldItemId) || resolveInventoryItem(item, inventory)
     const dailyPrice =
-      item.dailyPrice ||
-      (item as any).daily_price ||
       invItem?.dailyPrice ||
       (invItem as any)?.daily_price ||
+      (invItem?.monthlyPrice ? invItem.monthlyPrice / 30 : 0) ||
+      item.dailyPrice ||
+      (item as any).daily_price ||
       0
     const quantity = item.qty || (item as any).quantity || 1
+    const resolvedName = getItemName(item, invItem)
 
-    return { ...item, dailyPrice, quantity, name: (item as any).name || invItem?.name }
+    return { ...item, dailyPrice, quantity, name: resolvedName, inventoryItem: invItem }
   }, [rental, selectedOldItemIds, inventory])
 
   const newItemInfo = useMemo(() => {
@@ -199,13 +203,58 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
       })
 
       if (updateRental) {
+        const newInvName = newItemInfo.name
+        const newInvCode = newItemInfo.code
+        const newInvMonthly = newItemInfo.monthlyPrice || 0
+        const newDaily = calculation.newDailyPrice
+        const newExpectedDate = format(calculation.newReturnDate, 'yyyy-MM-dd')
+
+        const updatedItems = rental.items.map((i: any) => {
+          const itId = String(i.itemId || i.inventoryId || i.inventory_id || i.id || '').trim()
+          if (itId === selectedOldItemIds[0]) {
+            return {
+              ...i,
+              itemId: selectedNewItemId,
+              item_id: selectedNewItemId,
+              code: newInvCode,
+              name: newInvName,
+              dailyPrice: newDaily,
+              daily_price: newDaily,
+              monthlyPrice: newInvMonthly,
+              monthly_price: newInvMonthly,
+              totalPrice:
+                newInvMonthly > 0 ? newInvMonthly * (i.qty || 1) : newDaily * 30 * (i.qty || 1),
+              total_price:
+                newInvMonthly > 0 ? newInvMonthly * (i.qty || 1) : newDaily * 30 * (i.qty || 1),
+              endDate: newExpectedDate,
+              end_date: newExpectedDate,
+              expectedReturnDate: newExpectedDate,
+              expected_return_date: newExpectedDate,
+            }
+          }
+          return i
+        })
+
+        // Recalcular total do contrato para atualizar a UI imediatamente
+        let newTotal = 0
+        for (const it of updatedItems) {
+          const kId = String(it.itemId || (it as any).item_id || '').trim()
+          if (kId === 'freight') {
+            newTotal += Number(it.totalPrice || (it as any).total_price || 0)
+          } else {
+            const mP = Number(it.monthlyPrice || (it as any).monthly_price || 0)
+            const qT = Number(it.qty || 1)
+            newTotal += mP > 0 ? mP * qT : Number(it.totalPrice || (it as any).total_price || 0)
+          }
+        }
+
         updateRental(rental.id, {
-          items: rental.items.map((i: any) =>
-            i.itemId === selectedOldItemIds[0]
-              ? { ...i, itemId: selectedNewItemId, dailyPrice: calculation.newDailyPrice }
-              : i,
-          ),
-          expectedReturnDate: format(calculation.newReturnDate, 'yyyy-MM-dd'),
+          items: updatedItems,
+          expectedReturnDate: newExpectedDate,
+          total: newTotal > 0 ? newTotal : rental.total,
+          customContractHtml: '',
+          customContractText: '',
+          customSalesReceiptHtml: '',
         })
       }
       onOpenChange(false)
@@ -257,12 +306,22 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
                   {rentalItems
                     .filter((i: any) => i.itemId !== 'freight')
                     .map((item: any, idx: number) => {
+                      // Resolução canônica: se tem itemId (id do inventory), busca pelo itemId
+                      const directInv = item.itemId
+                        ? inventory.find((i) => i.id === item.itemId)
+                        : null
+                      const invItem = directInv || resolveInventoryItem(item, inventory)
                       const id = String(
-                        item.itemId || item.inventoryId || item.inventory_id || item.id || idx,
+                        invItem?.id ||
+                          item.itemId ||
+                          item.inventoryId ||
+                          item.inventory_id ||
+                          item.id ||
+                          idx,
                       )
                       const isChecked = selectedOldItemIds.includes(id)
-                      const invItem = inventory.find((i) => i.id === id)
-                      const itemName = item.name || invItem?.name || 'Produto Desconhecido'
+                      const itemName = getItemName(item, invItem)
+                      const itemCode = invItem?.code || item.code || ''
                       const itemQty = item.qty || item.quantity || 1
                       return (
                         <div key={id} className="flex items-center space-x-2">
@@ -271,7 +330,7 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
                             checked={isChecked}
                             onCheckedChange={(checked) => {
                               if (checked) {
-                                setSelectedOldItemIds((prev) => [...prev, id])
+                                setSelectedOldItemIds([id])
                               } else {
                                 setSelectedOldItemIds((prev) => prev.filter((i) => i !== id))
                               }
@@ -281,6 +340,7 @@ export function ExchangeDialog({ rental, open, onOpenChange }: ExchangeDialogPro
                             htmlFor={`chk-${id}`}
                             className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                           >
+                            {itemCode ? `[SKU ${itemCode}] ` : ''}
                             {itemName} (Qtd: {itemQty})
                           </Label>
                         </div>

@@ -135,16 +135,161 @@ routerAdd(
       $app.save(newStock)
     }
 
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].itemId === oldInvId) {
-        items[i].itemId = newInvId
-        items[i].dailyPrice = body.new_daily_price || items[i].dailyPrice
-        break
+    var newInvName = newInv.getString('name')
+    var newInvCode = newInv.getString('code')
+    var newInvMonthlyPrice = Number(newInv.get('monthly_price') || 0)
+    var newInvDailyPrice = Number(newInv.get('daily_price') || 0)
+    if (newInvDailyPrice <= 0 && newInvMonthlyPrice > 0) {
+      newInvDailyPrice = Number((newInvMonthlyPrice / 30).toFixed(4))
+    }
+    if (newInvMonthlyPrice <= 0 && newInvDailyPrice > 0) {
+      newInvMonthlyPrice = Math.round(newInvDailyPrice * 30 * 100) / 100
+    }
+    var effectiveDailyPrice = Number(body.new_daily_price || newInvDailyPrice || 0)
+
+    var updatedItems = []
+    var replaced = false
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i]
+      if (!it || typeof it !== 'object') continue
+      var itId = String(it.itemId || it.item_id || it.inventory_id || it.id || '').trim()
+
+      if (!replaced && itId === oldInvId) {
+        replaced = true
+        var startDateVal = it.startDate || it.start_date || rental.getString('start_date') || ''
+        var endDateVal =
+          body.new_expected_return_date ||
+          it.endDate ||
+          it.end_date ||
+          it.expectedReturnDate ||
+          it.expected_return_date ||
+          rental.getString('expected_return_date') ||
+          ''
+
+        // Reconstrução CANÔNICA completa do item com dados do novo produto no estoque
+        // Elimina campos duplicados conflitantes (camelCase e snake_case alinhados)
+        var canonicalItem = {
+          itemId: newInvId,
+          item_id: newInvId,
+          code: newInvCode,
+          name: newInvName,
+          qty: quantity,
+          quantity: quantity,
+          dailyPrice: effectiveDailyPrice,
+          daily_price: effectiveDailyPrice,
+          monthlyPrice: newInvMonthlyPrice,
+          monthly_price: newInvMonthlyPrice,
+          totalPrice:
+            newInvMonthlyPrice > 0
+              ? newInvMonthlyPrice * quantity
+              : effectiveDailyPrice * 30 * quantity,
+          total_price:
+            newInvMonthlyPrice > 0
+              ? newInvMonthlyPrice * quantity
+              : effectiveDailyPrice * 30 * quantity,
+          startDate: startDateVal,
+          start_date: startDateVal,
+          endDate: endDateVal,
+          end_date: endDateVal,
+          expectedReturnDate: endDateVal,
+          expected_return_date: endDateVal,
+        }
+        if (it.returnedQty !== undefined || it.returned_qty !== undefined) {
+          canonicalItem.returnedQty = Number(it.returnedQty ?? it.returned_qty ?? 0)
+          canonicalItem.returned_qty = canonicalItem.returnedQty
+        }
+        if (it.returnedDate || it.returned_date) {
+          canonicalItem.returnedDate = it.returnedDate || it.returned_date
+          canonicalItem.returned_date = canonicalItem.returnedDate
+        }
+        updatedItems.push(canonicalItem)
+      } else {
+        updatedItems.push(it)
       }
     }
-    rental.set('items', items)
-    if (body.new_expected_return_date)
+
+    // Se nenhum item bateu exatamente com oldInvId mas o contrato tem 1 item regular não-frete, substitui esse item
+    if (!replaced) {
+      for (var j = 0; j < updatedItems.length; j++) {
+        var itCheck = updatedItems[j]
+        var itCheckId = String(
+          itCheck.itemId || itCheck.item_id || itCheck.inventory_id || itCheck.id || '',
+        ).trim()
+        if (itCheckId !== 'freight') {
+          var sDateFallback =
+            itCheck.startDate || itCheck.start_date || rental.getString('start_date') || ''
+          var eDateFallback =
+            body.new_expected_return_date ||
+            itCheck.endDate ||
+            itCheck.end_date ||
+            itCheck.expectedReturnDate ||
+            itCheck.expected_return_date ||
+            rental.getString('expected_return_date') ||
+            ''
+          updatedItems[j] = {
+            itemId: newInvId,
+            item_id: newInvId,
+            code: newInvCode,
+            name: newInvName,
+            qty: quantity,
+            quantity: quantity,
+            dailyPrice: effectiveDailyPrice,
+            daily_price: effectiveDailyPrice,
+            monthlyPrice: newInvMonthlyPrice,
+            monthly_price: newInvMonthlyPrice,
+            totalPrice:
+              newInvMonthlyPrice > 0
+                ? newInvMonthlyPrice * quantity
+                : effectiveDailyPrice * 30 * quantity,
+            total_price:
+              newInvMonthlyPrice > 0
+                ? newInvMonthlyPrice * quantity
+                : effectiveDailyPrice * 30 * quantity,
+            startDate: sDateFallback,
+            start_date: sDateFallback,
+            endDate: eDateFallback,
+            end_date: eDateFallback,
+            expectedReturnDate: eDateFallback,
+            expected_return_date: eDateFallback,
+          }
+          replaced = true
+          break
+        }
+      }
+    }
+
+    rental.set('items', updatedItems)
+    if (body.new_expected_return_date) {
       rental.set('expected_return_date', body.new_expected_return_date)
+    }
+
+    // Recalcular total do contrato pela regra do Marcelo:
+    // soma dos valores mensais dos itens regulares + frete se houver
+    var newRentalTotal = 0
+    for (var k = 0; k < updatedItems.length; k++) {
+      var itemTot = updatedItems[k]
+      var kId = String(itemTot.itemId || itemTot.item_id || '').trim()
+      if (kId === 'freight') {
+        newRentalTotal += Number(itemTot.totalPrice || itemTot.total_price || 0)
+      } else {
+        var mP = Number(itemTot.monthlyPrice || itemTot.monthly_price || 0)
+        var qT = Number(itemTot.qty ?? itemTot.quantity ?? 1) || 1
+        if (mP > 0) {
+          newRentalTotal += mP * qT
+        } else {
+          newRentalTotal += Number(itemTot.totalPrice || itemTot.total_price || 0)
+        }
+      }
+    }
+    if (newRentalTotal > 0) {
+      rental.set('total', Math.round(newRentalTotal * 100) / 100)
+    }
+
+    // Limpar caches estáticos de templates de contrato/recibo para que sejam re-renderizados com o novo produto e novo valor
+    rental.set('custom_contract_html', '')
+    rental.set('custom_contract_text', '')
+    rental.set('custom_sales_receipt_html', '')
+
     $app.save(rental)
 
     var createdExchangeRecordId = null
