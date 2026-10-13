@@ -445,7 +445,7 @@ export function BatchRentalCorrectionDialog({
                                   htmlFor={`select-${plan.contractNumber}`}
                                   className="font-bold text-sm cursor-pointer hover:underline flex items-center gap-2"
                                 >
-                                  {plan.contractNumber}
+                                  {plan.displayContractNumber || plan.contractNumber}
                                   <span className="text-xs font-normal text-muted-foreground">
                                     • {plan.customerName}
                                   </span>

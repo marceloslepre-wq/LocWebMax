@@ -3,8 +3,11 @@ import pb from '@/lib/pocketbase/client'
 
 export interface ExcelRentalRow {
   rowNumber: number
+  rawContractNumber: string
   contractNumber: string
+  contractNormalized: string
   customerName: string
+  customerPhone: string
   startDateStr: string
   expectedReturnDateStr: string
   sku: string
@@ -26,6 +29,7 @@ export interface ValidatedItem {
 
 export interface RentalCorrectionPlan {
   contractNumber: string
+  displayContractNumber: string
   rentalRecordId: string
   customerName: string
   currentTotal: number
@@ -141,6 +145,104 @@ export function formatDateDisplay(isoStr: string): string {
 }
 
 /**
+ * Normaliza o número do contrato para comparação flexível e robusta:
+ * - Remove espaços intermediários e nas pontas (ex.: "LOC- 00248" -> "LOC-00248")
+ * - Uppercase
+ * - Devolve a chave canônica (ex: LOC-00248) e a versão numérica/bare (ex: 248)
+ */
+export function normalizeContractNumber(raw: any): {
+  canonical: string
+  bare: string
+  display: string
+} {
+  if (raw === null || raw === undefined) {
+    return { canonical: '', bare: '', display: '' }
+  }
+
+  // Se veio como número do Excel (ex: 248)
+  if (typeof raw === 'number' && !isNaN(raw)) {
+    const num = Math.round(raw)
+    const padded = String(num).padStart(5, '0')
+    return {
+      canonical: `LOC-${padded}`,
+      bare: String(num),
+      display: `LOC-${padded}`,
+    }
+  }
+
+  const str = String(raw).trim()
+  if (!str) return { canonical: '', bare: '', display: '' }
+
+  // Remove espaços extras e hífens com espaços (ex: "LOC - 00248", "LOC-  00248", "LOC 00248")
+  const collapsed = str.toUpperCase().replace(/\s+/g, ' ').trim()
+
+  // Se começar com LOC seguido de hífen/espaços e dígitos
+  const locMatch = collapsed.match(/^LOC[\s\-_]*(\d+)$/i)
+  if (locMatch) {
+    const numPart = locMatch[1]
+    const num = parseInt(numPart, 10)
+    const padded = isNaN(num) ? numPart : String(num).padStart(5, '0')
+    const bare = isNaN(num) ? numPart.replace(/^0+/, '') : String(num)
+    return {
+      canonical: `LOC-${padded}`,
+      bare: bare || '0',
+      display: `LOC-${padded}`,
+    }
+  }
+
+  // Se for apenas dígitos (ex.: "248" ou "00248")
+  const digitsMatch = collapsed.match(/^(\d+)$/)
+  if (digitsMatch) {
+    const num = parseInt(digitsMatch[1], 10)
+    const padded = String(num).padStart(5, '0')
+    return {
+      canonical: `LOC-${padded}`,
+      bare: String(num),
+      display: `LOC-${padded}`,
+    }
+  }
+
+  // Caso alfanumérico ou outro padrão de contrato (ex: "CTR-1234")
+  const cleanStandard = collapsed.replace(/\s+/g, '')
+  return {
+    canonical: cleanStandard,
+    bare: cleanStandard.replace(/^LOC-?0*/i, ''),
+    display: collapsed,
+  }
+}
+
+/**
+ * Normaliza SKU para comparação segura:
+ * - Trima espaços nas pontas e internos
+ * - Remove '.0' gerado pelo Excel quando lê número como float
+ * - Devolve formatos: exato, lowercase, e numérico sem zeros à esquerda
+ */
+export function normalizeSku(raw: any): {
+  raw: string
+  trimmed: string
+  bareNumber: string
+} {
+  if (raw === null || raw === undefined) {
+    return { raw: '', trimmed: '', bareNumber: '' }
+  }
+
+  let str = String(raw).trim()
+  // Se for float do Excel tipo "80.0" vindo de célula numérica
+  if (/^\d+\.0+$/.test(str)) {
+    str = str.split('.')[0]
+  }
+
+  const trimmed = str
+  let bareNumber = ''
+  const num = parseInt(trimmed, 10)
+  if (!isNaN(num) && /^\d+$/.test(trimmed)) {
+    bareNumber = String(num)
+  }
+
+  return { raw: String(raw), trimmed, bareNumber }
+}
+
+/**
  * Lê um arquivo Excel (.xlsx, .xls, .csv) e devolve a lista de linhas brutas
  */
 export async function readExcelFile(file: File): Promise<any[][]> {
@@ -171,6 +273,7 @@ export async function parseAndValidateCorrectionExcel(
   let headerIndex = -1
   let colContract = -1
   let colCustomer = -1
+  let colPhone = -1
   let colStart = -1
   let colExpected = -1
   let colSku = -1
@@ -196,6 +299,13 @@ export async function parseAndValidateCorrectionExcel(
       colContract = cIdx
       colSku = skuIdx
       colCustomer = row.findIndex((c) => c.includes('cliente') || c.includes('nome'))
+      colPhone = row.findIndex(
+        (c) =>
+          c.includes('telefone') ||
+          c.includes('celular') ||
+          c.includes('tel') ||
+          c.includes('fone'),
+      )
       colStart = row.findIndex(
         (c) => c.includes('retirada') || c.includes('inicio') || c.includes('data'),
       )
@@ -204,22 +314,41 @@ export async function parseAndValidateCorrectionExcel(
       )
       colQty = row.findIndex((c) => c.includes('qtd') || c.includes('quant'))
       colDesc = row.findIndex(
-        (c) => c.includes('descri') || c.includes('equipamento') || c.includes('produto'),
+        (c) =>
+          c.includes('descri') ||
+          c.includes('equipamento') ||
+          c.includes('produto') ||
+          c.includes('modelo'),
       )
       break
     }
   }
 
-  // Fallback se não achou cabeçalho clássico
+  // Fallback se não achou cabeçalho clássico: detecta se tem 9 colunas (formato novo com Telefone) ou 7/8
   if (headerIndex === -1) {
     headerIndex = 0
-    colContract = 0
-    colCustomer = 1
-    colStart = 2
-    colExpected = 3
-    colSku = 4
-    colQty = 5
-    colDesc = 6
+    const firstRowLen = aoa[0]?.length || 0
+    if (firstRowLen >= 9) {
+      // Formato v0.0.221+: Contrato · Cliente · Telefone · Retirada · Previsão · SKU/Código · Quantidade · Descrição · Valor
+      colContract = 0
+      colCustomer = 1
+      colPhone = 2
+      colStart = 3
+      colExpected = 4
+      colSku = 5
+      colQty = 6
+      colDesc = 7
+    } else {
+      // Formato clássico anterior
+      colContract = 0
+      colCustomer = 1
+      colPhone = -1
+      colStart = 2
+      colExpected = 3
+      colSku = 4
+      colQty = 5
+      colDesc = 6
+    }
   }
 
   // Extrair linhas de dados
@@ -228,12 +357,15 @@ export async function parseAndValidateCorrectionExcel(
     const r = aoa[i]
     if (!r || r.length === 0) continue
 
-    const contractRaw = String(r[colContract] || '').trim()
-    const skuRaw = String(r[colSku] || '').trim()
+    const contractRaw = r[colContract]
+    const skuRaw = colSku >= 0 ? r[colSku] : ''
+
+    const normContract = normalizeContractNumber(contractRaw)
+    const normSku = normalizeSku(skuRaw)
 
     // Ignora linhas completamente vazias ou sem número de contrato
-    if (!contractRaw && !skuRaw) continue
-    if (!contractRaw) continue
+    if (!normContract.canonical && !normSku.trimmed) continue
+    if (!normContract.canonical) continue
 
     const qtyRaw = colQty >= 0 ? r[colQty] : undefined
     let qty = 1
@@ -246,11 +378,14 @@ export async function parseAndValidateCorrectionExcel(
 
     parsedRows.push({
       rowNumber: i + 1,
-      contractNumber: contractRaw.toUpperCase(),
+      rawContractNumber: String(contractRaw ?? '').trim(),
+      contractNumber: normContract.canonical,
+      contractNormalized: normContract.bare,
       customerName: colCustomer >= 0 ? String(r[colCustomer] || '').trim() : '',
+      customerPhone: colPhone >= 0 ? String(r[colPhone] || '').trim() : '',
       startDateStr: colStart >= 0 ? parseSheetDate(r[colStart]) : '',
       expectedReturnDateStr: colExpected >= 0 ? parseSheetDate(r[colExpected]) : '',
-      sku: skuRaw,
+      sku: normSku.trimmed,
       quantity: qty,
       description: colDesc >= 0 ? String(r[colDesc] || '').trim() : '',
     })
@@ -277,27 +412,33 @@ export async function parseAndValidateCorrectionExcel(
       const numCode = parseInt(code, 10)
       if (!isNaN(numCode)) {
         inventoryByCode.set(String(numCode), inv)
+        inventoryByCode.set(String(numCode).padStart(4, '0'), inv)
+        inventoryByCode.set(String(numCode).padStart(5, '0'), inv)
       }
     }
   }
 
-  // Mapear rentals por contract_number
+  // Mapear rentals por contract_number com múltiplas chaves flexíveis
   const rentalByContract = new Map<string, any>()
   for (const r of allRentals) {
-    const cNum = String(r.contract_number || '')
-      .trim()
-      .toUpperCase()
-    if (cNum) {
-      rentalByContract.set(cNum, r)
-      // Se não tiver LOC-, permitir buscar pelo número
-      const bare = cNum.replace(/^LOC-?0*/i, '')
-      if (bare) {
-        rentalByContract.set(bare, r)
-      }
+    const originalContractNumber = String(r.contract_number || '').trim()
+    if (!originalContractNumber) continue
+
+    const norm = normalizeContractNumber(originalContractNumber)
+    if (norm.canonical) {
+      rentalByContract.set(norm.canonical, r)
+      rentalByContract.set(norm.canonical.toLowerCase(), r)
     }
+    if (norm.bare) {
+      rentalByContract.set(norm.bare, r)
+      rentalByContract.set(`LOC-${norm.bare}`, r)
+    }
+    // Também salvar pelo exato trimmed upper e sem espaços
+    const upperNoSpace = originalContractNumber.toUpperCase().replace(/\s+/g, '')
+    rentalByContract.set(upperNoSpace, r)
   }
 
-  // Agrupar linhas da planilha por Número do Contrato (regra 3: contrato repetido = cliente alugou múltiplos itens)
+  // Agrupar linhas da planilha por Número do Contrato Canônico (regra 3: contrato repetido = cliente alugou múltiplos itens)
   const groupedByContract = new Map<string, ExcelRentalRow[]>()
   for (const row of parsedRows) {
     const cNum = row.contractNumber
@@ -310,17 +451,29 @@ export async function parseAndValidateCorrectionExcel(
   const plans: RentalCorrectionPlan[] = []
 
   for (const [contractNumber, rows] of groupedByContract.entries()) {
-    // Buscar contrato no banco
-    let rentalRec = rentalByContract.get(contractNumber)
+    // Buscar contrato no banco com fallbacks inteligentes
+    const firstRow = rows[0]
+    let rentalRec =
+      rentalByContract.get(contractNumber) ||
+      rentalByContract.get(contractNumber.toLowerCase()) ||
+      (firstRow.contractNormalized ? rentalByContract.get(firstRow.contractNormalized) : null) ||
+      (firstRow.rawContractNumber
+        ? rentalByContract.get(firstRow.rawContractNumber.toUpperCase().replace(/\s+/g, ''))
+        : null)
+
     if (!rentalRec) {
       const bare = contractNumber.replace(/^LOC-?0*/i, '')
       rentalRec = rentalByContract.get(bare)
     }
 
+    const displayContractNumber =
+      rentalRec?.contract_number || firstRow.rawContractNumber || contractNumber
+
     if (!rentalRec) {
       // Contrato não encontrado no banco de dados
       plans.push({
         contractNumber,
+        displayContractNumber,
         rentalRecordId: '',
         customerName: rows[0]?.customerName || 'Cliente não identificado',
         currentTotal: 0,
@@ -334,7 +487,7 @@ export async function parseAndValidateCorrectionExcel(
         applyDateChanges: false,
         selected: false,
         status: 'error',
-        statusMessages: [`Contrato ${contractNumber} não encontrado no sistema.`],
+        statusMessages: [`Contrato ${displayContractNumber} não encontrado no sistema.`],
         rawRentalRecord: null,
       })
       continue
@@ -385,7 +538,10 @@ export async function parseAndValidateCorrectionExcel(
       if (!invRec) {
         const numSku = parseInt(cleanSku, 10)
         if (!isNaN(numSku)) {
-          invRec = inventoryByCode.get(String(numSku))
+          invRec =
+            inventoryByCode.get(String(numSku)) ||
+            inventoryByCode.get(String(numSku).padStart(4, '0')) ||
+            inventoryByCode.get(String(numSku).padStart(5, '0'))
         }
       }
 
@@ -481,6 +637,7 @@ export async function parseAndValidateCorrectionExcel(
 
     plans.push({
       contractNumber,
+      displayContractNumber,
       rentalRecordId: rentalRec.id,
       customerName,
       currentTotal,
