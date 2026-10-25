@@ -84,6 +84,7 @@ onRecordAfterCreateSuccess((e) => {
       var razao = (rec.getString('name') || 'Cliente LocWebPro').trim()
       var fant = (rec.getString('responsible_name') || razao).trim()
       var tel = (rec.getString('contact') || '').trim().replace(/\D/g, '')
+      var wpp = (rec.getString('contact') || rec.getString('whatsapp_number') || '').trim()
 
       var payload = {
         numero_pedido: 'LOC-2026-' + rec.id,
@@ -92,6 +93,7 @@ onRecordAfterCreateSuccess((e) => {
           nome_fantasia: fant,
           email: (rec.getString('email') || '').trim(),
           telefone: tel,
+          whatsapp: wpp,
           documento: (rec.getString('document') || '').trim(),
           endereco: tenantAddress,
         },
@@ -250,6 +252,7 @@ onRecordAfterUpdateSuccess((e) => {
       var razao = (rec.getString('name') || 'Cliente LocWebPro').trim()
       var fant = (rec.getString('responsible_name') || razao).trim()
       var tel = (rec.getString('contact') || '').trim().replace(/\D/g, '')
+      var wpp = (rec.getString('contact') || rec.getString('whatsapp_number') || '').trim()
 
       var payload = {
         numero_pedido: 'LOC-2026-' + rec.id,
@@ -258,6 +261,7 @@ onRecordAfterUpdateSuccess((e) => {
           nome_fantasia: fant,
           email: (rec.getString('email') || '').trim(),
           telefone: tel,
+          whatsapp: wpp,
           documento: (rec.getString('document') || '').trim(),
           endereco: tenantAddress,
         },
@@ -440,6 +444,7 @@ routerAdd(
         var razao = (rec.getString('name') || 'Cliente LocWebPro').trim()
         var fant = (rec.getString('responsible_name') || razao).trim()
         var tel = (rec.getString('contact') || '').trim().replace(/\D/g, '')
+        var wpp = (rec.getString('contact') || rec.getString('whatsapp_number') || '').trim()
 
         payload = {
           numero_pedido: 'LOC-2026-' + rec.id,
@@ -448,6 +453,7 @@ routerAdd(
             nome_fantasia: fant,
             email: (rec.getString('email') || '').trim(),
             telefone: tel,
+            whatsapp: wpp,
             documento: (rec.getString('document') || '').trim(),
             endereco: tenantAddress,
           },
@@ -464,8 +470,18 @@ routerAdd(
       }
     } else if (body.payload && typeof body.payload === 'object') {
       payload = body.payload
+      // Garantir cliente.whatsapp no payload manual se objeto cliente estiver presente
+      if (
+        payload.cliente &&
+        typeof payload.cliente === 'object' &&
+        payload.cliente.whatsapp === undefined
+      ) {
+        payload.cliente.whatsapp = (payload.cliente.telefone || '').trim()
+      }
     } else {
       // Payload padrão exato da especificação para aceitação
+      var defaultWpp =
+        (body.whatsapp !== undefined ? body.whatsapp : body.telefone || '27999999999') || ''
       payload = {
         numero_pedido: body.numero_pedido || 'LOC-2026-000123',
         cliente: {
@@ -473,6 +489,7 @@ routerAdd(
           nome_fantasia: body.nome_fantasia || 'LocWebPro Demo',
           email: body.email || 'marceloslepre@gmail.com',
           telefone: body.telefone || '27999999999',
+          whatsapp: String(defaultWpp).trim(),
           documento: body.documento || '00.000.000/0000-00',
           endereco: body.endereco || 'Av. Exemplo, 123 - Vitória/ES, CEP 29000-000',
         },
@@ -652,6 +669,7 @@ routerAdd(
     var razao = (rec.getString('name') || 'Cliente LocWebPro').trim()
     var fant = (rec.getString('responsible_name') || razao).trim()
     var tel = (rec.getString('contact') || '').trim().replace(/\D/g, '')
+    var wpp = (rec.getString('contact') || rec.getString('whatsapp_number') || '').trim()
 
     var payload = {
       numero_pedido: 'LOC-2026-' + rec.id,
@@ -660,6 +678,7 @@ routerAdd(
         nome_fantasia: fant,
         email: (rec.getString('email') || '').trim(),
         telefone: tel,
+        whatsapp: wpp,
         documento: (rec.getString('document') || '').trim(),
         endereco: tenantAddress,
       },
