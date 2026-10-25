@@ -24,6 +24,7 @@ import {
   TrendingUp,
   AlertCircle,
   Share2,
+  Send,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -96,7 +97,13 @@ export default function MasterPanel() {
   // Filtros de tabela de licenças
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'whatsapp'>('tenants')
+  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'whatsapp' | 'sholver'>(
+    'tenants',
+  )
+  const [sholverLogs, setSholverLogs] = useState<any[]>([])
+  const [loadingSholverLogs, setLoadingSholverLogs] = useState(false)
+  const [testingSholver, setTestingSholver] = useState(false)
+  const [syncingTenantId, setSyncingTenantId] = useState<string | null>(null)
 
   // Gerador de Link
   const [selectedPlanForLink, setSelectedPlanForLink] = useState<string>('none')
@@ -162,6 +169,87 @@ export default function MasterPanel() {
     }
   }, [])
 
+  const loadSholverLogs = useCallback(async () => {
+    try {
+      setLoadingSholverLogs(true)
+      const records = await pb.collection('sholver_sync_log').getList(1, 30, {
+        sort: '-created',
+        requestKey: null,
+      })
+      if (isMountedRef.current) {
+        setSholverLogs(records.items)
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar logs Sholver:', err)
+    } finally {
+      if (isMountedRef.current) {
+        setLoadingSholverLogs(false)
+      }
+    }
+  }, [])
+
+  const handleTestSholver = async () => {
+    try {
+      setTestingSholver(true)
+      const res: any = await pb.send('/backend/v1/master/sholver/test', {
+        method: 'POST',
+        body: {},
+      })
+      if (res?.result?.success || res?.statusCode === 200) {
+        toast({
+          title: 'Sincronização Sholver OK (HTTP 200)',
+          description: `Pedido ${res?.payload_sent?.numero_pedido} processado com sucesso na Sholver.`,
+        })
+      } else {
+        toast({
+          title: `Retorno Sholver: HTTP ${res?.statusCode || 0}`,
+          description: res?.result?.error || res?.rawBody || 'Verifique o status do webhook.',
+          variant: 'destructive',
+        })
+      }
+      loadSholverLogs()
+    } catch (err: any) {
+      toast({
+        title: 'Falha no disparo de teste Sholver',
+        description: err.message || 'Erro de comunicação',
+        variant: 'destructive',
+      })
+    } finally {
+      setTestingSholver(false)
+    }
+  }
+
+  const handleResyncTenantSholver = async (tenant: Tenant) => {
+    try {
+      setSyncingTenantId(tenant.id)
+      const res: any = await pb.send('/backend/v1/master/sholver/resync-tenant', {
+        method: 'POST',
+        body: { tenant_id: tenant.id },
+      })
+      if (res?.success || res?.statusCode === 200) {
+        toast({
+          title: 'Licença sincronizada com Sholver!',
+          description: `Empresa "${tenant.name}" enviada com pedido LOC-2026-${tenant.id}.`,
+        })
+      } else {
+        toast({
+          title: `Aviso Sholver (HTTP ${res?.statusCode || 0})`,
+          description: res?.result?.error || 'A tentativa foi registrada no log.',
+          variant: 'destructive',
+        })
+      }
+      loadSholverLogs()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao sincronizar com Sholver',
+        description: err.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setSyncingTenantId(null)
+    }
+  }
+
   const loadData = useCallback(
     async (options?: { forceRefresh?: boolean }) => {
       // Guard de concorrência: se já está carregando, não dispara chamadas concorrentes
@@ -216,7 +304,8 @@ export default function MasterPanel() {
 
   useEffect(() => {
     loadData()
-  }, [loadData])
+    loadSholverLogs()
+  }, [loadData, loadSholverLogs])
 
   // Métricas
   const metrics = useMemo(() => {
@@ -1131,6 +1220,21 @@ export default function MasterPanel() {
               >
                 <Layers className="w-3.5 h-3.5" />
                 Catálogo de Planos ({plans.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('sholver')
+                  loadSholverLogs()
+                }}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all shadow-sm ${
+                  activeTab === 'sholver'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <Send className="w-3.5 h-3.5" />
+                Integração Sholver
               </button>{' '}
             </div>
 
@@ -1547,6 +1651,17 @@ export default function MasterPanel() {
                                     <DropdownMenuSeparator className="bg-slate-100" />
 
                                     <DropdownMenuItem
+                                      onClick={() => handleResyncTenantSholver(t)}
+                                      disabled={syncingTenantId === t.id}
+                                      className="cursor-pointer hover:bg-purple-50 text-purple-700 flex items-center gap-2"
+                                    >
+                                      <Send className="w-3.5 h-3.5 text-purple-600" />
+                                      {syncingTenantId === t.id
+                                        ? 'Enviando à Sholver...'
+                                        : 'Sincronizar com Sholver'}
+                                    </DropdownMenuItem>
+
+                                    <DropdownMenuItem
                                       onClick={() => setTenantToDelete(t)}
                                       className="cursor-pointer text-rose-600 hover:text-rose-700 hover:bg-rose-50 flex items-center gap-2"
                                     >
@@ -1686,6 +1801,200 @@ export default function MasterPanel() {
                     })}
                   </TableBody>
                 </Table>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* TAB: SHOLVER INTEGRATION & SYNC LOGS */}
+          <TabsContent value="sholver" className="space-y-4 m-0">
+            <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm p-4 sm:p-5 space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                    <Send className="w-5 h-5 text-purple-600" />
+                    Integração Sholver — Webhook de Licenças Comerciais
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
+                    Cada pedido comercial de licença gerado no LocWebPro é enviado via webhook para
+                    a plataforma Sholver do Marcelo em modo fire-and-forget. Contratos de locação
+                    não disparam.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={loadSholverLogs}
+                    variant="outline"
+                    size="sm"
+                    disabled={loadingSholverLogs}
+                    className="h-8 text-xs border-slate-200 text-slate-700 hover:bg-slate-50 gap-1.5"
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${loadingSholverLogs ? 'animate-spin' : ''}`}
+                    />
+                    Atualizar Logs
+                  </Button>
+                  <Button
+                    onClick={handleTestSholver}
+                    size="sm"
+                    disabled={testingSholver}
+                    className="bg-purple-600 hover:bg-purple-700 text-white text-xs h-8 gap-1.5 shadow-sm"
+                  >
+                    <Send className={`w-3.5 h-3.5 ${testingSholver ? 'animate-pulse' : ''}`} />
+                    {testingSholver ? 'Disparando...' : 'Fazer Disparo de Teste Real'}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Detalhes da Integração */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase block">
+                    Endpoint Sholver
+                  </span>
+                  <span className="font-mono text-[11px] text-slate-800 break-all select-all block">
+                    POST /backend/v1/webhook/locwebpro
+                  </span>
+                  <span className="text-[10px] text-emerald-600 font-medium">
+                    ✓ Chamada interna direta configurada
+                  </span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase block">
+                    Autenticação Compartilhada
+                  </span>
+                  <span className="text-slate-800 font-medium block">
+                    Headers X-Sholver-Secret e X-API-Key
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    Chave secreta gerenciada no backend
+                  </span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase block">
+                    Regra de Idempotência
+                  </span>
+                  <span className="font-mono text-slate-800 text-[11px] block">
+                    LOC-2026-&lt;id do cliente&gt;
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    Reenvios atualizam o pedido sem duplicar
+                  </span>
+                </div>
+              </div>
+
+              {/* Tabela de Logs de Sincronização */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    Histórico Recente de Disparos ({sholverLogs.length})
+                  </h4>
+                  <span className="text-[11px] text-slate-400">Coleção sholver_sync_log</span>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 overflow-hidden bg-white">
+                  <Table>
+                    <TableHeader className="bg-slate-50/80">
+                      <TableRow className="border-b border-slate-200 hover:bg-transparent">
+                        <TableHead className="text-slate-600 text-xs font-semibold py-2.5">
+                          Data/Hora
+                        </TableHead>
+                        <TableHead className="text-slate-600 text-xs font-semibold py-2.5">
+                          Nº Pedido
+                        </TableHead>
+                        <TableHead className="text-slate-600 text-xs font-semibold py-2.5">
+                          Status
+                        </TableHead>
+                        <TableHead className="text-slate-600 text-xs font-semibold py-2.5">
+                          HTTP
+                        </TableHead>
+                        <TableHead className="text-slate-600 text-xs font-semibold py-2.5">
+                          Empresa / Detalhes
+                        </TableHead>
+                        <TableHead className="text-slate-600 text-xs font-semibold py-2.5">
+                          Resposta Sholver
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sholverLogs.length === 0 ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={6}
+                            className="text-center py-8 text-slate-500 text-xs"
+                          >
+                            {loadingSholverLogs
+                              ? 'Carregando logs de sincronização...'
+                              : 'Nenhum log registrado ainda.'}
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        sholverLogs.map((log) => {
+                          const isSuccess = log.http_status >= 200 && log.http_status < 300
+                          return (
+                            <TableRow
+                              key={log.id}
+                              className="border-b border-slate-100 hover:bg-slate-50/70 text-xs"
+                            >
+                              <TableCell className="py-2.5 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                                {new Date(log.created).toLocaleString('pt-BR')}
+                              </TableCell>
+                              <TableCell className="py-2.5 font-mono font-semibold text-slate-800">
+                                {log.numero_pedido || '—'}
+                              </TableCell>
+                              <TableCell className="py-2.5">
+                                <Badge
+                                  className={
+                                    isSuccess
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]'
+                                      : 'bg-rose-50 text-rose-700 border-rose-200 text-[10px]'
+                                  }
+                                >
+                                  {log.status_tentativa || (isSuccess ? 'sucesso' : 'falha')}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-2.5 font-mono text-[11px]">
+                                {log.http_status ? (
+                                  <span
+                                    className={
+                                      isSuccess
+                                        ? 'text-emerald-700 font-bold'
+                                        : 'text-rose-600 font-bold'
+                                    }
+                                  >
+                                    {log.http_status}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-2.5 text-slate-700">
+                                <div
+                                  className="max-w-xs truncate"
+                                  title={log.payload?.cliente?.razao_social || ''}
+                                >
+                                  {log.payload?.cliente?.razao_social || log.tenant_id || '—'}
+                                </div>
+                                {log.payload?.plano?.nome && (
+                                  <div className="text-[10px] text-slate-400">
+                                    {log.payload.plano.nome} • R$ {log.payload.valor}
+                                  </div>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-2.5 font-mono text-[11px] text-slate-600">
+                                <div
+                                  className="max-w-xs truncate"
+                                  title={log.resposta || log.erro || ''}
+                                >
+                                  {log.resposta || log.erro || '—'}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </div>
           </TabsContent>

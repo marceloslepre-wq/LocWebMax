@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-13T17:59:58.867Z",
+  "generatedAt": "2026-10-25T12:22:37.497Z",
   "collections": [
     {
       "name": "users",
@@ -1893,6 +1893,79 @@
         "CREATE INDEX idx_logs_suporte_master_tenant ON logs_suporte_master (tenant_id)",
         "CREATE INDEX idx_logs_suporte_master_user ON logs_suporte_master (master_user_id)",
         "CREATE INDEX idx_logs_suporte_master_created ON logs_suporte_master (created DESC)"
+      ]
+    },
+    {
+      "name": "sholver_sync_log",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && @request.auth.role = 'Master'",
+        "view": "@request.auth.id != '' && @request.auth.role = 'Master'",
+        "create": null,
+        "update": null,
+        "delete": null
+      },
+      "fields": [
+        {
+          "name": "numero_pedido",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status_tentativa",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "http_status",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "erro",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "payload",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "resposta",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_sholver_sync_pedido ON sholver_sync_log (numero_pedido)",
+        "CREATE INDEX idx_sholver_sync_created ON sholver_sync_log (created DESC)"
       ]
     }
   ]
