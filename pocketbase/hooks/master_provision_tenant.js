@@ -37,7 +37,7 @@ routerAdd(
     var tenantEmail = (body.email || '').trim()
     var planId = (body.plan_id || '').trim()
     var planName = (body.plan_name || 'Plano Básico (Trial)').trim()
-    var trialDays = Number(body.trial_days) > 0 ? Number(body.trial_days) : 15
+    var trialDays = Number(body.trial_days) > 0 ? Number(body.trial_days) : 30
     var customPrice = body.custom_price !== undefined ? Number(body.custom_price) : null
     var customContractsLimit =
       body.custom_contracts_limit !== undefined && body.custom_contracts_limit !== null

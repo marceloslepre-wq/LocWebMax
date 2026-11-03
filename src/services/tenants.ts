@@ -1,4 +1,5 @@
 import pb from '@/lib/pocketbase/client'
+import { DEFAULT_TRIAL_DAYS } from '@/lib/constants'
 
 export interface TenantHistoryNote {
   date: string
@@ -441,7 +442,7 @@ export const tenantService = {
       }
 
       // Fallback para chamadas com autenticação direta do Master se o hook der 404/500
-      const trialDays = input.trial_days ?? 15
+      const trialDays = input.trial_days ?? DEFAULT_TRIAL_DAYS
       const now = new Date()
       const expDate = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000)
 

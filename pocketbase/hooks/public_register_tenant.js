@@ -1,7 +1,7 @@
 /**
  * Hook POST /backend/v1/public/register-tenant
  * Permite que visitantes anônimos realizem o cadastro de uma nova empresa (tenant)
- * com plano trial de 15 dias, provisionando:
+ * com plano trial de 30 dias, provisionando:
  * 1. O registro do tenant
  * 2. As configurações padrão (settings) com tenant_id
  * 3. O local de estoque inicial ("Galpão Principal") com tenant_id
@@ -17,7 +17,7 @@ routerAdd('POST', '/backend/v1/public/register-tenant', (e) => {
   const email = (body.email || '').trim()
   const planId = (body.plan_id || '').trim()
   let planName = (body.plan_name || '').trim()
-  const trialDays = Number(body.trial_days) > 0 ? Number(body.trial_days) : 15
+  const trialDays = Number(body.trial_days) > 0 ? Number(body.trial_days) : 30
 
   const adminName = (body.admin_name || responsibleName || '').trim()
   const adminEmail = (body.admin_email || email || '').trim().toLowerCase()
