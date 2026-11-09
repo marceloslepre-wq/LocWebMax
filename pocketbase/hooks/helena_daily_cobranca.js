@@ -551,6 +551,62 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     var contractNumber = rental.getString('contract_number') || rentalId
     var actualReturn = rental.getString('actual_return_date')
 
+    // INTERVENÇÃO HUMANA: se a Helena está pausada para este cliente (a loja assumiu
+    // o atendimento pelo próprio número), pular o cliente sem mensagem, sem registro
+    // de cobrança e sem pendência — seguindo o fluxo normal dos demais.
+    var phone = ''
+    var sanitizedPhone = ''
+    try {
+      var custRecForPause = $app.findRecordById('customers', rental.getString('customer_id'))
+      var rawPhone =
+        custRecForPause.getString('phone_cell') || custRecForPause.getString('phone_res') || ''
+      phone = String(rawPhone).replace(/\D/g, '')
+      if (phone.length > 0 && phone.substring(0, 2) !== '55') {
+        phone = '55' + phone
+      }
+    } catch (_) {}
+    var phoneForPause = phone
+    var customerPaused = false
+    try {
+      var custIdForPause = rental.getString('customer_id') || ''
+      var pausedCheckFilter = ''
+      if (custIdForPause && phoneForPause) {
+        pausedCheckFilter =
+          'helena_paused_until > @now && (customer_id = "' +
+          custIdForPause +
+          '" || phone = "' +
+          phoneForPause +
+          '")'
+      } else if (custIdForPause) {
+        pausedCheckFilter = 'helena_paused_until > @now && customer_id = "' + custIdForPause + '"'
+      } else if (phoneForPause) {
+        pausedCheckFilter = 'helena_paused_until > @now && phone = "' + phoneForPause + '"'
+      }
+      if (pausedCheckFilter) {
+        var pausedConvs = $app.findRecordsByFilter(
+          'whatsapp_conversations',
+          pausedCheckFilter,
+          '-updated',
+          1,
+          0,
+        )
+        if (pausedConvs.length > 0) {
+          customerPaused = true
+        }
+      }
+    } catch (_) {}
+
+    if (customerPaused) {
+      $app
+        .logger()
+        .info(
+          'helena_daily_cobranca: helena pausada para este cliente, pulando cobrança',
+          'contract',
+          contractNumber,
+        )
+      continue
+    }
+
     if (
       actualReturn ||
       currentStatus === 'Devolvido' ||
@@ -721,11 +777,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     } catch (_) {}
     if (!customer) continue
 
-    var phone = customer.getString('phone_cell') || customer.getString('phone_res') || ''
-    var sanitizedPhone = String(phone).replace(/\D/g, '')
-    if (sanitizedPhone.length > 0 && sanitizedPhone.substring(0, 2) !== '55') {
-      sanitizedPhone = '55' + sanitizedPhone
-    }
     if (!sanitizedPhone) continue
 
     var customerName = customer.getString('name')

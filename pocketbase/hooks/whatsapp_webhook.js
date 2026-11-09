@@ -68,6 +68,50 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     return e.json(200, { success: true, skipped: 'no text content' })
   }
 
+  // Conversation thread resolution (antes de qualquer resposta: pausa, elegibilidade, PIX...)
+  let conversation = null
+  let conversationId = null
+  try {
+    conversation = $app.findFirstRecordByData('whatsapp_conversations', 'phone', phone)
+    conversationId = conversation.getString('conversation_id')
+  } catch (_) {}
+
+  // PAUSA DA HELENA:
+  // Se a conversa está pausada (helena_paused_until no futuro), a loja assumiu o atendimento
+  // pelo próprio número: a mensagem é salva normalmente em whatsapp_conversations, porém a
+  // Helena NÃO responde nada (nem PIX, nem aviso, nem fallback, nem agente).
+  try {
+    if (conversation) {
+      const pausedUntilStr = conversation.getString('helena_paused_until') || ''
+      if (pausedUntilStr && new Date(pausedUntilStr.replace(' ', 'T')).getTime() > Date.now()) {
+        conversation.set('last_message', messageText)
+        $app.save(conversation)
+        $app
+          .logger()
+          .info(
+            'whatsapp_webhook: helena paused, message stored without reply',
+            'phone',
+            phone,
+            'paused_until',
+            pausedUntilStr,
+          )
+        return e.json(200, {
+          success: true,
+          skipped: 'helena_paused',
+          paused_until: pausedUntilStr,
+        })
+      }
+    }
+  } catch (errPaused) {
+    $app
+      .logger()
+      .error(
+        'whatsapp_webhook: failed checking helena pause',
+        'err',
+        errPaused.message || String(errPaused),
+      )
+  }
+
   let serviceUser = null
   try {
     serviceUser = $app.findAuthRecordByEmail('users', 'helena.bot@app.local')
@@ -1000,14 +1044,6 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       }
     }
   }
-
-  // Conversation thread resolution
-  let conversation = null
-  let conversationId = null
-  try {
-    conversation = $app.findFirstRecordByData('whatsapp_conversations', 'phone', phone)
-    conversationId = conversation.getString('conversation_id')
-  } catch (_) {}
 
   // Context injection for Agent Helena:
   // Inject exact contract details, exact product name, exact inventory prices,
