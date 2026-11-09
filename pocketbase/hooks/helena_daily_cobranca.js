@@ -568,18 +568,10 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     var phoneForPause = phone
     var customerPaused = false
     try {
-      var custIdForPause = rental.getString('customer_id') || ''
       var pausedCheckFilter = ''
-      if (custIdForPause && phoneForPause) {
-        pausedCheckFilter =
-          'helena_paused_until > @now && (customer_id = "' +
-          custIdForPause +
-          '" || phone = "' +
-          phoneForPause +
-          '")'
-      } else if (custIdForPause) {
-        pausedCheckFilter = 'helena_paused_until > @now && customer_id = "' + custIdForPause + '"'
-      } else if (phoneForPause) {
+      // whatsapp_conversations não possui customer_id — a pausa é identificada pelo
+      // telefone da conversa (mesmo número usado pela Helena para enviar mensagens).
+      if (phoneForPause) {
         pausedCheckFilter = 'helena_paused_until > @now && phone = "' + phoneForPause + '"'
       }
       if (pausedCheckFilter) {
