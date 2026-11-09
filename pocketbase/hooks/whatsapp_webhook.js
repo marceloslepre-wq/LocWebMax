@@ -37,10 +37,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
   const key = data.key || {}
   const remoteJid = key.remoteJid || ''
   const fromMe = key.fromMe || false
-
-  if (fromMe) {
-    return e.json(200, { success: true, skipped: 'own message' })
-  }
+  const pushName = data.pushName || ''
 
   if (!remoteJid) {
     return e.json(400, { error: 'Missing remoteJid' })
@@ -62,6 +59,84 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     messageText = message.conversation
   } else if (message.extendedTextMessage && message.extendedTextMessage.text) {
     messageText = message.extendedTextMessage.text
+  }
+
+  // HUMAN INTERVENTION: the store replies from its own connected number, so the command
+  // arrives as fromMe. Recognizes "Helena deixa que eu continuo" (pause 48h) and
+  // "Helena pode continuar" (resume), storing it on the customer conversation.
+  if (fromMe) {
+    const cmdText = String(messageText || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\\u0300-\\u036f]/g, '')
+      .replace(/\\s+/g, ' ')
+      .trim()
+
+    const mentionsHelena = cmdText.indexOf('helena') !== -1
+    const isPauseCmd =
+      mentionsHelena &&
+      (cmdText.indexOf('deixa que') !== -1 ||
+        cmdText.indexOf('deixa eu') !== -1 ||
+        cmdText.indexOf('pausa') !== -1 ||
+        cmdText.indexOf('silencia') !== -1 ||
+        cmdText.indexOf('assumo') !== -1 ||
+        cmdText.indexOf('assumir') !== -1)
+    const isResumeCmd =
+      mentionsHelena &&
+      (cmdText.indexOf('volta') !== -1 ||
+        cmdText.indexOf('continua') !== -1 ||
+        cmdText.indexOf('retoma') !== -1 ||
+        cmdText.indexOf('reativa') !== -1)
+
+    if (isPauseCmd || isResumeCmd) {
+      try {
+        var pauseRec = null
+        try {
+          pauseRec = $app.findFirstRecordByData('whatsapp_conversations', 'phone', phone)
+        } catch (_) {}
+        if (!pauseRec) {
+          var pauseCol = $app.findCollectionByNameOrId('whatsapp_conversations')
+          pauseRec = new Record(pauseCol)
+          pauseRec.set('phone', phone)
+        }
+        if (isPauseCmd) {
+          pauseRec.set(
+            'helena_paused_until',
+            new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+          )
+          pauseRec.set('helena_paused_by', pushName || 'equipe da loja')
+        } else {
+          pauseRec.set('helena_paused_until', '')
+          pauseRec.set('helena_paused_by', '')
+        }
+        $app.save(pauseRec)
+        $app
+          .logger()
+          .info(
+            'whatsapp_webhook: comando de intervencao humana',
+            'phone',
+            phone,
+            'action',
+            isPauseCmd ? 'helena_pausada' : 'helena_retomada',
+            'by',
+            pushName || 'equipe',
+          )
+      } catch (errPause) {
+        $app
+          .logger()
+          .error(
+            'whatsapp_webhook: falha ao gravar intervencao humana',
+            'err',
+            errPause.message || String(errPause),
+          )
+      }
+      return e.json(200, {
+        success: true,
+        action: isPauseCmd ? 'helena_paused' : 'helena_resumed',
+      })
+    }
+
+    return e.json(200, { success: true, skipped: 'own message' })
   }
 
   if (!messageText) {

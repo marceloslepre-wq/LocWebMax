@@ -551,54 +551,6 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     var contractNumber = rental.getString('contract_number') || rentalId
     var actualReturn = rental.getString('actual_return_date')
 
-    // INTERVENÇÃO HUMANA: se a Helena está pausada para este cliente (a loja assumiu
-    // o atendimento pelo próprio número), pular o cliente sem mensagem, sem registro
-    // de cobrança e sem pendência — seguindo o fluxo normal dos demais.
-    var phone = ''
-    var sanitizedPhone = ''
-    try {
-      var custRecForPause = $app.findRecordById('customers', rental.getString('customer_id'))
-      var rawPhone =
-        custRecForPause.getString('phone_cell') || custRecForPause.getString('phone_res') || ''
-      phone = String(rawPhone).replace(/\D/g, '')
-      if (phone.length > 0 && phone.substring(0, 2) !== '55') {
-        phone = '55' + phone
-      }
-    } catch (_) {}
-    var phoneForPause = phone
-    var customerPaused = false
-    try {
-      var pausedCheckFilter = ''
-      // whatsapp_conversations não possui customer_id — a pausa é identificada pelo
-      // telefone da conversa (mesmo número usado pela Helena para enviar mensagens).
-      if (phoneForPause) {
-        pausedCheckFilter = 'helena_paused_until > @now && phone = "' + phoneForPause + '"'
-      }
-      if (pausedCheckFilter) {
-        var pausedConvs = $app.findRecordsByFilter(
-          'whatsapp_conversations',
-          pausedCheckFilter,
-          '-updated',
-          1,
-          0,
-        )
-        if (pausedConvs.length > 0) {
-          customerPaused = true
-        }
-      }
-    } catch (_) {}
-
-    if (customerPaused) {
-      $app
-        .logger()
-        .info(
-          'helena_daily_cobranca: helena pausada para este cliente, pulando cobrança',
-          'contract',
-          contractNumber,
-        )
-      continue
-    }
-
     if (
       actualReturn ||
       currentStatus === 'Devolvido' ||
@@ -701,18 +653,52 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       }
     }
 
-    // Verificar se nas mensagens recentes do WhatsApp o cliente manifestou intenção de renovar ou agendou data
-    if (!customerHasRenewalIntent) {
+    // Conversa de WhatsApp do cliente (pausa manual + intenção de renovação).
+    // O telefone é resolvido aqui a partir do contrato: a variável sanitizedPhone só existe
+    // mais abaixo no laço, e usá-la antes disso fazia este bloco falhar em silêncio.
+    var waConversation = null
+    var waPhone = ''
+    try {
+      var customerForPhone = $app.findRecordById('customers', rental.getString('customer_id'))
+      waPhone = String(
+        customerForPhone.getString('phone_cell') || customerForPhone.getString('phone_res') || '',
+      ).replace(/\D/g, '')
+      if (waPhone && waPhone.substring(0, 2) !== '55') waPhone = '55' + waPhone
+      if (waPhone) {
+        waConversation = $app.findFirstRecordByData('whatsapp_conversations', 'phone', waPhone)
+      }
+    } catch (_) {}
+
+    // Pausa por intervenção humana: se a loja assumiu a conversa, a rotina não cobra o cliente.
+    if (waConversation) {
+      var pausedUntilRaw = waConversation.getString('helena_paused_until')
+      var pausedUntilNorm = pausedUntilRaw ? String(pausedUntilRaw).replace(' ', 'T') : ''
+      if (pausedUntilNorm && new Date(pausedUntilNorm).getTime() > Date.now()) {
+        $app
+          .logger()
+          .info(
+            'helena_daily_cobranca: conversa pausada por intervencao humana',
+            'contract',
+            contractNumber,
+          )
+        continue
+      }
+    }
+
+    // Verificar se na conversa o cliente manifestou intenção de renovar ou agendou data
+    if (!customerHasRenewalIntent && waConversation) {
       try {
-        var recentConv = $app.findRecordsByFilter(
-          'whatsapp_conversations',
-          'phone = "' + sanitizedPhone + '"',
-          '-updated',
-          1,
-          0,
-        )
-        if (recentConv.length > 0) {
-          var lastMsg = (recentConv[0].getString('last_message') || '').toLowerCase()
+        var lastMsgRaw = waConversation.getString('last_message') || ''
+        var lastMsg = lastMsgRaw.toLowerCase()
+        // Ignorar o eco das próprias mensagens da Helena: last_message também guarda o texto
+        // que ela enviou, e ele sempre contém "renovação"/"pagamento".
+        var ownMsgText = cobrancaRec ? cobrancaRec.getString('message_sent') || '' : ''
+        var isHelenaEcho =
+          lastMsgRaw.trim() !== '' &&
+          (lastMsgRaw === ownMsgText ||
+            lastMsg.indexOf('como prefere seguir') !== -1 ||
+            lastMsg.indexOf('helena do hospital home') !== -1)
+        if (lastMsgRaw.trim() !== '' && !isHelenaEcho && lastMsgRaw.length <= 400) {
           if (
             lastMsg.indexOf('renov') !== -1 ||
             lastMsg.indexOf('recebo') !== -1 ||
@@ -769,6 +755,11 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     } catch (_) {}
     if (!customer) continue
 
+    var phone = customer.getString('phone_cell') || customer.getString('phone_res') || ''
+    var sanitizedPhone = String(phone).replace(/\D/g, '')
+    if (sanitizedPhone.length > 0 && sanitizedPhone.substring(0, 2) !== '55') {
+      sanitizedPhone = '55' + sanitizedPhone
+    }
     if (!sanitizedPhone) continue
 
     var customerName = customer.getString('name')
