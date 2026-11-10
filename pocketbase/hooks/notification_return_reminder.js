@@ -74,12 +74,15 @@ cronAdd('notification_return_reminder', '0 9 * * *', () => {
       if (typeof value === 'string') {
         var trimmed = value.trim()
         if (!trimmed) return []
-        if (trimmed.charAt(0) === '[' || trimmed.charAt(0) === '{') {
+        if (trimmed === 'null' || trimmed === 'undefined') return []
+        // Aceita array/objeto JSON e também string JSON entre aspas (JSON
+        // codificado duas vezes: '"[{...}]"'). Se o texto é JSON válido, o
+        // resultado do parse manda — inclusive quando é lista vazia.
+        var firstChar = trimmed.charAt(0)
+        if (firstChar === '[' || firstChar === '{' || firstChar === '"') {
           try {
             return normalizeItems(JSON.parse(trimmed), depth + 1)
-          } catch (_) {
-            return []
-          }
+          } catch (_) {}
         }
         return [{ name: trimmed, qty: 1 }]
       }
