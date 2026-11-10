@@ -234,7 +234,7 @@ cronAdd('notification_return_reminder', '0 9 * * *', () => {
       } catch (_) {}
     }
     var itemNames = buildItemList(rental, 'not_returned')
-    var itensStr = itemNames.length > 0 ? itemNames.join('\n') : 'Nenhum item listado'
+    var itensStr = itemNames.length > 0 ? itemNames.join('\n') : 'conforme contrato'
 
     // O template pode conter "R$ {valor}" e o valor já vem formatado com "R$":
     // evitar o duplicado "R$ R$".

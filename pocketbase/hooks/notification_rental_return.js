@@ -226,7 +226,7 @@ onRecordAfterUpdateSuccess((e) => {
   if (itemNames.length === 0) {
     itemNames = buildItemList(rental, 'all')
   }
-  var itensStr = itemNames.length > 0 ? itemNames.join('\n') : 'Nenhum item listado'
+  var itensStr = itemNames.length > 0 ? itemNames.join('\n') : 'conforme contrato'
 
   // O template pode conter "R$ {valor}" e o valor já vem formatado com "R$":
   // evitar o duplicado "R$ R$".

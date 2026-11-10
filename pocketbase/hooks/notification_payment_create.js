@@ -231,7 +231,7 @@ onRecordAfterCreateSuccess((e) => {
   var dataDevolucao = formatDate(rental.getString('expected_return_date'))
 
   var itemNames = buildItemList(rental, 'all')
-  var itensStr = itemNames.length > 0 ? itemNames.join('\n') : 'Nenhum item listado'
+  var itensStr = itemNames.length > 0 ? itemNames.join('\n') : 'conforme contrato'
 
   msg = msg
     .replace(/\{cliente\}/g, cliente)
