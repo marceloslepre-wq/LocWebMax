@@ -26,6 +26,22 @@ routerAdd(
         return []
       }
       if (Array.isArray(value)) {
+        // O JSVM devolve o campo JSON como BYTE ARRAY (ex.: [91,123,34,...] =
+        // "[{...]"). Sem esta decodificação o parse falhava, o hook concluía
+        // "vazio" e REGRAVAVA items=[] — apagando os itens do contrato.
+        var allBytes = value.length > 0
+        for (var b = 0; b < value.length; b++) {
+          var el = value[b]
+          if (typeof el !== 'number' || el < 0 || el > 255 || el !== Math.floor(el)) {
+            allBytes = false
+            break
+          }
+        }
+        if (allBytes) {
+          var byteStr = ''
+          for (var by = 0; by < value.length; by++) byteStr += String.fromCharCode(value[by])
+          return normalizeItemsForReturn(byteStr, depth + 1)
+        }
         var flat = []
         for (var n = 0; n < value.length; n++) {
           var part = normalizeItemsForReturn(value[n], depth + 1)
@@ -41,9 +57,11 @@ routerAdd(
       return []
     }
 
-    var rawItems = normalizeItemsForReturn(rental.get('items'), 0)
+    // getString() primeiro: no JSVM, get() de campo JSON devolve byte array,
+    // o que fazia o parse falhar e o contrato parecer vazio.
+    var rawItems = normalizeItemsForReturn(rental.getString('items'), 0)
     if (rawItems.length === 0) {
-      rawItems = normalizeItemsForReturn(rental.getString('items'), 0)
+      rawItems = normalizeItemsForReturn(rental.get('items'), 0)
     }
 
     // Se não foi possível interpretar nenhum item, NÃO regravar o campo `items`

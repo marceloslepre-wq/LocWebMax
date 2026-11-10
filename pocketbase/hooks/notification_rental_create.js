@@ -90,6 +90,22 @@ onRecordAfterCreateSuccess((e) => {
         return [{ name: trimmed, qty: 1 }]
       }
       if (Array.isArray(value)) {
+        // O JSVM devolve o campo JSON como BYTE ARRAY (ex.: [91,123,34,...] =
+        // "[{...]"). Se todos os elementos são números de 0 a 255, tratar como
+        // texto e reinterpretar em vez de iterar números.
+        var allBytes = value.length > 0
+        for (var b = 0; b < value.length; b++) {
+          var el = value[b]
+          if (typeof el !== 'number' || el < 0 || el > 255 || el !== Math.floor(el)) {
+            allBytes = false
+            break
+          }
+        }
+        if (allBytes) {
+          var byteStr = ''
+          for (var by = 0; by < value.length; by++) byteStr += String.fromCharCode(value[by])
+          return normalizeItems(byteStr, depth + 1)
+        }
         var flat = []
         for (var n = 0; n < value.length; n++) {
           var part = normalizeItems(value[n], depth + 1)
