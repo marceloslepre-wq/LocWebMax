@@ -776,7 +776,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
 
     if (!apiUrl || !apiKey || !instanceToSend) return false
 
-    var cleanBase64 = String(base64Data || '').replace(/^, '')
+    var cleanBase64 = String(base64Data || '').replace(/^data:image\/[a-z]+;base64,/, '')
     var baseUrl = apiUrl.replace(/\/+$/, '')
     var endpoint = baseUrl + '/message/sendMedia/' + instanceToSend
 
@@ -843,10 +843,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
   // são a resposta ao menu de vencimento e devem receber a pergunta de prazo
   // (15 ou 30 dias). Só a escolha do prazo gera o PIX.
   var isMenuChoice =
-    lowerMsg === '1' ||
-    lowerMsg === 'opcao 1' ||
-    lowerMsg === 'opção 1' ||
-    lowerMsg === 'renovar'
+    lowerMsg === '1' || lowerMsg === 'opcao 1' || lowerMsg === 'opção 1' || lowerMsg === 'renovar'
   var isGenericRenew =
     lowerMsg.indexOf('quero renovar') !== -1 ||
     lowerMsg.indexOf('vou renovar') !== -1 ||
@@ -984,9 +981,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
           'Cliente solicitou devolução via WhatsApp. Aguardar chegada do item para dar baixa no sistema.',
         )
         $app.save(pRecDev)
-        $app
-          .logger()
-          .info('whatsapp_webhook: devolucao registered', 'phone', phone)
+        $app.logger().info('whatsapp_webhook: devolucao registered', 'phone', phone)
       }
     } catch (errPendDev) {
       $app
