@@ -1,27 +1,33 @@
-onRecordAfterCreateSuccess((e) => {
-  var payment = e.record
+// Notificação de "confirmação de pagamento" (trigger confirmacao_pagamento).
+// REGRA (10/11, correção): a mensagem de pagamento confirmado só pode ser enviada
+// quando o pagamento está de fato Aprovado. Antes, o hook disparava na CRIAÇÃO do
+// registro — e todo PIX/contrato novo nasce como Pendente/pending — confirmando
+// pagamentos que não aconteceram. Agora:
+//  - criação: só envia se o registro já nascer Aprovado/Pago (baixa manual de pagamento recebido);
+//  - atualização: só envia na transição para Aprovado (ex.: webhook do Mercado Pago).
 
+var sendApprovedPaymentNotification = function (payment) {
   var paymentMethod = payment.getString('payment_method') || ''
-  if (paymentMethod === 'Multa por Atraso') return e.next()
+  if (paymentMethod === 'Multa por Atraso') return
 
   var rentalId = payment.getString('rental_id')
-  if (!rentalId) return e.next()
+  if (!rentalId) return
 
   var rental = null
   try {
     rental = $app.findRecordById('rentals', rentalId)
   } catch (_) {
-    return e.next()
+    return
   }
 
   var sRecords = $app.findRecordsByFilter('settings', "id != ''", '', 1, 0)
-  if (sRecords.length === 0) return e.next()
+  if (sRecords.length === 0) return
 
   var templates = []
   try {
     templates = JSON.parse(sRecords[0].getString('notification_templates') || '[]')
   } catch (_) {
-    return e.next()
+    return
   }
 
   var tpl = null
@@ -31,14 +37,14 @@ onRecordAfterCreateSuccess((e) => {
       break
     }
   }
-  if (!tpl) return e.next()
-  if (tpl.enabled === false) return e.next()
+  if (!tpl) return
+  if (tpl.enabled === false) return
 
   var customer = null
   try {
     customer = $app.findRecordById('customers', rental.getString('customer_id'))
   } catch (_) {}
-  if (!customer) return e.next()
+  if (!customer) return
 
   var formatBRL = function (n) {
     var v = Number(n) || 0
@@ -77,6 +83,15 @@ onRecordAfterCreateSuccess((e) => {
     if (!Array.isArray(rentalItems)) {
       try {
         rentalItems = JSON.parse(rentalRec.getString('items') || '[]')
+      } catch (_) {
+        rentalItems = []
+      }
+    }
+    // Itens podem chegar duplamente codificados (JSON dentro de JSON): se o parse
+    // devolveu string, parsear mais uma vez antes de desistir.
+    if (typeof rentalItems === 'string') {
+      try {
+        rentalItems = JSON.parse(rentalItems)
       } catch (_) {
         rentalItems = []
       }
@@ -155,8 +170,12 @@ onRecordAfterCreateSuccess((e) => {
     .replace(/\{data_devolucao\}/g, dataDevolucao)
     .replace(/\{valor\}/g, valor)
 
+  // O template pode conter "R$ {valor}" e o valor já vem formatado com "R$":
+  // evitar o duplicado "R$ R$".
+  msg = msg.replace(/R\$\s*R\$/g, 'R$')
+
   var phone = customer.getString('phone_cell') || customer.getString('phone_res') || ''
-  if (!phone) return e.next()
+  if (!phone) return
 
   var sanitized = String(phone).replace(/\D/g, '')
   if (sanitized.length > 0 && sanitized.substring(0, 2) !== '55') {
@@ -179,7 +198,7 @@ onRecordAfterCreateSuccess((e) => {
     } catch (_) {}
   }
 
-  if (!apiUrl || !apiKey || !instance) return e.next()
+  if (!apiUrl || !apiKey || !instance) return
 
   try {
     $http.send({
@@ -200,6 +219,35 @@ onRecordAfterCreateSuccess((e) => {
         err.message || String(err),
       )
   }
+}
 
+onRecordAfterCreateSuccess((e) => {
+  var payment = e.record
+
+  // REGRA: confirmação de pagamento só quando o pagamento está Aprovado/Pago.
+  // Registros criados como Pendente/pending (PIX gerado, contrato novo) não notificam.
+  var payStatus = String(payment.getString('status') || '')
+    .trim()
+    .toLowerCase()
+  if (payStatus !== 'aprovado' && payStatus !== 'pago') return e.next()
+
+  sendApprovedPaymentNotification(payment)
+  return e.next()
+}, 'payments')
+
+onRecordAfterUpdateSuccess((e) => {
+  var payment = e.record
+  var oldStatus = String(e.record.original().getString('status') || '')
+    .trim()
+    .toLowerCase()
+  var newStatus = String(payment.getString('status') || '')
+    .trim()
+    .toLowerCase()
+
+  // Só notifica a transição para Aprovado (evita reenvio em qualquer outra edição).
+  if (newStatus !== 'aprovado' && newStatus !== 'pago') return e.next()
+  if (oldStatus === 'aprovado' || oldStatus === 'pago') return e.next()
+
+  sendApprovedPaymentNotification(payment)
   return e.next()
 }, 'payments')

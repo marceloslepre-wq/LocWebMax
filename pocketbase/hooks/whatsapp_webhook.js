@@ -61,15 +61,15 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     messageText = message.extendedTextMessage.text
   }
 
-  // HUMAN INTERVENTION: the store replies from its own connected number, so the command
-  // arrives as fromMe. Recognizes "Helena deixa que eu continuo" (pause 48h) and
-  // "Helena pode continuar" (resume), storing it on the customer conversation.
+  // INTERVENÇÃO HUMANA: a loja responde pelo próprio número conectado, então o comando
+  // chega como fromMe. Reconhece "Helena deixa que eu continuo" (pausa por 48h) e
+  // "Helena pode continuar" (retoma), gravando na conversa do cliente.
   if (fromMe) {
     const cmdText = String(messageText || '')
       .toLowerCase()
       .normalize('NFD')
-      .replace(/[\\u0300-\\u036f]/g, '')
-      .replace(/\\s+/g, ' ')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
       .trim()
 
     const mentionsHelena = cmdText.indexOf('helena') !== -1
@@ -776,7 +776,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
 
     if (!apiUrl || !apiKey || !instanceToSend) return false
 
-    var cleanBase64 = String(base64Data || '').replace(/^data:image\/[a-z]+;base64,/, '')
+    var cleanBase64 = String(base64Data || '').replace(/^, '')
     var baseUrl = apiUrl.replace(/\/+$/, '')
     var endpoint = baseUrl + '/message/sendMedia/' + instanceToSend
 
@@ -839,11 +839,15 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     lowerMsg.indexOf('1 mes') !== -1 ||
     lowerMsg.indexOf('mês') !== -1
 
-  var isGenericRenew =
+  // REGRA (10/11): "1" / "opção 1" / "renovar" NÃO geram PIX direto —
+  // são a resposta ao menu de vencimento e devem receber a pergunta de prazo
+  // (15 ou 30 dias). Só a escolha do prazo gera o PIX.
+  var isMenuChoice =
     lowerMsg === '1' ||
     lowerMsg === 'opcao 1' ||
     lowerMsg === 'opção 1' ||
-    lowerMsg === 'renovar' ||
+    lowerMsg === 'renovar'
+  var isGenericRenew =
     lowerMsg.indexOf('quero renovar') !== -1 ||
     lowerMsg.indexOf('vou renovar') !== -1 ||
     lowerMsg.indexOf('pode renovar') !== -1 ||
@@ -857,6 +861,151 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     lowerMsg.indexOf('qual o pix') !== -1 ||
     lowerMsg.indexOf('codigo pix') !== -1 ||
     lowerMsg.indexOf('qr code') !== -1
+
+  if (isMenuChoice) {
+    // Cliente acabou de responder ao menu de vencimento: perguntar o prazo
+    // (15 ou 30 dias) e AGUARDAR. O PIX só é gerado na escolha do prazo.
+    var menuMsg =
+      'Perfeito, ' +
+      (matchedCustomer ? matchedCustomer.getString('name').split(' ')[0] : '') +
+      '! 😊 Para a renovação do contrato *' +
+      (matchedRental ? matchedRental.getString('contract_number') || matchedRental.id : '') +
+      '* referente a *' +
+      rentalAnalysis.itemNames.join(', ') +
+      '*,' +
+      (rentalAnalysis.hasValidPrice && rentalAnalysis.renewal30 > 0
+        ? rentalAnalysis.hasSpecialProduct
+          ? ' o prazo disponível é de *30 dias* no valor de *' +
+            rentalAnalysis.renewal30Formatted +
+            '*.'
+          : ' você pode escolher:\n\n*1* – *15 dias* por *' +
+            rentalAnalysis.renewal15Formatted +
+            '*\n*2* – *30 dias* por *' +
+            rentalAnalysis.renewal30Formatted +
+            '*'
+        : ' nossa equipe confirmará o valor exato do prazo escolhido (15 ou 30 dias).') +
+      '\n\nQual prazo você prefere? 💙'
+    sendWhatsAppText(phone, menuMsg, matchedRental ? matchedRental.getString('tenant_id') : '')
+    if (conversation) {
+      try {
+        conversation.set('last_message', messageText)
+        $app.save(conversation)
+      } catch (_) {}
+    }
+    return e.json(200, { success: true, action: 'asked_renewal_period' })
+  }
+
+  // REGRA (10/11): cliente que pediu devolução recebe mensagem fixa com os
+  // endereços das lojas cadastradas e o aviso de aguardar a devolução para dar
+  // baixa no sistema — sem depender do agente.
+  var isReturnIntent =
+    lowerMsg.indexOf('devolv') !== -1 ||
+    lowerMsg === '2' ||
+    lowerMsg === 'opcao 2' ||
+    lowerMsg === 'opção 2'
+
+  if (isReturnIntent && matchedRental) {
+    var devTenantId = matchedRental.getString('tenant_id') || ''
+    var devLocationsText = ''
+    try {
+      var devLocFilter = 'ativo = true'
+      if (devTenantId) {
+        devLocFilter += ' && tenant_id = "' + devTenantId + '"'
+      } else {
+        devLocFilter += ' && (tenant_id = "" || tenant_id = null)'
+      }
+      var devLocs = $app.findRecordsByFilter('locais', devLocFilter, 'nome', 0, 0)
+      if (!devLocs || devLocs.length === 0) {
+        devLocs = $app.findRecordsByFilter('locais', 'ativo = true', 'nome', 0, 0)
+      }
+      var devLines = []
+      for (var dIdx = 0; dIdx < devLocs.length; dIdx++) {
+        var dLoc = devLocs[dIdx]
+        var dName = String(dLoc.getString('nome') || '').trim()
+        var dEnd = String(dLoc.getString('endereco') || '').trim()
+        if (!dName || !dEnd) continue
+        var dLower = dName.toLowerCase()
+        if (
+          dLower.indexOf('galpão') !== -1 ||
+          dLower.indexOf('galpao') !== -1 ||
+          dLower.indexOf('e-commecer') !== -1 ||
+          dLower.indexOf('e-commerce') !== -1
+        ) {
+          continue
+        }
+        var dDisplay = dName.replace(/^Loja\s+/i, '').trim()
+        devLines.push('• *' + dDisplay + '* – ' + dEnd)
+      }
+      devLocationsText = devLines.join('\n')
+    } catch (_) {}
+
+    var devMsg =
+      'Combinado, ' +
+      (matchedCustomer ? matchedCustomer.getString('name').split(' ')[0] : '') +
+      '! 📦 Registrado o pedido de *devolução* do contrato *' +
+      (matchedRental.getString('contract_number') || matchedRental.id) +
+      '* referente a *' +
+      rentalAnalysis.itemNames.join(', ') +
+      '*.' +
+      (devLocationsText
+        ? '\n\nA devolução pode ser feita por você em uma de nossas lojas:\n' + devLocationsText
+        : '\n\nNossa equipe entrará em contato para combinar a retirada.') +
+      '\n\nEstamos aguardando a devolução para dar baixa no sistema. Qualquer dúvida, estou por aqui! 💙'
+
+    sendWhatsAppText(phone, devMsg, devTenantId)
+
+    // Registrar pendência para a loja dar baixa quando o item chegar
+    try {
+      var pendColDev = $app.findCollectionByNameOrId('helena_pendencias')
+      var existingDev = $app.findRecordsByFilter(
+        'helena_pendencias',
+        'phone = "' + phone + '" && type = "devolucao" && status = "pendente"',
+        '-created',
+        1,
+        0,
+      )
+      if (existingDev.length === 0) {
+        var pRecDev = new Record(pendColDev)
+        if (matchedCustomer) pRecDev.set('customer_id', matchedCustomer.id)
+        pRecDev.set('rental_id', matchedRental.id)
+        pRecDev.set(
+          'contract_number',
+          matchedRental.getString('contract_number') || matchedRental.id,
+        )
+        pRecDev.set(
+          'customer_name',
+          matchedCustomer ? matchedCustomer.getString('name') : 'Cliente WhatsApp (' + phone + ')',
+        )
+        pRecDev.set('phone', phone)
+        pRecDev.set('type', 'devolucao')
+        pRecDev.set('status', 'pendente')
+        pRecDev.set(
+          'description',
+          'Cliente solicitou devolução via WhatsApp. Aguardar chegada do item para dar baixa no sistema.',
+        )
+        $app.save(pRecDev)
+        $app
+          .logger()
+          .info('whatsapp_webhook: devolucao registered', 'phone', phone)
+      }
+    } catch (errPendDev) {
+      $app
+        .logger()
+        .error(
+          'whatsapp_webhook: failed saving devolucao pendencia',
+          'err',
+          errPendDev.message || String(errPendDev),
+        )
+    }
+
+    if (conversation) {
+      try {
+        conversation.set('last_message', messageText)
+        $app.save(conversation)
+      } catch (_) {}
+    }
+    return e.json(200, { success: true, action: 'return_instructions_sent' })
+  }
 
   if (rentalAnalysis.hasSpecialProduct) {
     // Special product: ALWAYS 30 days only!

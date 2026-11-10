@@ -79,6 +79,15 @@ onRecordAfterUpdateSuccess((e) => {
         rentalItems = []
       }
     }
+    // Itens podem chegar duplamente codificados (JSON dentro de JSON): se o parse
+    // devolveu string, parsear mais uma vez antes de desistir.
+    if (typeof rentalItems === 'string') {
+      try {
+        rentalItems = JSON.parse(rentalItems)
+      } catch (_) {
+        rentalItems = []
+      }
+    }
     if (!Array.isArray(rentalItems)) rentalItems = []
 
     var itemNames = []
@@ -146,11 +155,26 @@ onRecordAfterUpdateSuccess((e) => {
   // Devolução concluída: lista apenas os itens efetivamente devolvidos
   // (returnedQty > 0). Se a lista ficar vazia (devolução total em dados antigos
   // sem returnedQty preenchido), lista todos os itens do contrato.
+  // Itens podem chegar duplamente codificados (JSON dentro de JSON): o hook que
+  // grava o contrato pode ter serializado duas vezes, e o parse simples devolve
+  // string — por isso "Nenhum item listado" em contrato com itens.
+  var rentalItemsRaw = rental.get('items')
+  if (typeof rentalItemsRaw === 'string') {
+    try {
+      var once = JSON.parse(rentalItemsRaw)
+      if (typeof once === 'string') rentalItemsRaw = JSON.parse(once)
+      else if (Array.isArray(once)) rentalItemsRaw = once
+    } catch (_) {}
+  }
   var itemNames = buildItemList(rental, 'returned')
   if (itemNames.length === 0) {
     itemNames = buildItemList(rental, 'all')
   }
   var itensStr = itemNames.length > 0 ? itemNames.join('\n') : 'Nenhum item listado'
+
+  // O template pode conter "R$ {valor}" e o valor já vem formatado com "R$":
+  // evitar o duplicado "R$ R$".
+  msg = msg.replace(/R\$\s*R\$/g, 'R$')
 
   msg = msg
     .replace(/\{cliente\}/g, cliente)
