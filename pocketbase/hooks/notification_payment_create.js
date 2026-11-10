@@ -84,40 +84,88 @@ onRecordAfterCreateSuccess((e) => {
     return ''
   }
 
-  // Robust item list builder. In the JSVM, `record.get('items')` on a JSON
-  // field does not always return a proper iterable JS array, so we fall back
-  // to parsing `getString('items')`. Names are resolved from the item object
-  // first, then mandatorily from the inventory record (common for imported
-  // contracts that only carry an itemId). `context` filters which items are
-  // listed: 'all', 'not_returned' (returnedQty < qty) or 'returned' (> 0).
+  // Robust item list builder. O campo `items` é JSON e, conforme a origem do
+  // contrato (tela, importação, versões antigas), chega em formatos diferentes:
+  // array normal, string JSON, JSON dentro de JSON, ou objeto { items: [...] }.
+  // Normalizamos tudo para um array antes de listar — antes, qualquer formato
+  // fora do padrão virava silenciosamente "Nenhum item listado".
+  // `context` filtra quais itens aparecem: 'all', 'not_returned' ou 'returned'.
   var buildItemList = function (rentalRec, context) {
-    var rentalItems = rentalRec.get('items')
-    if (!Array.isArray(rentalItems)) {
-      try {
-        rentalItems = JSON.parse(rentalRec.getString('items') || '[]')
-      } catch (_) {
-        rentalItems = []
+    var normalizeItems = function (value, depth) {
+      if (depth > 4 || value === null || value === undefined) return []
+      if (typeof value === 'string') {
+        var trimmed = value.trim()
+        if (!trimmed) return []
+        if (trimmed.charAt(0) === '[' || trimmed.charAt(0) === '{') {
+          try {
+            return normalizeItems(JSON.parse(trimmed), depth + 1)
+          } catch (_) {
+            return []
+          }
+        }
+        return [{ name: trimmed, qty: 1 }]
       }
-    }
-    // Itens podem chegar duplamente codificados (JSON dentro de JSON): se o parse
-    // devolveu string, parsear mais uma vez antes de desistir.
-    if (typeof rentalItems === 'string') {
-      try {
-        rentalItems = JSON.parse(rentalItems)
-      } catch (_) {
-        rentalItems = []
+      if (Array.isArray(value)) {
+        var flat = []
+        for (var n = 0; n < value.length; n++) {
+          var part = normalizeItems(value[n], depth + 1)
+          for (var p = 0; p < part.length; p++) flat.push(part[p])
+        }
+        return flat
       }
+      if (typeof value === 'object') {
+        if (Array.isArray(value.items)) return normalizeItems(value.items, depth + 1)
+        if (Array.isArray(value.itens)) return normalizeItems(value.itens, depth + 1)
+        return [value]
+      }
+      return []
     }
-    if (!Array.isArray(rentalItems)) rentalItems = []
+
+    var rentalItems = normalizeItems(rentalRec.get('items'), 0)
+    if (rentalItems.length === 0) {
+      rentalItems = normalizeItems(rentalRec.getString('items'), 0)
+    }
+    if (rentalItems.length === 0) {
+      $app
+        .logger()
+        .warn(
+          'buildItemList: nenhum item resolvido no contrato',
+          'contract',
+          rentalRec.getString('contract_number') || rentalRec.id,
+          'raw_items',
+          String(rentalRec.getString('items') || '').substring(0, 400),
+        )
+    }
 
     var itemNames = []
     for (var j = 0; j < rentalItems.length; j++) {
       var rawItem = rentalItems[j]
       if (!rawItem || typeof rawItem !== 'object') continue
       var itemId = String(
-        rawItem.itemId || rawItem.item_id || rawItem.inventory_id || rawItem.id || '',
+        rawItem.itemId ||
+          rawItem.item_id ||
+          rawItem.inventory_id ||
+          rawItem.inventoryId ||
+          rawItem.product_id ||
+          rawItem.produto_id ||
+          rawItem.estoque_id ||
+          rawItem.id ||
+          '',
       )
-      if (itemId === 'freight' || itemId === '' || itemId === 'undefined') continue
+      if (itemId === 'freight' || rawItem.itemId === 'freight') continue
+      // Contratos importados ou antigos podem não trazer o id do estoque, só o
+      // nome do produto. Descartar o item nesse caso era o que zerava a lista
+      // inteira e imprimia "Nenhum item listado" em contrato com itens.
+      var hasNameInItem = !!(
+        rawItem.name ||
+        rawItem.description ||
+        rawItem.descricao ||
+        rawItem.productName ||
+        rawItem.product_name ||
+        rawItem.nome ||
+        rawItem.produto
+      )
+      if ((itemId === '' || itemId === 'undefined') && !hasNameInItem) continue
       var qty = Number(rawItem.qty || rawItem.quantity || rawItem.quantidade || 1)
       if (!qty || qty < 1) qty = 1
       var returnedQty = Number(rawItem.returnedQty || rawItem.returned_qty || 0)
@@ -130,7 +178,14 @@ onRecordAfterCreateSuccess((e) => {
       }
 
       var itemName =
-        rawItem.name || rawItem.description || rawItem.productName || rawItem.product_name || ''
+        rawItem.name ||
+        rawItem.description ||
+        rawItem.descricao ||
+        rawItem.productName ||
+        rawItem.product_name ||
+        rawItem.nome ||
+        rawItem.produto ||
+        ''
       var itemCode = rawItem.code || rawItem.sku || rawItem.product_code || ''
       try {
         var inv = $app.findRecordById('inventory', itemId)
@@ -141,7 +196,7 @@ onRecordAfterCreateSuccess((e) => {
           if (invCode) itemCode = invCode
         }
       } catch (_) {}
-      if (!itemName) itemName = 'Item ' + itemId
+      if (!itemName) itemName = itemId ? 'Item ' + itemId : 'Item'
 
       itemName = String(itemName)
         .replace(/\bEstoque\b/gi, '')
@@ -314,33 +369,78 @@ onRecordAfterUpdateSuccess((e) => {
   }
 
   var buildItemList = function (rentalRec, context) {
-    var rentalItems = rentalRec.get('items')
-    if (!Array.isArray(rentalItems)) {
-      try {
-        rentalItems = JSON.parse(rentalRec.getString('items') || '[]')
-      } catch (_) {
-        rentalItems = []
+    var normalizeItems = function (value, depth) {
+      if (depth > 4 || value === null || value === undefined) return []
+      if (typeof value === 'string') {
+        var trimmed = value.trim()
+        if (!trimmed) return []
+        if (trimmed.charAt(0) === '[' || trimmed.charAt(0) === '{') {
+          try {
+            return normalizeItems(JSON.parse(trimmed), depth + 1)
+          } catch (_) {
+            return []
+          }
+        }
+        return [{ name: trimmed, qty: 1 }]
       }
-    }
-    // Itens podem chegar duplamente codificados (JSON dentro de JSON): se o parse
-    // devolveu string, parsear mais uma vez antes de desistir.
-    if (typeof rentalItems === 'string') {
-      try {
-        rentalItems = JSON.parse(rentalItems)
-      } catch (_) {
-        rentalItems = []
+      if (Array.isArray(value)) {
+        var flat = []
+        for (var n = 0; n < value.length; n++) {
+          var part = normalizeItems(value[n], depth + 1)
+          for (var p = 0; p < part.length; p++) flat.push(part[p])
+        }
+        return flat
       }
+      if (typeof value === 'object') {
+        if (Array.isArray(value.items)) return normalizeItems(value.items, depth + 1)
+        if (Array.isArray(value.itens)) return normalizeItems(value.itens, depth + 1)
+        return [value]
+      }
+      return []
     }
-    if (!Array.isArray(rentalItems)) rentalItems = []
+
+    var rentalItems = normalizeItems(rentalRec.get('items'), 0)
+    if (rentalItems.length === 0) {
+      rentalItems = normalizeItems(rentalRec.getString('items'), 0)
+    }
+    if (rentalItems.length === 0) {
+      $app
+        .logger()
+        .warn(
+          'buildItemList: nenhum item resolvido no contrato',
+          'contract',
+          rentalRec.getString('contract_number') || rentalRec.id,
+          'raw_items',
+          String(rentalRec.getString('items') || '').substring(0, 400),
+        )
+    }
 
     var itemNames = []
     for (var j = 0; j < rentalItems.length; j++) {
       var rawItem = rentalItems[j]
       if (!rawItem || typeof rawItem !== 'object') continue
       var itemId = String(
-        rawItem.itemId || rawItem.item_id || rawItem.inventory_id || rawItem.id || '',
+        rawItem.itemId ||
+          rawItem.item_id ||
+          rawItem.inventory_id ||
+          rawItem.inventoryId ||
+          rawItem.product_id ||
+          rawItem.produto_id ||
+          rawItem.estoque_id ||
+          rawItem.id ||
+          '',
       )
-      if (itemId === 'freight' || itemId === '' || itemId === 'undefined') continue
+      if (itemId === 'freight' || rawItem.itemId === 'freight') continue
+      var hasNameInItem = !!(
+        rawItem.name ||
+        rawItem.description ||
+        rawItem.descricao ||
+        rawItem.productName ||
+        rawItem.product_name ||
+        rawItem.nome ||
+        rawItem.produto
+      )
+      if ((itemId === '' || itemId === 'undefined') && !hasNameInItem) continue
       var qty = Number(rawItem.qty || rawItem.quantity || rawItem.quantidade || 1)
       if (!qty || qty < 1) qty = 1
       var returnedQty = Number(rawItem.returnedQty || rawItem.returned_qty || 0)
@@ -353,7 +453,14 @@ onRecordAfterUpdateSuccess((e) => {
       }
 
       var itemName =
-        rawItem.name || rawItem.description || rawItem.productName || rawItem.product_name || ''
+        rawItem.name ||
+        rawItem.description ||
+        rawItem.descricao ||
+        rawItem.productName ||
+        rawItem.product_name ||
+        rawItem.nome ||
+        rawItem.produto ||
+        ''
       var itemCode = rawItem.code || rawItem.sku || rawItem.product_code || ''
       try {
         var inv = $app.findRecordById('inventory', itemId)
@@ -364,7 +471,7 @@ onRecordAfterUpdateSuccess((e) => {
           if (invCode) itemCode = invCode
         }
       } catch (_) {}
-      if (!itemName) itemName = 'Item ' + itemId
+      if (!itemName) itemName = itemId ? 'Item ' + itemId : 'Item'
 
       itemName = String(itemName)
         .replace(/\bEstoque\b/gi, '')
