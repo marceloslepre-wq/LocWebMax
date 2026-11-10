@@ -7,21 +7,61 @@ routerAdd(
 
     const rental = $app.findRecordById('rentals', rentalId)
 
-    var rawItems = []
-    try {
-      var itemsStr = rental.getString('items')
-      if (itemsStr && itemsStr.trim() !== '') {
-        rawItems = JSON.parse(itemsStr)
-      } else {
-        var getItems = rental.get('items')
-        if (typeof getItems === 'string') {
-          rawItems = JSON.parse(getItems)
-        } else if (Array.isArray(getItems)) {
-          rawItems = getItems
+    // Lê os itens de forma tolerante. O campo `items` é JSON e pode chegar como
+    // array, string JSON ou JSON codificado duas vezes. ANTES, qualquer formato
+    // fora do padrão caía no catch e virava [] — e, como este hook regrava o
+    // campo logo abaixo, a devolução APAGAVA os itens do contrato (por isso as
+    // notificações passaram a sair com "Nenhum item listado").
+    var normalizeItemsForReturn = function (value, depth) {
+      if (depth > 4 || value === null || value === undefined) return []
+      if (typeof value === 'string') {
+        var trimmed = value.trim()
+        if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return []
+        var firstChar = trimmed.charAt(0)
+        if (firstChar === '[' || firstChar === '{' || firstChar === '"') {
+          try {
+            return normalizeItemsForReturn(JSON.parse(trimmed), depth + 1)
+          } catch (_) {}
         }
+        return []
       }
-    } catch (_) {
-      rawItems = []
+      if (Array.isArray(value)) {
+        var flat = []
+        for (var n = 0; n < value.length; n++) {
+          var part = normalizeItemsForReturn(value[n], depth + 1)
+          for (var p = 0; p < part.length; p++) flat.push(part[p])
+        }
+        return flat
+      }
+      if (typeof value === 'object') {
+        if (Array.isArray(value.items)) return normalizeItemsForReturn(value.items, depth + 1)
+        if (Array.isArray(value.itens)) return normalizeItemsForReturn(value.itens, depth + 1)
+        return [value]
+      }
+      return []
+    }
+
+    var rawItems = normalizeItemsForReturn(rental.get('items'), 0)
+    if (rawItems.length === 0) {
+      rawItems = normalizeItemsForReturn(rental.getString('items'), 0)
+    }
+
+    // Se não foi possível interpretar nenhum item, NÃO regravar o campo `items`
+    // (regravar vazio apagaria os itens reais do contrato).
+    var itemsUnparseable =
+      rawItems.length === 0 &&
+      String(rental.getString('items') || '').trim() !== '' &&
+      String(rental.getString('items') || '').trim() !== '[]'
+    if (itemsUnparseable) {
+      $app
+        .logger()
+        .error(
+          'return_rental: nao foi possivel interpretar items; campo NAO sera regravado',
+          'rental',
+          rental.getString('contract_number') || rentalId,
+          'raw',
+          String(rental.getString('items') || '').substring(0, 300),
+        )
     }
 
     if (!Array.isArray(rawItems)) {
@@ -156,7 +196,9 @@ routerAdd(
       } catch (_) {}
     }
 
-    rental.set('items', items)
+    if (!itemsUnparseable) {
+      rental.set('items', items)
+    }
     if (allReturned) {
       rental.set('status', 'Devolvido')
       rental.set('actual_return_date', actualReturnDate)
