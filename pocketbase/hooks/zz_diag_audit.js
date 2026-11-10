@@ -48,7 +48,11 @@ routerAdd('GET', '/backend/v1/diag/items-audit', (e) => {
 
   for (var i = 0; i < rentals.length; i++) {
     var r = rentals[i]
-    var n = countItems(r.get('items'), 0)
+    // No JSVM, record.get() de um campo JSON NÃO devolve um array JS iterável
+    // (Array.isArray = false). A leitura confiável é getString() + JSON.parse.
+    // Contar pelo get() dava 0 para todo contrato — falso positivo em massa.
+    var n = countItems(r.getString('items'), 0)
+    if (n === 0) n = countItems(r.get('items'), 0)
     if (n > 0) {
       okCount++
       continue
@@ -96,10 +100,34 @@ routerAdd('GET', '/backend/v1/diag/items-audit', (e) => {
     emptyOnes.push(entry)
   }
 
+  // Sonda: mostra exatamente o que record.get() devolve para o campo JSON.
+  var probe = null
+  if (rentals.length > 0) {
+    var pr = rentals[0]
+    var pv = pr.get('items')
+    probe = {
+      contract: pr.getString('contract_number'),
+      get_typeof: typeof pv,
+      get_isArray: Array.isArray(pv),
+      get_tostring: Object.prototype.toString.call(pv),
+      get_keys: pv && typeof pv === 'object' ? Object.keys(pv).slice(0, 12) : null,
+      get_json: (function () {
+        try {
+          return JSON.stringify(pv).substring(0, 300)
+        } catch (_) {
+          return 'unserializable'
+        }
+      })(),
+      getString_len: String(pr.getString('items') || '').length,
+      getString_preview: String(pr.getString('items') || '').substring(0, 300),
+    }
+  }
+
   return e.json(200, {
     checked: rentals.length,
     with_items: okCount,
     empty_total: emptyOnes.length,
+    probe: probe,
     empty: emptyOnes,
   })
 })
