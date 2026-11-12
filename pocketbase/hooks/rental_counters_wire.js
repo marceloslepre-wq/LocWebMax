@@ -1,219 +1,531 @@
 /// <reference path="../pb_data/types.d.ts" />
 /**
- * PARTE 2 — CONTADORES "LOCADOS" LIGADOS AO CICLO DE VIDA DA LOCAÇÃO.
+ * CONTADORES "LOCADOS" LIGADOS AO CICLO DE VIDA DA LOCAÇÃO.
  *
  * Gatilhos por evento de registro (não por rota) — cobre TODAS as portas de
  * entrada, incluindo rotas customizadas e gravações diretas no ORM:
- *  - CRIAR locação (create/importar) → afterCreate: ocupa os SKUs dos itens;
- *  - DEVOLUÇÃO (status muda para Devolvido/Devolução Parcial) → afterUpdate:
- *    libera (e reocupa o que continua de pé, ex. devolução parcial);
- *  - TROCA DE PRODUTO (items mudam com status Ativo) → afterUpdate: reverte o
- *    SKU antigo E ocupa o novo;
- *  - EXCLUIR/CANCELAR contrato → beforeDelete: os itens ainda são legíveis;
- *    recalcula os SKUs envolvidos e depois deixa a exclusão prosseguir.
+ *  - CRIAR locação → afterCreate: ocupa os SKUs dos itens;
+ *  - DEVOLUÇÃO / TROCA / REATIVAÇÃO → afterUpdate: recalcula;
+ *  - EXCLUIR/CANCELAR contrato → beforeDelete + afterDelete: libera.
  *
- * O recálculo é SEMPRE a partir dos contratos ativos (fonte de verdade) via
- * lib/rental_counters.js — idempotente: rodar duas vezes não duplica, e um
- * contador desalinhado volta a refletir os contratos no próximo evento.
+ * POR QUE TUDO É INLINE AQUI:
+ * O JSVM do PocketBase executa cada callback em uma VM separada do arquivo que
+ * o registrou. Funções e variáveis de topo NÃO são visíveis dentro do callback
+ * — compila, mas quebra com ReferenceError em runtime (e o passo "integrations"
+ * do QA recusa o deploy). Por isso cada callback carrega sua própria cópia da
+ * lógica, declarada DENTRO do corpo. NÃO mover nada para o topo deste arquivo.
+ * (O antigo lib/rental_counters.js + load() foi desfeito por esse motivo.)
  *
- * Gotchas de projeto respeitados:
- * - items pode vir como byte-array do JSVM → utilitário decodifica antes do parse;
- * - NUNCA grava items (nada aqui regrava o campo items — contadores apenas);
- * - gravação por ORM canônico (record.set + app.save) — nunca SQL direto;
- * - NUNCA deduzir produto por valor total — o vínculo vem dos itemId reais;
- * - não mexe em webhook Sholver, Helena, pagamentos ou importador em lote.
+ * Regras do projeto:
+ * - items pode vir como byte-array do JSVM → decodifica antes do parse;
+ * - NUNCA regrava o campo items — só contadores;
+ * - gravação por ORM canônico (record.set + app.save), nunca SQL direto;
+ * - vínculo produto↔estoque vem dos itemId reais, nunca do valor total;
+ * - quantidade locada distribuída em estoque_por_local por local_retirada_id,
+ *   porque on_estoque_update regrava rented_qty do produto a partir dessa soma;
+ * - recálculo a partir dos contratos ATIVOS (fonte de verdade) → idempotente.
  */
-
-load('lib/rental_counters.js')
-
-var ACTIVE_STATUSES = ['Ativo', 'Atrasado']
-
-function isActiveStatus(status) {
-  var s = String(status || '').toLowerCase()
-  return s === 'ativo' || s === 'atrasado'
-}
-
-/** true quando dois conjuntos de itens representam os MESMOS produtos+qtdes */
-function sameItemsSignature(items) {
-  var sig = {}
-  for (var i = 0; i < items.length; i++) {
-    var id = rentalItemId(items[i])
-    if (!id) continue
-    sig[id] = (sig[id] || 0) + rentalItemQty(items[i])
-  }
-  return sig
-}
-
-function signaturesEqual(a, b) {
-  var ka = 0
-  var kb = 0
-  var k
-  for (k in a) ka++
-  for (k in b) kb++
-  if (ka !== kb) return false
-  for (k in a) {
-    if (a[k] !== b[k]) return false
-  }
-  return true
-}
-
-/** true quando algum item efetivamente retornou (returnedQty subiu) */
-function hasReturnDelta(oldItems, newItems) {
-  var oldMap = {}
-  for (var j = 0; j < oldItems.length; j++) {
-    var oldId = rentalItemId(oldItems[j])
-    if (oldId) oldMap[oldId] = rentalItemReturned(oldItems[j])
-  }
-  for (var i = 0; i < newItems.length; i++) {
-    var id = rentalItemId(newItems[i])
-    if (!id) continue
-    var newRet = rentalItemReturned(newItems[i])
-    var oldRet = oldMap[id] !== undefined ? oldMap[id] : 0
-    if (newRet > oldRet) return true
-  }
-  return false
-}
-
-/** Dispara o recálculo dos SKUs informados (fire-and-forget). */
-function triggerCounters(app, rental, invIds, actionType, description) {
-  var tenantId = ''
-  try {
-    tenantId = rental.getString('tenant_id') || ''
-  } catch (_) {}
-  var userId = ''
-  try {
-    if (app.requestInfo && app.requestInfo().auth && app.requestInfo().auth.id) {
-      userId = app.requestInfo().auth.id
-    }
-  } catch (_) {}
-  applyRentalCounters(app, rental.id, invIds, {
-    actionType: actionType,
-    description: description,
-    tenantId: tenantId,
-    userId: userId,
-    localId: rental.getString('local_retirada_id') || '',
-  })
-}
 
 // ---------------------- 1. CRIAR LOCAÇÃO ----------------------
 onRecordAfterCreateSuccess(function (e) {
+  var app = $app
   var rental = e.record
-  // Contratos importados ficam inativos até a validação da loja — nada a fazer
-  // aqui; quando mudarem de status o afterUpdate recalculará.
-  var items = readRentalItems(rental)
-  if (items.length === 0) {
-    $app
-      .logger()
-      .warn(
-        'contadores-locacao: locação criada sem itens legíveis — contadores não alterados',
-        'contract',
-        rental.getString('contract_number') || rental.id,
-      )
-    return e.next()
-  }
-  if (!isActiveStatus(rental.getString('status'))) return e.next()
 
-  var invIds = []
-  var sig = sameItemsSignature(items)
-  for (var id in sig) invIds.push(id)
-  triggerCounters(
-    $app,
-    rental,
-    invIds,
-    'criacao_locacao',
-    'Criação de locação — contadores de estoque',
-  )
-  return e.next()
-}, 'rentals')
+  try {
+    /** Parse tolerante do campo items (string, array, byte-array ou {items:[]}). */
+    function readItems(rec) {
+      if (!rec) return []
+      var v = null
+      try {
+        v = rec.get('items')
+      } catch (_) {
+        return []
+      }
+      if (v === null || v === undefined) return []
+      if (typeof v === 'string') {
+        try {
+          var p = JSON.parse(v)
+          return Array.isArray(p) ? p : []
+        } catch (_) {
+          return []
+        }
+      }
+      if (Array.isArray(v)) {
+        if (v.length > 0 && typeof v[0] === 'number') {
+          var s = ''
+          for (var i = 0; i < v.length; i++) s += String.fromCharCode(v[i])
+          try {
+            var q = JSON.parse(s)
+            return Array.isArray(q) ? q : []
+          } catch (_) {
+            return []
+          }
+        }
+        return v
+      }
+      if (typeof v === 'object' && Array.isArray(v.items)) return v.items
+      return []
+    }
 
-// --- 2. DEVOLUÇÃO e 3. TROCA DE PRODUTO (update no contrato) ---
-onRecordAfterUpdateSuccess(function (e) {
-  var rental = e.record
-  var before = e.record.original()
+    function itemId(it) {
+      if (!it || typeof it !== 'object') return ''
+      var id = String(it.itemId || it.item_id || it.inventory_id || it.id || '')
+      if (id === 'freight' || id === 'frete') return ''
+      return id
+    }
 
-  var newItems = readRentalItems(rental)
-  var oldItems = readRentalItems(before)
-  if (newItems.length === 0 && oldItems.length === 0) return e.next()
+    function itemQty(it) {
+      var raw = it.qty
+      if (raw === undefined || raw === null) raw = it.quantity
+      if (raw === undefined || raw === null) raw = it.quantidade
+      var n = Number(raw === undefined || raw === null ? 1 : raw)
+      return isNaN(n) || n <= 0 ? 1 : n
+    }
 
-  var nowActive = isActiveStatus(rental.getString('status'))
-  var wasActive = isActiveStatus(before.getString('status'))
+    function itemReturned(it) {
+      var raw = it.returnedQty
+      if (raw === undefined || raw === null) raw = it.returned_qty
+      if (raw === undefined || raw === null) raw = it.returned
+      var n = Number(raw === undefined || raw === null ? 0 : raw)
+      return isNaN(n) || n < 0 ? 0 : n
+    }
 
-  // SKUs a recalcular: união dos itens antigos e novos (troca cobre os dois lados)
-  var invIds = []
-  var seen = {}
-  function pushIds(items) {
-    var sig = sameItemsSignature(items)
-    for (var id in sig) {
-      if (!seen[id]) {
-        seen[id] = true
-        invIds.push(id)
+    var items = readItems(rental)
+    var status = String(rental.getString('status') || '').toLowerCase()
+    if (items.length === 0 || (status !== 'ativo' && status !== 'atrasado')) return e.next()
+
+    // Soma das quantidades ocupadas por produto e por local, entre os ativos.
+    var rented = {}
+    var byLocal = {}
+    var all = app.findRecordsByFilter(
+      'rentals',
+      "status = 'Ativo' || status = 'Atrasado'",
+      '',
+      0,
+      0,
+    )
+    for (var r = 0; r < all.length; r++) {
+      var rec = all[r]
+      var its = readItems(rec)
+      var locId = rec.getString('local_retirada_id') || ''
+      for (var k = 0; k < its.length; k++) {
+        var id = itemId(its[k])
+        if (!id) continue
+        // Desconta o devolvido: em devolução parcial o contrato segue ativo.
+        var q = itemQty(its[k]) - itemReturned(its[k])
+        if (q <= 0) continue
+        rented[id] = (rented[id] || 0) + q
+        if (locId) {
+          if (!byLocal[id]) byLocal[id] = {}
+          byLocal[id][locId] = (byLocal[id][locId] || 0) + q
+        }
       }
     }
+
+    var seen = {}
+    for (var i2 = 0; i2 < items.length; i2++) {
+      var invId = itemId(items[i2])
+      if (!invId || seen[invId]) continue
+      seen[invId] = true
+
+      var inv = null
+      try {
+        inv = app.findRecordById('inventory', invId)
+      } catch (_) {
+        continue
+      }
+
+      var total = inv.getInt('total_qty')
+      var newRented = rented[invId] || 0
+      var newAvail = Math.max(0, total - newRented)
+
+      var stocks = []
+      try {
+        stocks = app.findRecordsByFilter(
+          'estoque_por_local',
+          'inventory_id = "' + invId + '"',
+          '',
+          0,
+          0,
+        )
+      } catch (_) {
+        stocks = []
+      }
+      var perLocal = byLocal[invId] || {}
+      var distributed = 0
+      var biggest = -1
+      var biggestFree = -1
+      for (var s2 = 0; s2 < stocks.length; s2++) {
+        var stTotal = stocks[s2].getInt('quantidade_total')
+        var locQty = perLocal[stocks[s2].getString('local_id')] || 0
+        stocks[s2].set('quantidade_locada', locQty)
+        distributed += locQty
+        var free = stTotal - locQty
+        if (free > biggestFree) {
+          biggestFree = free
+          biggest = s2
+        }
+      }
+      // Contrato cujo local não tem registro próprio: diferença vai para o de maior folga.
+      var diff = newRented - distributed
+      if (diff > 0 && biggest >= 0) {
+        stocks[biggest].set('quantidade_locada', stocks[biggest].getInt('quantidade_locada') + diff)
+      }
+      for (var s3 = 0; s3 < stocks.length; s3++) {
+        try {
+          app.save(stocks[s3])
+        } catch (_) {}
+      }
+
+      inv.set('rented_qty', newRented)
+      inv.set('available_qty', newAvail)
+      app.save(inv)
+    }
+  } catch (err) {
+    app.logger().error('contadores-locacao(create): ' + (err && err.message), 'id', rental.id)
+  } finally {
+    e.next()
   }
-  pushIds(oldItems)
-  pushIds(newItems)
-
-  var actionType = 'atualizacao_locacao'
-  var description = 'Atualização de locação — contadores de estoque'
-
-  if (wasActive && !nowActive) {
-    actionType = 'devolucao'
-    description = 'Devolução — liberação de contadores de estoque'
-  } else if (
-    wasActive &&
-    nowActive &&
-    !signaturesEqual(sameItemsSignature(oldItems), sameItemsSignature(newItems))
-  ) {
-    actionType = 'troca_produto'
-    description = 'Troca de produto — reversão do SKU antigo e ocupação do novo'
-  } else if (wasActive && nowActive && hasReturnDelta(oldItems, newItems)) {
-    actionType = 'devolucao_parcial'
-    description = 'Devolução parcial — reocupação ajustada'
-  } else if (!wasActive && nowActive) {
-    actionType = 'reativacao_locacao'
-    description = 'Reativação de locação — ocupação de contadores de estoque'
-  }
-
-  triggerCounters($app, rental, invIds, actionType, description)
-  return e.next()
 }, 'rentals')
 
-// --- 4. EXCLUIR/CANCELAR contrato ---
+// ---------------------- 2. DEVOLUÇÃO / TROCA / REATIVAÇÃO ----------------------
+onRecordAfterUpdateSuccess(function (e) {
+  var app = $app
+  var rental = e.record
+
+  try {
+    function readItems(rec) {
+      if (!rec) return []
+      var v = null
+      try {
+        v = rec.get('items')
+      } catch (_) {
+        return []
+      }
+      if (v === null || v === undefined) return []
+      if (typeof v === 'string') {
+        try {
+          var p = JSON.parse(v)
+          return Array.isArray(p) ? p : []
+        } catch (_) {
+          return []
+        }
+      }
+      if (Array.isArray(v)) {
+        if (v.length > 0 && typeof v[0] === 'number') {
+          var s = ''
+          for (var i = 0; i < v.length; i++) s += String.fromCharCode(v[i])
+          try {
+            var q = JSON.parse(s)
+            return Array.isArray(q) ? q : []
+          } catch (_) {
+            return []
+          }
+        }
+        return v
+      }
+      if (typeof v === 'object' && Array.isArray(v.items)) return v.items
+      return []
+    }
+
+    function itemId(it) {
+      if (!it || typeof it !== 'object') return ''
+      var id = String(it.itemId || it.item_id || it.inventory_id || it.id || '')
+      if (id === 'freight' || id === 'frete') return ''
+      return id
+    }
+
+    function itemQty(it) {
+      var raw = it.qty
+      if (raw === undefined || raw === null) raw = it.quantity
+      if (raw === undefined || raw === null) raw = it.quantidade
+      var n = Number(raw === undefined || raw === null ? 1 : raw)
+      return isNaN(n) || n <= 0 ? 1 : n
+    }
+
+    function itemReturned(it) {
+      var raw = it.returnedQty
+      if (raw === undefined || raw === null) raw = it.returned_qty
+      if (raw === undefined || raw === null) raw = it.returned
+      var n = Number(raw === undefined || raw === null ? 0 : raw)
+      return isNaN(n) || n < 0 ? 0 : n
+    }
+
+    // SKUs envolvidos: união dos itens ANTES e DEPOIS (troca cobre os dois lados).
+    var oldItems = []
+    try {
+      oldItems = readItems(e.record.original())
+    } catch (_) {
+      oldItems = []
+    }
+    var newItems = readItems(rental)
+    if (oldItems.length === 0 && newItems.length === 0) return e.next()
+
+    var targets = []
+    var seenT = {}
+    for (var a = 0; a < oldItems.length; a++) {
+      var idA = itemId(oldItems[a])
+      if (idA && !seenT[idA]) {
+        seenT[idA] = true
+        targets.push(idA)
+      }
+    }
+    for (var b = 0; b < newItems.length; b++) {
+      var idB = itemId(newItems[b])
+      if (idB && !seenT[idB]) {
+        seenT[idB] = true
+        targets.push(idB)
+      }
+    }
+
+    var rented = {}
+    var byLocal = {}
+    var all = app.findRecordsByFilter(
+      'rentals',
+      "status = 'Ativo' || status = 'Atrasado'",
+      '',
+      0,
+      0,
+    )
+    for (var r = 0; r < all.length; r++) {
+      var rec = all[r]
+      var its = readItems(rec)
+      var locId = rec.getString('local_retirada_id') || ''
+      for (var k = 0; k < its.length; k++) {
+        var id = itemId(its[k])
+        if (!id) continue
+        var q = itemQty(its[k]) - itemReturned(its[k])
+        if (q <= 0) continue
+        rented[id] = (rented[id] || 0) + q
+        if (locId) {
+          if (!byLocal[id]) byLocal[id] = {}
+          byLocal[id][locId] = (byLocal[id][locId] || 0) + q
+        }
+      }
+    }
+
+    for (var t = 0; t < targets.length; t++) {
+      var invId = targets[t]
+      var inv = null
+      try {
+        inv = app.findRecordById('inventory', invId)
+      } catch (_) {
+        continue
+      }
+
+      var total = inv.getInt('total_qty')
+      var newRented = rented[invId] || 0
+      var newAvail = Math.max(0, total - newRented)
+
+      var stocks = []
+      try {
+        stocks = app.findRecordsByFilter(
+          'estoque_por_local',
+          'inventory_id = "' + invId + '"',
+          '',
+          0,
+          0,
+        )
+      } catch (_) {
+        stocks = []
+      }
+      var perLocal = byLocal[invId] || {}
+      var distributed = 0
+      var biggest = -1
+      var biggestFree = -1
+      for (var s2 = 0; s2 < stocks.length; s2++) {
+        var stTotal = stocks[s2].getInt('quantidade_total')
+        var locQty = perLocal[stocks[s2].getString('local_id')] || 0
+        stocks[s2].set('quantidade_locada', locQty)
+        distributed += locQty
+        var free = stTotal - locQty
+        if (free > biggestFree) {
+          biggestFree = free
+          biggest = s2
+        }
+      }
+      var diff = newRented - distributed
+      if (diff > 0 && biggest >= 0) {
+        stocks[biggest].set('quantidade_locada', stocks[biggest].getInt('quantidade_locada') + diff)
+      }
+      for (var s3 = 0; s3 < stocks.length; s3++) {
+        try {
+          app.save(stocks[s3])
+        } catch (_) {}
+      }
+
+      inv.set('rented_qty', newRented)
+      inv.set('available_qty', newAvail)
+      app.save(inv)
+    }
+  } catch (err) {
+    app.logger().error('contadores-locacao(update): ' + (err && err.message), 'id', rental.id)
+  } finally {
+    e.next()
+  }
+}, 'rentals')
+
+// ---------------------- 3. EXCLUIR/CANCELAR CONTRATO ----------------------
 onRecordBeforeDeleteSuccess(function (e) {
+  var app = $app
   var rental = e.record
-  var items = readRentalItems(rental)
-  if (items.length === 0) return e.next()
 
-  var invIds = []
-  var sig = sameItemsSignature(items)
-  for (var id in sig) invIds.push(id)
-  // Recalcula a partir dos contratos ativos RESTANTES (o atual já não conta,
-  // pois a exclusão está em andamento — no before-delete ele ainda aparece nas
-  // buscas, mas o afterDelete abaixo cobre a consolidação final).
-  triggerCounters(
-    $app,
-    rental,
-    invIds,
-    'exclusao_contrato',
-    'Exclusão de contrato — liberação de contadores de estoque',
-  )
-  return e.next()
-}, 'rentals')
+  try {
+    function readItems(rec) {
+      if (!rec) return []
+      var v = null
+      try {
+        v = rec.get('items')
+      } catch (_) {
+        return []
+      }
+      if (v === null || v === undefined) return []
+      if (typeof v === 'string') {
+        try {
+          var p = JSON.parse(v)
+          return Array.isArray(p) ? p : []
+        } catch (_) {
+          return []
+        }
+      }
+      if (Array.isArray(v)) {
+        if (v.length > 0 && typeof v[0] === 'number') {
+          var s = ''
+          for (var i = 0; i < v.length; i++) s += String.fromCharCode(v[i])
+          try {
+            var q = JSON.parse(s)
+            return Array.isArray(q) ? q : []
+          } catch (_) {
+            return []
+          }
+        }
+        return v
+      }
+      if (typeof v === 'object' && Array.isArray(v.items)) return v.items
+      return []
+    }
 
-// Consolidação final pós-exclusão: agora o contrato excluído já saiu da fonte.
-onRecordAfterDeleteSuccess(function (e) {
-  var rental = e.record
-  var items = readRentalItems(rental)
-  if (items.length === 0) return e.next()
-  var invIds = []
-  var sig = sameItemsSignature(items)
-  for (var id in sig) invIds.push(id)
-  triggerCounters(
-    $app,
-    rental,
-    invIds,
-    'exclusao_contrato',
-    'Exclusão de contrato — consolidação de contadores de estoque',
-  )
+    function itemId(it) {
+      if (!it || typeof it !== 'object') return ''
+      var id = String(it.itemId || it.item_id || it.inventory_id || it.id || '')
+      if (id === 'freight' || id === 'frete') return ''
+      return id
+    }
+
+    function itemQty(it) {
+      var raw = it.qty
+      if (raw === undefined || raw === null) raw = it.quantity
+      if (raw === undefined || raw === null) raw = it.quantidade
+      var n = Number(raw === undefined || raw === null ? 1 : raw)
+      return isNaN(n) || n <= 0 ? 1 : n
+    }
+
+    function itemReturned(it) {
+      var raw = it.returnedQty
+      if (raw === undefined || raw === null) raw = it.returned_qty
+      if (raw === undefined || raw === null) raw = it.returned
+      var n = Number(raw === undefined || raw === null ? 0 : raw)
+      return isNaN(n) || n < 0 ? 0 : n
+    }
+
+    var items = readItems(rental)
+    if (items.length === 0) return e.next()
+
+    var targets = []
+    var seenT = {}
+    for (var a = 0; a < items.length; a++) {
+      var idA = itemId(items[a])
+      if (idA && !seenT[idA]) {
+        seenT[idA] = true
+        targets.push(idA)
+      }
+    }
+
+    var rented = {}
+    var byLocal = {}
+    // No before-delete o contrato atual ainda aparece nas buscas: ele é excluído da soma.
+    var all = app.findRecordsByFilter(
+      'rentals',
+      "status = 'Ativo' || status = 'Atrasado'",
+      '',
+      0,
+      0,
+    )
+    for (var r = 0; r < all.length; r++) {
+      var rec = all[r]
+      if (rec.id === rental.id) continue
+      var its = readItems(rec)
+      var locId = rec.getString('local_retirada_id') || ''
+      for (var k = 0; k < its.length; k++) {
+        var id = itemId(its[k])
+        if (!id) continue
+        var q = itemQty(its[k]) - itemReturned(its[k])
+        if (q <= 0) continue
+        rented[id] = (rented[id] || 0) + q
+        if (locId) {
+          if (!byLocal[id]) byLocal[id] = {}
+          byLocal[id][locId] = (byLocal[id][locId] || 0) + q
+        }
+      }
+    }
+
+    for (var t = 0; t < targets.length; t++) {
+      var invId = targets[t]
+      var inv = null
+      try {
+        inv = app.findRecordById('inventory', invId)
+      } catch (_) {
+        continue
+      }
+
+      var total = inv.getInt('total_qty')
+      var newRented = rented[invId] || 0
+      var newAvail = Math.max(0, total - newRented)
+
+      var stocks = []
+      try {
+        stocks = app.findRecordsByFilter(
+          'estoque_por_local',
+          'inventory_id = "' + invId + '"',
+          '',
+          0,
+          0,
+        )
+      } catch (_) {
+        stocks = []
+      }
+      var perLocal = byLocal[invId] || {}
+      var distributed = 0
+      var biggest = -1
+      var biggestFree = -1
+      for (var s2 = 0; s2 < stocks.length; s2++) {
+        var stTotal = stocks[s2].getInt('quantidade_total')
+        var locQty = perLocal[stocks[s2].getString('local_id')] || 0
+        stocks[s2].set('quantidade_locada', locQty)
+        distributed += locQty
+        var free = stTotal - locQty
+        if (free > biggestFree) {
+          biggestFree = free
+          biggest = s2
+        }
+      }
+      var diff = newRented - distributed
+      if (diff > 0 && biggest >= 0) {
+        stocks[biggest].set('quantidade_locada', stocks[biggest].getInt('quantidade_locada') + diff)
+      }
+      for (var s3 = 0; s3 < stocks.length; s3++) {
+        try {
+          app.save(stocks[s3])
+        } catch (_) {}
+      }
+
+      inv.set('rented_qty', newRented)
+      inv.set('available_qty', newAvail)
+      app.save(inv)
+    }
+  } catch (err) {
+    app.logger().error('contadores-locacao(beforeDelete): ' + (err && err.message), 'id', rental.id)
+  }
+
   return e.next()
 }, 'rentals')

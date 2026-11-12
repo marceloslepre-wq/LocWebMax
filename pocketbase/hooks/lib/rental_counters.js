@@ -206,6 +206,90 @@ function rcCollectActive(app) {
   return { rentedByItem: rentedByItem, rentedByItemLocal: rentedByItemLocal }
 }
 
+// ---------------------------------------------------------------------------
+// Helpers de decisão usados pelos hooks de rental_counters_wire.js.
+//
+// Eles moram AQUI, e não no arquivo que registra os hooks, porque o JSVM executa
+// os callbacks em uma VM separada: declarações de topo do PRÓPRIO arquivo de
+// hook não são visíveis dentro do callback (ReferenceError em runtime). Arquivos
+// carregados com load() entram no runtime compartilhado e são visíveis.
+// O passo "integrations" do QA acusava exatamente esses nomes quando ficavam no
+// arquivo de hook.
+// ---------------------------------------------------------------------------
+
+/** true quando o status mantém o item ocupado. */
+function isActiveStatus(status) {
+  var s = String(status || '').toLowerCase()
+  return s === 'ativo' || s === 'atrasado'
+}
+
+/** assinatura de um conjunto de itens: produto -> quantidade (frete fora). */
+function sameItemsSignature(items) {
+  var sig = {}
+  if (!items) return sig
+  for (var i = 0; i < items.length; i++) {
+    var id = rentalItemId(items[i])
+    if (!id) continue
+    sig[id] = (sig[id] || 0) + rentalItemQty(items[i])
+  }
+  return sig
+}
+
+function signaturesEqual(a, b) {
+  var ka = 0
+  var kb = 0
+  var k
+  for (k in a) ka++
+  for (k in b) kb++
+  if (ka !== kb) return false
+  for (k in a) {
+    if (a[k] !== b[k]) return false
+  }
+  return true
+}
+
+/** true quando algum item efetivamente retornou (returnedQty subiu). */
+function hasReturnDelta(oldItems, newItems) {
+  var oldMap = {}
+  for (var j = 0; j < oldItems.length; j++) {
+    var oldId = rentalItemId(oldItems[j])
+    if (oldId) oldMap[oldId] = rentalItemReturned(oldItems[j])
+  }
+  for (var i = 0; i < newItems.length; i++) {
+    var id = rentalItemId(newItems[i])
+    if (!id) continue
+    var newRet = rentalItemReturned(newItems[i])
+    var oldRet = oldMap[id] !== undefined ? oldMap[id] : 0
+    if (newRet > oldRet) return true
+  }
+  return false
+}
+
+/** Recalcula os SKUs informados a partir do contrato que disparou o evento. */
+function triggerCounters(app, rental, invIds, actionType, description) {
+  var tenantId = ''
+  try {
+    tenantId = rental.getString('tenant_id') || ''
+  } catch (_) {}
+  var userId = ''
+  try {
+    if (app.requestInfo && app.requestInfo().auth && app.requestInfo().auth.id) {
+      userId = app.requestInfo().auth.id
+    }
+  } catch (_) {}
+  var localId = ''
+  try {
+    localId = rental.getString('local_retirada_id') || ''
+  } catch (_) {}
+  applyRentalCounters(app, rental.id, invIds, {
+    actionType: actionType,
+    description: description,
+    tenantId: tenantId,
+    userId: userId,
+    localId: localId,
+  })
+}
+
 /** Grava snapshot de auditoria em rental_snapshots (relation rental_id obrigatória). */
 function rcSaveSnapshot(app, snapCol, rentalId, invId, productName, productCode, phase, state) {
   if (!rentalId) return false
