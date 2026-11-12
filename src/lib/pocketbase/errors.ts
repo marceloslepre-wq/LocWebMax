@@ -20,6 +20,14 @@ export function extractFieldErrors(error: unknown): FieldErrors {
   return errors
 }
 
+export function isNetworkError(error: unknown): boolean {
+  if (error instanceof ClientResponseError) {
+    if (error.status === 0) return true
+    if (error.originalError !== undefined && error.originalError !== null) return true
+  }
+  return false
+}
+
 export function getErrorMessage(error: unknown): string {
   if (!(error instanceof ClientResponseError)) {
     return error instanceof Error ? error.message : 'An unexpected error occurred.'
