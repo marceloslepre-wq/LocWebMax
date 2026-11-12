@@ -1,29 +1,36 @@
-/// <reference path="../pb_data/types.d.ts" />
+/// <reference path="../../pb_data/types.d.ts" />
 /**
- * Utilitário compartilhado (PARTE 2) — atualização dos contadores "Locados"
- * (rented_qty / available_qty na coleção `inventory` e quantidade_locada em
- * `estoque_por_local`) quando o ciclo de vida da locação muda:
- * criar / devolver / trocar / vender / excluir contrato.
+ * lib/rental_counters.js — RECÁLCULO DOS CONTADORES DE ESTOQUE (Locados).
  *
- * Regras do projeto (gotchas que já morderam — OBRIGATÓRIO):
- * - gravação SEMPRE por ORM canônico (record.set + app.save) — nunca SQL direto;
- * - items pode vir como byte-array serializado do JSVM — decodificar UTF-8 antes
- *   do JSON.parse (JSON.parse de byte-array devolve array de ints);
- * - NUNCA gravar items vazio sobre contrato com itens (proteção local, o hook
- *   on_rental_protect_items também bloqueia);
- * - piso em 0 em todos os contadores (nunca negativo);
- * - fire-and-forget: erro ao atualizar contador LOGA e segue (não derruba a
- *   operação principal da rota/hook).
+ * Carregado por `load('lib/rental_counters.js')` a partir de
+ * `hooks/rental_counters_wire.js`. Expõe funções globais usadas pelos hooks:
  *
- * Algoritmo de distribuição (migration 0126): a quantidade locada de um produto
- * vai para o registro de estoque_por_local do local_retirada_id do contrato;
- * se não houver registro para esse local, a diferença é colocada no registro
- * com MAIOR espaço livre (para a soma fechar com o total do produto, sem criar
- * registro fantasma com total 0).
+ *   readRentalItems(record)      → array de itens (decodificado do JSON/byte-array)
+ *   rentalItemId(item)           → id do produto no estoque
+ *   rentalItemQty(item)          → quantidade locada do item
+ *   rentalItemReturned(item)     → quantidade já devolvida do item
+ *   applyRentalCounters(app, rentalId, invIds, opts)
+ *                                → recalcula os SKUs informados a partir dos
+ *                                  contratos ATIVOS (fonte de verdade)
+ *
+ * Regras do projeto respeitadas (as mesmas da migration 0126):
+ * - `items` no JSVM pode vir como BYTE ARRAY → decodifica antes do parse (UTF-8);
+ * - NUNCA regrava `items` — só contadores;
+ * - gravação SEMPRE por ORM canônico (record.set + app.save), nunca SQL direto;
+ * - o vínculo produto↔estoque vem dos itemId reais, nunca do valor total;
+ * - quantidade locada distribuída em `estoque_por_local` (por local_retirada_id),
+ *   porque `on_estoque_update` regrava rented_qty do produto a partir da soma
+ *   desses registros — sem distribuir, o contador regride;
+ * - snapshot ANTES/DEPOIS em `rental_snapshots` para auditoria e reversão.
+ *
+ * IDEMPOTENTE: recalcula do zero a partir dos contratos ativos. Rodar duas vezes
+ * não duplica nada e conserta qualquer contador desalinhado.
  */
 
-/** Decodifica array de bytes UTF-8 (gotcha do JSVM para campos JSON) */
-function utf8Decode(bytes) {
+var RC_ACTIVE_STATUSES = ['Ativo', 'Atrasado']
+
+/** Decodifica array de bytes UTF-8 (gotcha do JSVM para campos JSON). */
+function rcUtf8Decode(bytes) {
   var out = ''
   var i = 0
   while (i < bytes.length) {
@@ -53,29 +60,24 @@ function utf8Decode(bytes) {
   return out
 }
 
-/**
- * Parser tolerante de items (mesma semântica da migration 0126 / return_rental):
- * string JSON, JSON duplo, byte-array do JSVM, objeto wrapper — tudo resolvido.
- * Devolve [] quando não há itens legíveis (a rotina chamadora NUNCA regrava
- * items com esse retorno).
- */
-function parseRentalItemsSafe(value, depth) {
-  if (depth > 4 || value === null || value === undefined) return []
+/** Parse tolerante do campo `items` (string, array, objeto ou byte array). */
+function rcParseItems(value, depth) {
+  if (depth > 4 || value === null || value === undefined) return null
   if (typeof value === 'string') {
     var trimmed = value.trim()
-    if (!trimmed || trimmed === 'null' || trimmed === 'undefined' || trimmed === '[]') return []
+    if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return []
     var firstChar = trimmed.charAt(0)
     if (firstChar === '[' || firstChar === '{' || firstChar === '"') {
       try {
-        return parseRentalItemsSafe(JSON.parse(trimmed), depth + 1)
+        return rcParseItems(JSON.parse(trimmed), depth + 1)
       } catch (_) {
-        return []
+        return null
       }
     }
-    return []
+    return null
   }
   if (Array.isArray(value)) {
-    // gotcha do JSVM: campo JSON pode vir como BYTE ARRAY ([91,123,34,...] = "[{...}")
+    // gotcha conhecido: campo JSON vem como BYTE ARRAY ([91,123,34,...] = "[{...")
     var allBytes = value.length > 0
     for (var b = 0; b < value.length; b++) {
       var el = value[b]
@@ -84,314 +86,345 @@ function parseRentalItemsSafe(value, depth) {
         break
       }
     }
-    if (allBytes) {
-      return parseRentalItemsSafe(utf8Decode(value), depth + 1)
-    }
+    if (allBytes) return rcParseItems(rcUtf8Decode(value), depth + 1)
     var flat = []
     for (var n = 0; n < value.length; n++) {
-      var part = parseRentalItemsSafe(value[n], depth + 1)
+      var part = rcParseItems(value[n], depth + 1)
+      if (part === null) return null
       for (var p = 0; p < part.length; p++) flat.push(part[p])
     }
     return flat
   }
   if (typeof value === 'object') {
-    if (Array.isArray(value.items)) return parseRentalItemsSafe(value.items, depth + 1)
-    if (Array.isArray(value.itens)) return parseRentalItemsSafe(value.itens, depth + 1)
+    if (Array.isArray(value.items)) return rcParseItems(value.items, depth + 1)
+    if (Array.isArray(value.itens)) return rcParseItems(value.itens, depth + 1)
     return [value]
   }
-  return []
+  return null
 }
 
-/** Lê os items de um rental de forma tolerante (getString primeiro, depois get) */
-function readRentalItems(rental) {
-  var parsed = parseRentalItemsSafe(rental.getString('items'), 0)
-  if (parsed.length === 0) {
-    parsed = parseRentalItemsSafe(rental.get('items'), 0)
+/** Lê os itens de um registro de contrato, sem nunca regravá-lo. */
+function readRentalItems(record) {
+  if (!record) return []
+  var parsed = null
+  try {
+    // getString() primeiro: get() de campo JSON devolve byte array no JSVM
+    parsed = rcParseItems(record.getString('items'), 0)
+    if (!parsed || parsed.length === 0) parsed = rcParseItems(record.get('items'), 0)
+  } catch (_) {
+    parsed = null
   }
-  if (!Array.isArray(parsed)) return []
-  return parsed
+  return parsed || []
 }
 
-/** itemId canônico de um item de contrato ('' para frete/inválido) */
+/** id do produto no estoque a partir de um item do contrato. */
 function rentalItemId(item) {
   if (!item || typeof item !== 'object') return ''
-  var id = String(item.itemId || item.item_id || item.inventory_id || item.id || '').trim()
+  var id = String(item.itemId || item.item_id || item.inventory_id || item.id || '')
   if (!id || id === 'freight' || id === 'frete') return ''
   return id
 }
 
-/** Quantidade de um item de contrato (mínimo 1) */
+/** quantidade locada do item (padrão 1). */
 function rentalItemQty(item) {
-  var raw = item.qty !== undefined ? item.qty : item.quantity !== undefined ? item.quantity : 1
-  var qty = Number(raw)
+  if (!item || typeof item !== 'object') return 1
+  var raw = item.qty
+  if (raw === undefined || raw === null) raw = item.quantity
+  if (raw === undefined || raw === null) raw = item.quantidade
+  var qty = Number(raw !== undefined && raw !== null ? raw : 1)
   if (isNaN(qty) || qty <= 0) qty = 1
   return qty
 }
 
-/** Quantidade já devolvida de um item (0 quando campo ausente) */
+/** quantidade já devolvida do item (0 quando o campo não existe). */
 function rentalItemReturned(item) {
-  var raw = item.returnedQty !== undefined ? item.returnedQty : item.returned_qty
+  if (!item || typeof item !== 'object') return 0
+  var raw = item.returnedQty
+  if (raw === undefined || raw === null) raw = item.returned_qty
+  if (raw === undefined || raw === null) raw = item.returned
   var qty = Number(raw !== undefined && raw !== null ? raw : 0)
-  if (isNaN(qty) || qty < 0) qty = 0
+  if (isNaN(qty) || qty < 0) return 0
   return qty
 }
 
-/** true quando o contrato tem ao menos um item real (não frete) */
-function hasRealItems(items) {
-  for (var i = 0; i < items.length; i++) {
-    if (rentalItemId(items[i])) return true
-  }
-  return false
-}
-
-/** Estado atual do produto + registros por local, para snapshot de auditoria */
-function captureInventoryState(app, invId) {
-  var state = { id: invId, total_qty: 0, available_qty: 0, rented_qty: 0, stocks: [] }
-  var invRec = null
-  try {
-    invRec = app.findRecordById('inventory', invId)
-    state.total_qty = invRec.getInt('total_qty')
-    state.available_qty = invRec.getInt('available_qty')
-    state.rented_qty = invRec.getInt('rented_qty')
-  } catch (_) {
-    return null
-  }
-  try {
-    var stocks = app.findRecordsByFilter(
-      'estoque_por_local',
-      'inventory_id = "' + invId + '"',
-      '',
-      0,
-      0,
-    )
-    for (var i = 0; i < stocks.length; i++) {
-      state.stocks.push({
-        id: stocks[i].id,
-        local_id: stocks[i].getString('local_id'),
-        quantidade_total: stocks[i].getInt('quantidade_total'),
-        quantidade_locada: stocks[i].getInt('quantidade_locada'),
-      })
-    }
-  } catch (_) {}
-  return state
-}
-
 /**
- * Grava o par de snapshots ANTES/DEPOIS em rental_snapshots (padrão auditório
- * da migration 0126). rentalId é a relation obrigatória. Fire-and-forget:
- * falha ao salvar snapshot só loga.
+ * Soma as quantidades locadas de TODOS os contratos ativos, no total e por local.
+ * Função pura sobre o estado do banco — base do recálculo idempotente.
  */
-function saveCounterSnapshots(
-  app,
-  rentalId,
-  actionType,
-  description,
-  beforeState,
-  afterState,
-  tenantId,
-  userId,
-) {
+function rcCollectActive(app) {
+  var rentedByItem = {}
+  var rentedByItemLocal = {}
+  var rentals = []
+
   try {
-    var snapCol = app.findCollectionByNameOrId('rental_snapshots')
-    var fases = [
-      { fase: 'antes', desc: description + ' — estado ANTES', state: beforeState },
-      { fase: 'depois', desc: description + ' — estado DEPOIS', state: afterState },
-    ]
-    for (var i = 0; i < fases.length; i++) {
-      var snap = new Record(snapCol)
-      snap.set('rental_id', rentalId)
-      snap.set('action_type', actionType)
-      snap.set('description', fases[i].desc)
-      snap.set('inventory_state', [fases[i].state])
-      snap.set('extra_data', {
-        fase: fases[i].fase,
-        inventory_id: fases[i].state.id,
-        product_name: fases[i].state.product_name || '',
-        product_code: fases[i].state.product_code || '',
-      })
-      if (tenantId) snap.set('tenant_id', tenantId)
-      if (userId) snap.set('user_id', userId)
-      app.save(snap)
-    }
-  } catch (err) {
-    app
-      .logger()
-      .error(
-        'contadores-locacao: falha ao salvar snapshot de auditoria',
-        'rental',
-        rentalId,
-        'err',
-        err.message,
-      )
-  }
-}
-
-/**
- * Aplica um delta de quantidade locada a UM produto e o distribui em
- * estoque_por_local (algoritmo da migration 0126).
- *
- * delta > 0 → ocupa (locar); delta < 0 → libera (devolver/trocar/excluir).
- * Piso em 0 em todos os contadores. Fire-and-forget: erro só loga.
- */
-function applyRentedDelta(app, invId, delta, opts) {
-  opts = opts || {}
-  var result = { applied: false, before: null, after: null }
-
-  var invRec = null
-  try {
-    invRec = app.findRecordById('inventory', invId)
-  } catch (_) {
-    app.logger().warn('contadores-locacao: produto não encontrado no estoque', 'inventoryId', invId)
-    return result
-  }
-
-  var oldRented = invRec.getInt('rented_qty')
-  var oldAvailable = invRec.getInt('available_qty')
-  var totalQty = invRec.getInt('total_qty')
-
-  var newRented = oldRented + delta
-  if (newRented < 0) newRented = 0
-  if (newRented > totalQty) newRented = totalQty
-  var newAvailable = Math.max(0, totalQty - newRented)
-
-  var before = captureInventoryState(app, invId)
-  if (before) {
-    before.product_name = invRec.getString('name')
-    before.product_code = invRec.getString('code')
-  }
-
-  // 1. Contadores do produto (ORM canônico)
-  try {
-    invRec.set('rented_qty', newRented)
-    invRec.set('available_qty', newAvailable)
-    app.save(invRec)
-  } catch (err) {
-    app
-      .logger()
-      .error(
-        'contadores-locacao: falha ao gravar contadores do produto',
-        'inventoryId',
-        invId,
-        'err',
-        err.message,
-      )
-    return result
-  }
-
-  // 2. Distribuição por local (migration 0126): primeiro tenta o local de
-  // retirada do contrato; sem registro lá, a diferença vai ao registro com
-  // maior espaço livre.
-  var localId = opts.localId || ''
-  var stocks = []
-  try {
-    stocks = app.findRecordsByFilter(
-      'estoque_por_local',
-      'inventory_id = "' + invId + '"',
+    rentals = app.findRecordsByFilter(
+      'rentals',
+      "status = 'Ativo' || status = 'Atrasado'",
       '',
       0,
       0,
     )
   } catch (_) {
-    stocks = []
+    rentals = []
   }
 
-  var targetIdx = -1
-  if (localId) {
-    for (var s = 0; s < stocks.length; s++) {
-      if (stocks[s].getString('local_id') === localId) {
-        targetIdx = s
-        break
+  for (var i = 0; i < rentals.length; i++) {
+    var rental = rentals[i]
+    var items = readRentalItems(rental)
+    if (items.length === 0) {
+      app
+        .logger()
+        .warn(
+          'contadores-locacao: contrato ativo com items ilegivel ignorado (campo nao regravado)',
+          'rental',
+          rental.getString('contract_number') || rental.id,
+        )
+      continue
+    }
+    var localId = ''
+    try {
+      localId = rental.getString('local_retirada_id') || ''
+    } catch (_) {
+      localId = ''
+    }
+    for (var j = 0; j < items.length; j++) {
+      var invId = rentalItemId(items[j])
+      if (!invId) continue
+      // DESCONTA o que já voltou: em devolução parcial o contrato continua ativo,
+      // mas o item devolvido não está mais ocupado. on_rental_return_inventory
+      // decrementa na hora; sem este desconto o recálculo devolveria a ocupação.
+      var qty = rentalItemQty(items[j]) - rentalItemReturned(items[j])
+      if (qty <= 0) continue
+      rentedByItem[invId] = (rentedByItem[invId] || 0) + qty
+      if (localId) {
+        if (!rentedByItemLocal[invId]) rentedByItemLocal[invId] = {}
+        rentedByItemLocal[invId][localId] = (rentedByItemLocal[invId][localId] || 0) + qty
       }
     }
   }
-  if (targetIdx < 0 && stocks.length > 0) {
-    // registro do local de retirada não existe → maior espaço livre
+
+  return { rentedByItem: rentedByItem, rentedByItemLocal: rentedByItemLocal }
+}
+
+/** Grava snapshot de auditoria em rental_snapshots (relation rental_id obrigatória). */
+function rcSaveSnapshot(app, snapCol, rentalId, invId, productName, productCode, phase, state) {
+  if (!rentalId) return false
+  var snap = new Record(snapCol)
+  snap.set('rental_id', rentalId)
+  snap.set('action_type', 'recálculo_contadores')
+  snap.set(
+    'description',
+    phase === 'antes'
+      ? 'Recálculo de contadores — estado ANTES'
+      : 'Recálculo de contadores — estado DEPOIS',
+  )
+  snap.set('inventory_state', [state])
+  snap.set('extra_data', {
+    fase: phase,
+    inventory_id: invId,
+    product_name: productName,
+    product_code: productCode,
+  })
+  app.save(snap)
+  return true
+}
+
+/**
+ * Recalcula os contadores dos produtos informados (invIds) a partir dos
+ * contratos ativos. `opts`: { actionType, description, tenantId, userId, localId }.
+ * Fire-and-forget: chamado dentro dos hooks, nunca derruba a operação principal.
+ */
+function applyRentalCounters(app, rentalId, invIds, opts) {
+  opts = opts || {}
+  if (!invIds || invIds.length === 0) return
+
+  var seen = {}
+  var targets = []
+  for (var z = 0; z < invIds.length; z++) {
+    var id = String(invIds[z] || '')
+    if (!id || seen[id]) continue
+    seen[id] = true
+    targets.push(id)
+  }
+
+  var collected = rcCollectActive(app)
+  var rentedByItem = collected.rentedByItem
+  var rentedByItemLocal = collected.rentedByItemLocal
+
+  var snapCol = null
+  try {
+    snapCol = app.findCollectionByNameOrId('rental_snapshots')
+  } catch (_) {
+    snapCol = null
+  }
+
+  for (var t = 0; t < targets.length; t++) {
+    var invId = targets[t]
+    var invRec = null
+    try {
+      invRec = app.findRecordById('inventory', invId)
+    } catch (_) {
+      app
+        .logger()
+        .warn(
+          'contadores-locacao: produto do contrato nao encontrado no estoque',
+          'inventoryId',
+          invId,
+        )
+      continue
+    }
+
+    var oldTotal = invRec.getInt('total_qty')
+    var oldRented = invRec.getInt('rented_qty')
+    var oldAvailable = invRec.getInt('available_qty')
+    var newRented = rentedByItem[invId] || 0
+    // total_qty do cadastro é a fonte real da quantidade total; piso em 0
+    var newAvailable = Math.max(0, oldTotal - newRented)
+
+    var stocks = []
+    try {
+      stocks = app.findRecordsByFilter(
+        'estoque_por_local',
+        'inventory_id = "' + invId + '"',
+        '',
+        0,
+        0,
+      )
+    } catch (_) {
+      stocks = []
+    }
+
+    var perLocal = rentedByItemLocal[invId] || {}
+    var stocksBefore = []
+    var distributed = 0
+    var biggestIdx = -1
     var biggestFree = -1
-    for (var f = 0; f < stocks.length; f++) {
-      var free = stocks[f].getInt('quantidade_total') - stocks[f].getInt('quantidade_locada')
+
+    for (var st = 0; st < stocks.length; st++) {
+      var stTotal = stocks[st].getInt('quantidade_total')
+      var stRented = stocks[st].getInt('quantidade_locada')
+      stocksBefore.push({
+        id: stocks[st].id,
+        local_id: stocks[st].getString('local_id'),
+        quantidade_total: stTotal,
+        quantidade_locada: stRented,
+      })
+      var locQty = perLocal[stocks[st].getString('local_id')] || 0
+      stocks[st].set('quantidade_locada', locQty)
+      distributed += locQty
+      var free = stTotal - locQty
       if (free > biggestFree) {
         biggestFree = free
-        targetIdx = f
+        biggestIdx = st
       }
     }
-  }
 
-  if (targetIdx >= 0) {
-    try {
-      var curLoc = stocks[targetIdx].getInt('quantidade_locada')
-      var newLoc = curLoc + delta
-      if (newLoc < 0) newLoc = 0
-      if (newLoc > stocks[targetIdx].getInt('quantidade_total')) {
-        newLoc = stocks[targetIdx].getInt('quantidade_total')
+    // Contratos cujo local_retirada_id não tem registro em estoque_por_local:
+    // a diferença vai para o registro com maior folga, para a soma fechar.
+    var diff = newRented - distributed
+    if (diff > 0 && biggestIdx >= 0) {
+      var bRented = stocks[biggestIdx].getInt('quantidade_locada')
+      stocks[biggestIdx].set('quantidade_locada', bRented + diff)
+      distributed += diff
+    }
+
+    var stocksAfter = []
+    for (var sa = 0; sa < stocks.length; sa++) {
+      stocksAfter.push({
+        id: stocks[sa].id,
+        local_id: stocks[sa].getString('local_id'),
+        quantidade_total: stocks[sa].getInt('quantidade_total'),
+        quantidade_locada: stocks[sa].getInt('quantidade_locada'),
+      })
+    }
+
+    // Nada mudou: não grava nem snapshot (idempotência barata)
+    if (oldRented === newRented && oldAvailable === newAvailable && diff === 0) continue
+
+    var productName = invRec.getString('name')
+    var productCode = invRec.getString('code')
+
+    if (snapCol) {
+      try {
+        rcSaveSnapshot(app, snapCol, rentalId, invId, productName, productCode, 'antes', {
+          id: invId,
+          total_qty: oldTotal,
+          available_qty: oldAvailable,
+          rented_qty: oldRented,
+          stocks: stocksBefore,
+        })
+      } catch (snapErr) {
+        // Snapshot é auditoria, não pré-requisito: no fluxo de EXCLUSÃO o contrato
+        // já não existe e a relation rental_id pode ser recusada. Abortar aqui
+        // deixaria os contadores presos — então loga e segue.
+        app
+          .logger()
+          .error(
+            'contadores-locacao: falha ao salvar snapshot ANTES (segue sem snapshot)',
+            'inventoryId',
+            invId,
+            'err',
+            snapErr.message,
+          )
       }
-      stocks[targetIdx].set('quantidade_locada', newLoc)
-      app.save(stocks[targetIdx])
-    } catch (err) {
+    }
+
+    // Grava estoque por local primeiro: on_estoque_update recalcula o produto
+    // a partir da soma desses registros; a gravação do produto vem depois e
+    // fixa o valor final consistente.
+    for (var sv = 0; sv < stocks.length; sv++) {
+      try {
+        app.save(stocks[sv])
+      } catch (stErr) {
+        app
+          .logger()
+          .error(
+            'contadores-locacao: falha ao gravar estoque por local',
+            'id',
+            stocks[sv].id,
+            'err',
+            stErr.message,
+          )
+      }
+    }
+
+    try {
+      invRec.set('rented_qty', newRented)
+      invRec.set('available_qty', newAvailable)
+      app.save(invRec)
+    } catch (saveErr) {
       app
         .logger()
         .error(
-          'contadores-locacao: falha ao gravar estoque_por_local',
+          'contadores-locacao: falha ao gravar produto',
           'inventoryId',
           invId,
           'err',
-          err.message,
+          saveErr.message,
         )
+      continue
     }
-  }
 
-  var after = captureInventoryState(app, invId)
-  if (after) {
-    after.product_name = invRec.getString('name')
-    after.product_code = invRec.getString('code')
-  }
-
-  result.applied = true
-  result.before = before
-  result.after = after
-  return result
-}
-
-/**
- * Ponto de entrada: aplica os deltas de UMA operação sobre a locação.
- *
- * deltas = { inventory_id: quantidade_delta } (positivo ocupa, negativo libera).
- * Para cada produto com delta != 0 atualiza contadores + distribuição por local
- * e grava o par de snapshots ANTES/DEPOIS. Idempotente na prática: o delta é
- * derivado dos ITENS REAIS do contrato (quantidade locada que entrou/saiu), não
- * de um valor fixo — reexecutar o mesmo evento sobre o estado já atualizado
- * resulta em contadores coerentes com os itens (nunca duplica além do contrato).
- * Fire-and-forget: nunca lança.
- */
-function applyRentalCounters(app, rentalId, deltas, opts) {
-  opts = opts || {}
-  var actionType = opts.actionType || 'ajuste_contadores'
-  var description = opts.description || 'Atualização de contadores de locação'
-  var tenantId = opts.tenantId || ''
-  var userId = opts.userId || ''
-  var localId = opts.localId || ''
-
-  try {
-    for (var invId in deltas) {
-      var delta = Number(deltas[invId])
-      if (!isFinite(delta) || delta === 0) continue
-
-      var r = applyRentedDelta(app, invId, delta, { localId: localId })
-      if (!r.applied) continue
-
-      saveCounterSnapshots(
-        app,
-        rentalId,
-        actionType,
-        description,
-        r.before,
-        r.after,
-        tenantId,
-        userId,
-      )
+    if (snapCol) {
+      try {
+        rcSaveSnapshot(app, snapCol, rentalId, invId, productName, productCode, 'depois', {
+          id: invId,
+          total_qty: oldTotal,
+          available_qty: newAvailable,
+          rented_qty: newRented,
+          stocks: stocksAfter,
+        })
+      } catch (snapErr) {
+        app
+          .logger()
+          .error(
+            'contadores-locacao: falha ao salvar snapshot DEPOIS',
+            'inventoryId',
+            invId,
+            'err',
+            snapErr.message,
+          )
+      }
     }
-  } catch (err) {
-    app
-      .logger()
-      .error('contadores-locacao: erro inesperado ao aplicar contadores', 'err', err.message)
   }
 }
