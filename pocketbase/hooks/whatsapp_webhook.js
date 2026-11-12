@@ -55,11 +55,95 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
 
   const message = data.message || {}
   let messageText = ''
-  if (message.conversation) {
-    messageText = message.conversation
-  } else if (message.extendedTextMessage && message.extendedTextMessage.text) {
-    messageText = message.extendedTextMessage.text
+  // CORREÇÃO 1/4 (silêncio): a extração antiga lia APENAS 'conversation' e
+  // 'extendedTextMessage'. Áudio, imagem, botão de resposta rápida e lista caíam
+  // no 'no text content' e eram descartados em silêncio — a conversa continuava e
+  // a Helena nunca sabia. Agora todo tipo conhecido é reconhecido.
+  let messageKind = 'texto' // texto | audio | imagem | botao | lista | outro
+  let unsupportedKind = ''
+
+  var extractEphemeral = function (msg) {
+    // Mensagem "ver uma vez" e mensagem editada vêm embrulhadas.
+    if (!msg) return msg
+    if (msg.ephemeralMessage && msg.ephemeralMessage.message) return msg.ephemeralMessage.message
+    if (msg.viewOnceMessage && msg.viewOnceMessage.message) return msg.viewOnceMessage.message
+    if (msg.viewOnceMessageV2 && msg.viewOnceMessageV2.message) return msg.viewOnceMessageV2.message
+    if (msg.editedMessage && msg.editedMessage.message) return msg.editedMessage.message
+    return msg
   }
+
+  const messageInner = extractEphemeral(message) || {}
+
+  if (messageInner.conversation) {
+    messageText = messageInner.conversation
+  } else if (messageInner.extendedTextMessage && messageInner.extendedTextMessage.text) {
+    messageText = messageInner.extendedTextMessage.text
+  } else if (messageInner.buttonsResponseMessage) {
+    // Cliente tocou um botão de resposta rápida: o que importa é o texto do botão.
+    messageText =
+      messageInner.buttonsResponseMessage.selectedDisplayText ||
+      messageInner.buttonsResponseMessage.selectedButtonId ||
+      ''
+    messageKind = 'botao'
+  } else if (messageInner.templateButtonReplyMessage) {
+    messageText =
+      messageInner.templateButtonReplyMessage.selectedDisplayText ||
+      messageInner.templateButtonReplyMessage.selectedId ||
+      ''
+    messageKind = 'botao'
+  } else if (messageInner.listResponseMessage) {
+    messageText =
+      messageInner.listResponseMessage.title ||
+      (messageInner.listResponseMessage.singleSelectReply &&
+        messageInner.listResponseMessage.singleSelectReply.selectedRowId) ||
+      ''
+    messageKind = 'lista'
+  } else if (messageInner.audioMessage) {
+    // Áudio NÃO é transcrito aqui (não há transcrição no hook). Mas deixar de
+    // descartar já resolve metade do problema: a mensagem existe, a loja é avisada
+    // e a conversa não morre em silêncio.
+    messageKind = 'audio'
+    messageText = ''
+  } else if (messageInner.imageMessage) {
+    messageKind = 'imagem'
+    messageText =
+      (messageInner.imageMessage.caption || '').trim() || '[cliente enviou uma imagem sem legenda]'
+  } else if (messageInner.documentMessage) {
+    messageKind = 'imagem'
+    messageText =
+      (messageInner.documentMessage.caption || '').trim() || '[cliente enviou um documento]'
+  } else if (messageInner.videoMessage) {
+    messageKind = 'imagem'
+    messageText = (messageInner.videoMessage.caption || '').trim() || '[cliente enviou um vídeo]'
+  } else if (messageInner.stickerMessage) {
+    messageKind = 'outro'
+    messageText = '[cliente enviou uma figurinha]'
+  } else if (messageInner.reactionMessage) {
+    // Reação não pede resposta: registra e encerra, sem alarme.
+    return e.json(200, { success: true, skipped: 'reaction' })
+  } else {
+    // Tipo que este hook não conhece (localização, contato, enquete...).
+    // Antes: descarte silencioso. Agora: marcado para a loja saber.
+    const knownKeys = Object.keys(messageInner).filter(function (k) {
+      return k !== 'messageContextInfo' && k !== 'senderKeyDistributionMessage'
+    })
+    unsupportedKind = knownKeys.length > 0 ? knownKeys[0] : 'desconhecido'
+    messageKind = 'outro'
+  }
+
+  // CORREÇÃO 2/4 (silêncio): idade do evento. A Evolution API reentrega eventos
+  // antigos; sem esta checagem, uma mensagem de ontem era respondida à 00h07.
+  // Tudo com mais de MAX_EVENT_AGE_MIN minutos é registrado e IGNORADO.
+  const MAX_EVENT_AGE_MIN = 30
+  const rawTs = Number(data.messageTimestamp || 0)
+  const eventSeconds = rawTs > 1e12 ? Math.floor(rawTs / 1000) : rawTs
+  const eventAgeSeconds = eventSeconds > 0 ? Math.floor(Date.now() / 1000) - eventSeconds : -1
+  const isStaleEvent = eventAgeSeconds > MAX_EVENT_AGE_MIN * 60
+
+  // CORREÇÃO 3/4 (silêncio): deduplicação por id da mensagem. O webhook não tinha
+  // NENHUMA. O mesmo evento era processado quantas vezes a Evolution entregasse.
+  // O id fica gravado na conversa do cliente, junto do último id processado.
+  const waMessageId = String(key.id || '')
 
   // INTERVENÇÃO HUMANA: a loja responde pelo próprio número conectado, então o comando
   // chega como fromMe. Reconhece "Helena deixa que eu continuo" (pausa por 48h) e
@@ -136,10 +220,158 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       })
     }
 
+    // CORREÇÃO: além do comando explícito, QUALQUER mensagem da loja marca o
+    // horário do atendimento humano. É esta marca que a pausa automática usa.
+    try {
+      var convOwn = null
+      try {
+        convOwn = $app.findFirstRecordByData('whatsapp_conversations', 'phone', phone)
+      } catch (_) {}
+      if (!convOwn) {
+        var ownCol = $app.findCollectionByNameOrId('whatsapp_conversations')
+        convOwn = new Record(ownCol)
+        convOwn.set('phone', phone)
+      }
+      convOwn.set('last_owner_message_at', new Date().toISOString())
+      if (messageText) convOwn.set('last_message', messageText)
+      $app.save(convOwn)
+    } catch (errOwn) {
+      $app
+        .logger()
+        .error(
+          'whatsapp_webhook: falha ao marcar resposta da loja',
+          'err',
+          errOwn.message || String(errOwn),
+        )
+    }
+
     return e.json(200, { success: true, skipped: 'own message' })
   }
 
+  // Antes, tudo que não tivesse texto morria aqui, sem resposta, sem log e sem
+  // ninguém saber. Agora: figurinha encerra calada; áudio e tipo desconhecido
+  // geram aviso para a loja.
   if (!messageText) {
+    if (messageKind === 'audio') {
+      $app.logger().info('whatsapp_webhook: audio recebido (sem transcricao)', 'phone', phone)
+
+      var conversationAudio = null
+      try {
+        conversationAudio = $app.findFirstRecordByData('whatsapp_conversations', 'phone', phone)
+      } catch (_) {}
+
+      var audioPaused = false
+      if (conversationAudio) {
+        var puRaw = conversationAudio.getString('helena_paused_until') || ''
+        if (puRaw && new Date(String(puRaw).replace(' ', 'T')).getTime() > Date.now()) {
+          audioPaused = true
+        }
+      }
+
+      if (!audioPaused) {
+        var audioNotice =
+          'Recebi seu áudio! 🎧 Para eu conseguir te ajudar com o contrato, pode me responder por escrito? ' +
+          'Se preferir, já avisei a equipe da loja para te retornar.'
+        try {
+          var apiUrlA = $secrets.get('EVOLUTION_API_URL') || ''
+          var apiKeyA = $secrets.get('EVOLUTION_API_KEY') || ''
+          var instA = $secrets.get('EVOLUTION_INSTANCE') || ''
+          var tenantA = ''
+          try {
+            var custA = $app.findFirstRecordByData('customers', 'phone_cell', phone)
+            tenantA = custA.getString('tenant_id') || ''
+          } catch (_) {}
+          if (tenantA) {
+            try {
+              var tRecA = $app.findRecordById('tenants', tenantA)
+              var instT = tRecA.getString('whatsapp_instance_name')
+              if (instT) instA = instT
+            } catch (_) {}
+          }
+          if (apiUrlA && apiKeyA && instA) {
+            $http.send({
+              url: apiUrlA.replace(/\/+$/, '') + '/message/sendText/' + instA,
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', apikey: apiKeyA },
+              body: JSON.stringify({ number: phone, text: audioNotice }),
+              timeout: 30,
+            })
+          }
+        } catch (errAudio) {
+          $app
+            .logger()
+            .error(
+              'whatsapp_webhook: falha ao avisar audio',
+              'err',
+              errAudio.message || String(errAudio),
+            )
+        }
+      }
+
+      // Marca o caso para a loja: cliente falou e o bot não conseguiu ler.
+      try {
+        var pendColA = $app.findCollectionByNameOrId('helena_pendencias')
+        var anyRentalA = null
+        try {
+          var rByPhone = $app.findRecordsByFilter(
+            'customers',
+            'phone_cell ~ "' + phone + '" || phone_res ~ "' + phone + '"',
+            '-created',
+            1,
+            0,
+          )
+          if (rByPhone.length > 0) {
+            var rentsA = $app.findRecordsByFilter(
+              'rentals',
+              'customer_id = "' + rByPhone[0].id + '" && actual_return_date = ""',
+              '-created',
+              1,
+              0,
+            )
+            if (rentsA.length > 0) anyRentalA = rentsA[0]
+          }
+        } catch (_) {}
+        if (anyRentalA && !audioPaused) {
+          var pA = new Record(pendColA)
+          pA.set('rental_id', anyRentalA.id)
+          pA.set('customer_id', anyRentalA.getString('customer_id'))
+          pA.set('contract_number', anyRentalA.getString('contract_number') || anyRentalA.id)
+          pA.set('customer_name', 'Audio sem resposta - ' + phone)
+          pA.set('phone', phone)
+          pA.set('type', 'outro')
+          pA.set('status', 'pendente')
+          pA.set(
+            'description',
+            'Cliente enviou AUDIO e a Helena nao consegue ler audio. Retornar por escrito no WhatsApp.',
+          )
+          $app.save(pA)
+        }
+      } catch (errPendA) {
+        $app
+          .logger()
+          .error(
+            'whatsapp_webhook: falha ao registrar pendencia de audio',
+            'err',
+            errPendA.message || String(errPendA),
+          )
+      }
+
+      return e.json(200, { success: true, skipped: 'audio_notice_sent' })
+    }
+
+    if (messageKind === 'outro') {
+      $app
+        .logger()
+        .warn(
+          'whatsapp_webhook: tipo de mensagem nao suportado',
+          'phone',
+          phone,
+          'kind',
+          unsupportedKind,
+        )
+      return e.json(200, { success: true, skipped: 'unsupported_kind', kind: unsupportedKind })
+    }
+
     return e.json(200, { success: true, skipped: 'no text content' })
   }
 
@@ -149,6 +381,98 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
   try {
     conversation = $app.findFirstRecordByData('whatsapp_conversations', 'phone', phone)
     conversationId = conversation.getString('conversation_id')
+  } catch (_) {}
+
+  // ─── CORREÇÃO: evento repetido e evento velho ───────────────────────────────
+  // A Evolution API reentrega o mesmo evento. Sem esta trava, a Helena respondia
+  // a MESMA mensagem duas vezes (visto em produção: duas respostas com 50 min de
+  // intervalo) e respondia mensagem de ontem à 00h07.
+  if (waMessageId) {
+    var lastProcessedId = conversation ? conversation.getString('last_message_id') || '' : ''
+    if (lastProcessedId && lastProcessedId === waMessageId) {
+      $app
+        .logger()
+        .info('whatsapp_webhook: evento duplicado ignorado', 'phone', phone, 'msg_id', waMessageId)
+      return e.json(200, { success: true, skipped: 'duplicate_event', msg_id: waMessageId })
+    }
+  }
+
+  if (isStaleEvent) {
+    $app
+      .logger()
+      .warn(
+        'whatsapp_webhook: evento antigo ignorado',
+        'phone',
+        phone,
+        'age_seconds',
+        eventAgeSeconds,
+        'max_minutes',
+        MAX_EVENT_AGE_MIN,
+      )
+    // Grava o id mesmo assim, para o mesmo evento não voltar em loop.
+    if (conversation && waMessageId) {
+      try {
+        conversation.set('last_message_id', waMessageId)
+        conversation.set('last_message', messageText)
+        $app.save(conversation)
+      } catch (_) {}
+    }
+    return e.json(200, {
+      success: true,
+      skipped: 'stale_event',
+      age_seconds: eventAgeSeconds,
+    })
+  }
+
+  // ─── CORREÇÃO: pausa automática quando um humano assumiu ────────────────────
+  // Antes a pausa só existia se alguém digitasse "Helena deixa que eu continuo".
+  // Bastava a loja responder por conta própria para as duas ficarem atendendo.
+  // Agora: se a loja enviou QUALQUER mensagem (fromMe) para este cliente nas
+  // últimas AUTO_PAUSE_MINUTES, a Helena se pausa sozinha.
+  const AUTO_PAUSE_MINUTES = 120
+  if (conversation) {
+    var lastOwnerAt = conversation.getString('last_owner_message_at') || ''
+    if (lastOwnerAt) {
+      var ownerAtMs = new Date(String(lastOwnerAt).replace(' ', 'T')).getTime()
+      if (ownerAtMs && Date.now() - ownerAtMs < AUTO_PAUSE_MINUTES * 60 * 1000) {
+        var pausedCurrent = conversation.getString('helena_paused_until') || ''
+        var pausedCurrentMs = pausedCurrent
+          ? new Date(String(pausedCurrent).replace(' ', 'T')).getTime()
+          : 0
+        if (!pausedCurrentMs || pausedCurrentMs < Date.now()) {
+          try {
+            conversation.set(
+              'helena_paused_until',
+              new Date(Date.now() + AUTO_PAUSE_MINUTES * 60 * 1000).toISOString(),
+            )
+            conversation.set('helena_paused_by', 'automatico: loja respondeu')
+            if (waMessageId) conversation.set('last_message_id', waMessageId)
+            conversation.set('last_message', messageText)
+            $app.save(conversation)
+          } catch (_) {}
+        }
+        $app
+          .logger()
+          .info(
+            'whatsapp_webhook: helena pausada automaticamente (loja respondeu)',
+            'phone',
+            phone,
+            'last_owner_at',
+            lastOwnerAt,
+          )
+        return e.json(200, { success: true, skipped: 'auto_paused_owner_active' })
+      }
+    }
+  }
+
+  // Marca o id desta mensagem como processado, para o dedup das próximas.
+  try {
+    var convForMark =
+      conversation || $app.findFirstRecordByData('whatsapp_conversations', 'phone', phone)
+    if (waMessageId) {
+      convForMark.set('last_message_id', waMessageId)
+      $app.save(convForMark)
+    }
   } catch (_) {}
 
   // PAUSA DA HELENA:
