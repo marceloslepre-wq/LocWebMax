@@ -214,6 +214,47 @@ routerAdd('GET', '/backend/v1/diag-estoque', (e) => {
       if (linhas[g].difCampo !== 0 || linhas[g].difQuebra !== 0) divergentes.push(linhas[g])
     }
 
+    // ---------- detalhe por contrato (para julgar se o contrato é que está velho) ----------
+    var alvoItem = e.request.url.query().get('item') || ''
+    var contratosDetalhe = []
+    if (alvoItem) {
+      for (var c = 0; c < active.length; c++) {
+        var rc = active[c]
+        var its2 = readItems(rc)
+        var qtdItem = 0
+        var devolvidoItem = 0
+        for (var m = 0; m < its2.length; m++) {
+          if (itemId(its2[m]) !== alvoItem) continue
+          qtdItem += itemQty(its2[m])
+          devolvidoItem += itemReturned(its2[m])
+        }
+        if (qtdItem === 0) continue
+        var dS = ''
+        var dE = ''
+        var dA = ''
+        try {
+          dS = rc.getString('start_date') || ''
+          dE = rc.getString('expected_return_date') || ''
+          dA = rc.getString('actual_return_date') || ''
+        } catch (_) {}
+        contratosDetalhe.push({
+          id: rc.id,
+          numero: rc.getString('contract_number'),
+          status: rc.getString('status'),
+          inicio: dS,
+          previsto: dE,
+          devolvidoEm: dA,
+          qtd: qtdItem,
+          devolvido: devolvidoItem,
+          liquido: qtdItem - devolvidoItem,
+          local: nomeLocal[rc.getString('local_retirada_id')] || rc.getString('local_retirada_id'),
+          importado: rc.getBool('is_imported'),
+          criado: rc.getString('created'),
+          atualizado: rc.getString('updated'),
+        })
+      }
+    }
+
     return e.json(200, {
       geradoEm: new Date().toISOString(),
       somenteLeitura: true,
@@ -225,6 +266,7 @@ routerAdd('GET', '/backend/v1/diag-estoque', (e) => {
       },
       totais: totais,
       divergentes: divergentes,
+      contratosDoItem: contratosDetalhe,
       produtosSemContratoAtivo: linhas
         .filter(function (r) {
           return r.esperado === 0 && (r.campoLocados || 0) > 0
