@@ -2,30 +2,6 @@ import { ClientResponseError } from 'pocketbase'
 
 export type FieldErrors = Record<string, string>
 
-/**
- * Detecta erro de rede (sem resposta HTTP do backend): falha de conexão,
- * DNS, CORS ou timeout. Usado pelo Index e por telas que degradam graciosamente
- * quando o backend não responde. Coberto em src/lib/pocketbase/index.ts.
- */
-export function isNetworkError(error: unknown): boolean {
-  if (error instanceof ClientResponseError) {
-    if (error.status === 0) return true
-    const original = error.originalError as unknown
-    if (
-      original instanceof Error &&
-      (original.name === 'TypeError' || original.name === 'AbortError')
-    ) {
-      return true
-    }
-    const msg = String(error.message || '').toLowerCase()
-    return msg.includes('network') || msg.includes('failed to fetch')
-  }
-  if (error instanceof Error) {
-    return error.name === 'TypeError' || error.name === 'AbortError'
-  }
-  return false
-}
-
 export function extractFieldErrors(error: unknown): FieldErrors {
   if (!(error instanceof ClientResponseError)) return {}
   const data = error.response?.data
@@ -42,6 +18,15 @@ export function extractFieldErrors(error: unknown): FieldErrors {
     }
   }
   return errors
+}
+
+/** Detecta erro de rede (sem resposta HTTP) — restaurado por quebrar o build. */
+export function isNetworkError(error: unknown): boolean {
+  if (error instanceof ClientResponseError) return error.status === 0
+  if (error && typeof error === 'object' && 'originalError' in error) {
+    return isNetworkError((error as { originalError: unknown }).originalError)
+  }
+  return false
 }
 
 export function getErrorMessage(error: unknown): string {

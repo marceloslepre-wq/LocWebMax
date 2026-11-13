@@ -19,18 +19,139 @@
  * - nunca deduz produto por valor total (regra após trocas em massa);
  * - item devolvido parcialmente (returnedQty) é descontado da quantidade locada.
  *
- * IMPORTANTE (JSVM): funções auxiliares ficam DENTRO do callback — declarações
- * de topo do PRÓPRIO arquivo de hook não são visíveis dentro dele (só as de
- * arquivos carregados com load(), como lib/rental_counters.js).
+ * POR QUE NÃO USAR load('lib/rental_counters.js'):
+ * o load() da pasta lib/ falha no pod publicado e, quando falha, DERRUBA O
+ * ARQUIVO INTEIRO — a rota nunca é registrada e o frontend recebe 404 "File
+ * not found" (foi exatamente o erro do botão Exportar produtos locados). Por
+ * isso este arquivo é AUTOCONTIDO: as 4 funções necessárias (readRentalItems,
+ * rentalItemId, rentalItemQty, rentalItemReturned) vivem DENTRO do callback —
+ * mesma convenção de return_rental.js e rental_counters_wire.js.
  */
-
-load('lib/rental_counters.js')
 
 routerAdd(
   'GET',
   '/backend/v1/rentals/export-locados',
   (e) => {
     if (!e.auth) return e.unauthorizedError('auth required')
+
+    // ---------------- helpers (dentro do callback — obrigatório no JSVM) ----
+    /** Decodifica array de bytes UTF-8 (gotcha do JSVM para campos JSON). */
+    function rcUtf8Decode(bytes) {
+      var out = ''
+      var i = 0
+      while (i < bytes.length) {
+        var b = bytes[i]
+        if (b < 0x80) {
+          out += String.fromCharCode(b)
+          i++
+        } else if (b >> 5 === 0x6) {
+          out += String.fromCharCode(((b & 0x1f) << 6) | (bytes[i + 1] & 0x3f))
+          i += 2
+        } else if (b >> 4 === 0xe) {
+          out += String.fromCharCode(
+            ((b & 0xf) << 12) | ((bytes[i + 1] & 0x3f) << 4) | (bytes[i + 2] & 0x3f),
+          )
+          i += 3
+        } else {
+          var cp =
+            ((b & 0x7) << 18) |
+            ((bytes[i + 1] & 0x3f) << 12) |
+            ((bytes[i + 2] & 0x3f) << 6) |
+            (bytes[i + 3] & 0x3f)
+          cp -= 0x10000
+          out += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff))
+          i += 4
+        }
+      }
+      return out
+    }
+
+    /** Parse tolerante do campo `items` (string, array, objeto ou byte array). */
+    function rcParseItems(value, depth) {
+      if (depth > 4 || value === null || value === undefined) return null
+      if (typeof value === 'string') {
+        var trimmed = value.trim()
+        if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return []
+        var firstChar = trimmed.charAt(0)
+        if (firstChar === '[' || firstChar === '{' || firstChar === '"') {
+          try {
+            return rcParseItems(JSON.parse(trimmed), depth + 1)
+          } catch (_) {
+            return null
+          }
+        }
+        return null
+      }
+      if (Array.isArray(value)) {
+        // gotcha conhecido: campo JSON vem como BYTE ARRAY ([91,123,34,...])
+        var allBytes = value.length > 0
+        for (var b = 0; b < value.length; b++) {
+          var el = value[b]
+          if (typeof el !== 'number' || el < 0 || el > 255 || el !== Math.floor(el)) {
+            allBytes = false
+            break
+          }
+        }
+        if (allBytes) return rcParseItems(rcUtf8Decode(value), depth + 1)
+        var flat = []
+        for (var n = 0; n < value.length; n++) {
+          var part = rcParseItems(value[n], depth + 1)
+          if (part === null) return null
+          for (var p = 0; p < part.length; p++) flat.push(part[p])
+        }
+        return flat
+      }
+      if (typeof value === 'object') {
+        if (Array.isArray(value.items)) return rcParseItems(value.items, depth + 1)
+        if (Array.isArray(value.itens)) return rcParseItems(value.itens, depth + 1)
+        return [value]
+      }
+      return null
+    }
+
+    /** Lê os itens de um registro de contrato, sem nunca regravá-lo. */
+    function readRentalItems(record) {
+      if (!record) return []
+      var parsed = null
+      try {
+        // getString() primeiro: get() de campo JSON devolve byte array no JSVM
+        parsed = rcParseItems(record.getString('items'), 0)
+        if (!parsed || parsed.length === 0) parsed = rcParseItems(record.get('items'), 0)
+      } catch (_) {
+        parsed = null
+      }
+      return parsed || []
+    }
+
+    /** id do produto no estoque a partir de um item do contrato ('' p/ frete). */
+    function rentalItemId(item) {
+      if (!item || typeof item !== 'object') return ''
+      var id = String(item.itemId || item.item_id || item.inventory_id || item.id || '')
+      if (!id || id === 'freight' || id === 'frete') return ''
+      return id
+    }
+
+    /** quantidade locada do item (padrão 1). */
+    function rentalItemQty(item) {
+      if (!item || typeof item !== 'object') return 1
+      var raw = item.qty
+      if (raw === undefined || raw === null) raw = item.quantity
+      if (raw === undefined || raw === null) raw = item.quantidade
+      var qty = Number(raw !== undefined && raw !== null ? raw : 1)
+      if (isNaN(qty) || qty <= 0) qty = 1
+      return qty
+    }
+
+    /** quantidade já devolvida do item (0 quando o campo não existe). */
+    function rentalItemReturned(item) {
+      if (!item || typeof item !== 'object') return 0
+      var raw = item.returnedQty
+      if (raw === undefined || raw === null) raw = item.returned_qty
+      if (raw === undefined || raw === null) raw = item.returned
+      var qty = Number(raw !== undefined && raw !== null ? raw : 0)
+      if (isNaN(qty) || qty < 0) return 0
+      return qty
+    }
 
     // ------------------------------------------------------------------
     // 1. Estoque: índice por id e por SKU (fonte da verdade do produto)
@@ -129,10 +250,10 @@ routerAdd(
 
       summary.total_contratos_ativos++
 
-      var items = readRentalItems(rental) // decodifica byte-array (lib compartilhada)
+      var items = readRentalItems(rental)
 
       if (items.length === 0) {
-        // A lib não distingue vazio de ilegível: olha a matéria-prima.
+        // Não distingue vazio de ilegível: olha a matéria-prima.
         var rawLen = 0
         try {
           rawLen = String(rental.getString('items') || '').length
