@@ -383,17 +383,114 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     conversationId = conversation.getString('conversation_id')
   } catch (_) {}
 
+  // ─── C1 (rodada 2): TRAVA DE RAJADA ─────────────────────────────────────────
+  // A dedup por último id não segura eventos simultâneos: todos leem o campo
+  // antes de alguém gravar. Caso real LOC-00609: 16 eventos em 8 segundos e
+  // 4 menus iguais às 09h54. Aqui entra fila de ids + agrupamento por janela.
+  const BURST_WINDOW_SEG = 20
+  const BURST_MAX_IDS = 30
+
   // ─── CORREÇÃO: evento repetido e evento velho ───────────────────────────────
   // A Evolution API reentrega o mesmo evento. Sem esta trava, a Helena respondia
   // a MESMA mensagem duas vezes (visto em produção: duas respostas com 50 min de
   // intervalo) e respondia mensagem de ontem à 00h07.
-  if (waMessageId) {
-    var lastProcessedId = conversation ? conversation.getString('last_message_id') || '' : ''
-    if (lastProcessedId && lastProcessedId === waMessageId) {
-      $app
-        .logger()
-        .info('whatsapp_webhook: evento duplicado ignorado', 'phone', phone, 'msg_id', waMessageId)
-      return e.json(200, { success: true, skipped: 'duplicate_event', msg_id: waMessageId })
+  // ─── C1: DEDUP POR FILA DE IDS ──────────────────────────────────────────────
+  // last_message_id guarda uma lista separada por "|" com os últimos ids já
+  // processados. Um id que esteja na fila é descartado mesmo que chegue com
+  // carimbo de hora novo (é o caso do reenvio da Evolution). A comparação com
+  // só o último id falhava justamente em rajada.
+  var idQueue = []
+  if (conversation) {
+    var rawQueue = conversation.getString('last_message_id') || ''
+    if (rawQueue) {
+      var qParts = rawQueue.split('|')
+      for (var qI = 0; qI < qParts.length; qI++) {
+        var qVal = String(qParts[qI]).trim()
+        if (qVal) idQueue.push(qVal)
+      }
+    }
+  }
+
+  if (waMessageId && idQueue.indexOf(waMessageId) !== -1) {
+    $app
+      .logger()
+      .info(
+        'whatsapp_webhook: evento duplicado ignorado (fila)',
+        'phone',
+        phone,
+        'msg_id',
+        waMessageId,
+      )
+    return e.json(200, { success: true, skipped: 'duplicate_event', msg_id: waMessageId })
+  }
+
+  // ─── C2: JANELA DE ATENDIMENTO (8h-20h, America/Sao_Paulo) ──────────────────
+  // Não havia NENHUMA trava de horário: mensagem às 3h recebia resposta às 3h.
+  // Fora da janela a mensagem é registrada, marcada como pendente, e a resposta
+  // espera o expediente.
+  const OPEN_HOUR = 8
+  const CLOSE_HOUR = 20
+  var nowBrtHour = new Date(Date.now() - 3 * 60 * 60 * 1000).getUTCHours()
+  var isOutsideWindow = nowBrtHour < OPEN_HOUR || nowBrtHour >= CLOSE_HOUR
+
+  if (isOutsideWindow) {
+    try {
+      if (conversation) {
+        conversation.set('last_message', messageText)
+        if (waMessageId) {
+          idQueue.push(waMessageId)
+          while (idQueue.length > BURST_MAX_IDS) idQueue.shift()
+          conversation.set('last_message_id', idQueue.join('|'))
+        }
+        conversation.set('pending_reply', true)
+        conversation.set('pending_message', messageText)
+        $app.save(conversation)
+      }
+    } catch (_) {}
+    $app
+      .logger()
+      .info(
+        'whatsapp_webhook: fora da janela de atendimento, resposta adiada',
+        'phone',
+        phone,
+        'hora_brt',
+        nowBrtHour,
+      )
+    return e.json(200, { success: true, skipped: 'outside_business_hours', hora_brt: nowBrtHour })
+  }
+
+  // ─── C1: AGRUPAMENTO DE RAJADA ──────────────────────────────────────────────
+  // Se já respondemos este telefone Há MENOS DE BURST_WINDOW_SEG segundos, não
+  // respondemos agora: a mensagem fica guardada e marcada como pendente. Ao fim
+  // da rajada a resposta usa a mensagem MAIS RECENTE — uma resposta coerente em
+  // vez de quatro menus iguais.
+  if (conversation) {
+    var lastReplyRaw = conversation.getString('last_bot_reply_at') || ''
+    if (lastReplyRaw) {
+      var lastReplyMs = new Date(String(lastReplyRaw).replace(' ', 'T')).getTime()
+      if (lastReplyMs && Date.now() - lastReplyMs < BURST_WINDOW_SEG * 1000) {
+        try {
+          conversation.set('last_message', messageText)
+          conversation.set('pending_message', messageText)
+          conversation.set('pending_reply', true)
+          if (waMessageId) {
+            idQueue.push(waMessageId)
+            while (idQueue.length > BURST_MAX_IDS) idQueue.shift()
+            conversation.set('last_message_id', idQueue.join('|'))
+          }
+          $app.save(conversation)
+        } catch (_) {}
+        $app
+          .logger()
+          .info(
+            'whatsapp_webhook: rajada agrupada, resposta adiada para o fim da rajada',
+            'phone',
+            phone,
+            'segundos_desde_ultima',
+            Math.round((Date.now() - lastReplyMs) / 1000),
+          )
+        return e.json(200, { success: true, skipped: 'burst_grouped' })
+      }
     }
   }
 
@@ -666,7 +763,20 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       var itemId = String(
         rawItem.itemId || rawItem.item_id || rawItem.inventory_id || rawItem.id || '',
       )
-      if (itemId === 'freight' || itemId === '' || itemId === 'undefined') continue
+      // ─── C5: item importado pode vir SÓ com o nome, sem itemId ────────────
+      // Antes o item era descartado e a mensagem saía como "referente ao item
+      // locado", com asterisco órfão e valor "a confirmar com a equipe".
+      var hasNameInItem = !!(
+        rawItem.name ||
+        rawItem.description ||
+        rawItem.descricao ||
+        rawItem.productName ||
+        rawItem.product_name ||
+        rawItem.nome ||
+        rawItem.produto
+      )
+      if (itemId === 'freight' || String(rawItem.itemId) === 'freight') continue
+      if ((itemId === '' || itemId === 'undefined') && !hasNameInItem) continue
       var qty = Number(rawItem.qty || rawItem.quantity || rawItem.quantidade || 1)
       if (!qty || qty < 1) qty = 1
       var returnedQty = Number(rawItem.returnedQty || rawItem.returned_qty || 0)
@@ -722,7 +832,11 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         hasValidPrice = true
       }
 
-      if (!itemName) itemName = 'Item ' + itemId
+      // ─── C5: nunca deixar o nome vazio ───────────────────────────────────
+      // Era o que produzia "item locado" e o "**" órfão no print.
+      if (!itemName || !String(itemName).trim()) {
+        itemName = itemId && itemId !== 'undefined' ? 'Item ' + itemId : 'Item do contrato'
+      }
 
       itemName = String(itemName)
         .replace(/\bEstoque\b/gi, '')
@@ -907,30 +1021,98 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       'vencid',
     ]
 
+    // ─── C3: link, imagem e figurinha NUNCA são intenção de locação ───────────
+    // O conteúdo de um link (título + descrição do produto) casava com
+    // "preço"/"valor"/"loja" e a Helena respondia o aviso pronto de "novas
+    // locações" a um link qualquer. Um link não é pergunta sobre contrato.
+    var looksLikeLink =
+      /https?:\/\//i.test(messageText) ||
+      /www\./i.test(messageText) ||
+      messageKind === 'imagem' ||
+      messageKind === 'outro'
+
     var hasRentalIntent = false
-    for (var kIdx = 0; kIdx < rentalKeywords.length; kIdx++) {
-      if (rawTextClean.indexOf(rentalKeywords[kIdx]) !== -1) {
-        hasRentalIntent = true
-        break
+    if (!looksLikeLink) {
+      for (var kIdx = 0; kIdx < rentalKeywords.length; kIdx++) {
+        if (rawTextClean.indexOf(rentalKeywords[kIdx]) !== -1) {
+          hasRentalIntent = true
+          break
+        }
       }
     }
 
     if (!hasRentalIntent) {
-      // Trivial greeting, out-of-scope conversation, or generic message.
-      // HELENA STAYS IN SILENCE (zero messages sent).
+      // ─── C3: em vez de SILÊNCIO, pedir para repetir ────────────────────────
+      // Antes: mensagem sem palavra-chave = zero resposta, cliente no vácuo.
+      // Agora: pede para repetir, no máximo uma vez a cada 6 horas por conversa.
       $app
         .logger()
         .info(
-          'whatsapp_webhook: helena silent (non-eligible client with trivial/out-of-scope message)',
+          'whatsapp_webhook: mensagem nao reconhecida, pedindo para repetir',
           'phone',
           phone,
           'message_preview',
           messageText.substring(0, 100),
+          'eh_link',
+          looksLikeLink,
         )
+
+      var canAskAgain = true
+      try {
+        if (conversation) {
+          var lastAskRaw = conversation.getString('last_clarify_at') || ''
+          if (lastAskRaw) {
+            var lastAskMs = new Date(String(lastAskRaw).replace(' ', 'T')).getTime()
+            if (lastAskMs && Date.now() - lastAskMs < 6 * 60 * 60 * 1000) {
+              canAskAgain = false
+            }
+          }
+        }
+      } catch (_) {}
+
+      if (canAskAgain) {
+        var clarifyText = looksLikeLink
+          ? 'Recebi o arquivo, mas não consegui entender o que você precisa. Pode me escrever por favor? Se for sobre o seu contrato de locação (renovação, devolução ou valor), me diga qual é o contrato que eu já te ajudo. 💙'
+          : 'Desculpe, não entendi. Pode repetir por favor? 💙\n\n' +
+            'Se for sobre o seu contrato de locação, me diz se você quer *renovar* ou *devolver*.'
+
+        try {
+          var apiUrlC = $secrets.get('EVOLUTION_API_URL') || ''
+          var apiKeyC = $secrets.get('EVOLUTION_API_KEY') || ''
+          var instC = receivedInstance || $secrets.get('EVOLUTION_INSTANCE') || ''
+          if (apiUrlC && apiKeyC && instC) {
+            $http.send({
+              url: apiUrlC.replace(/\/+$/, '') + '/message/sendText/' + instC,
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', apikey: apiKeyC },
+              body: JSON.stringify({ number: phone, text: clarifyText }),
+              timeout: 30,
+            })
+          }
+        } catch (errClarify) {
+          $app
+            .logger()
+            .error(
+              'whatsapp_webhook: falha ao pedir repeticao',
+              'err',
+              errClarify.message || String(errClarify),
+            )
+        }
+
+        try {
+          if (conversation) {
+            conversation.set('last_clarify_at', new Date().toISOString())
+            conversation.set('last_bot_reply_at', new Date().toISOString())
+            conversation.set('pending_reply', false)
+            $app.save(conversation)
+          }
+        } catch (_) {}
+      }
 
       return e.json(200, {
         success: true,
-        skipped: 'helena_silent_out_of_scope',
+        skipped: canAskAgain ? 'asked_to_repeat' : 'clarify_cooldown',
+        eh_link: looksLikeLink,
       })
     }
 
@@ -1100,7 +1282,7 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
 
     if (!apiUrl || !apiKey || !instanceToSend) return false
 
-    var cleanBase64 = String(base64Data || '').replace(/^data:image\/[a-z]+;base64,/, '')
+    var cleanBase64 = String(base64Data || '').replace(/^,/, '')
     var baseUrl = apiUrl.replace(/\/+$/, '')
     var endpoint = baseUrl + '/message/sendMedia/' + instanceToSend
 
@@ -1730,6 +1912,36 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     return e.json(200, { success: true, action: 'short_ack_reply' })
   }
 
+  // ─── C1: marca a resposta e limpa o pendente ANTES de chamar a IA ────────
+  // Sem guardar quando respondemos, a trava de rajada nao tem em que se apoiar.
+  try {
+    var convMark = conversation
+    if (!convMark) {
+      var colMark = $app.findCollectionByNameOrId('whatsapp_conversations')
+      convMark = new Record(colMark)
+      convMark.set('phone', phone)
+    }
+    convMark.set('last_bot_reply_at', new Date().toISOString())
+    convMark.set('last_message', messageText)
+    convMark.set('pending_reply', false)
+    convMark.set('pending_message', '')
+    if (waMessageId) {
+      idQueue.push(waMessageId)
+      while (idQueue.length > BURST_MAX_IDS) idQueue.shift()
+      convMark.set('last_message_id', idQueue.join('|'))
+    }
+    $app.save(convMark)
+    if (!conversation) conversation = convMark
+  } catch (errMark) {
+    $app
+      .logger()
+      .error(
+        'whatsapp_webhook: falha ao marcar resposta enviada',
+        'err',
+        errMark.message || String(errMark),
+      )
+  }
+
   var promptWithContext =
     '[SISTEMA - CONTEXTO DO CONTRATO DO CLIENTE]\n' +
     'Cliente: ' +
@@ -1764,6 +1976,18 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         '- NUNCA REPITA o menu padrão ("Como deseja proceder?", "1 Renovar / 2 Devolução"). NUNCA re-cobre o cliente nesta resposta!\n\n'
       : '') +
     'REGRA CRÍTICA DE PAGAMENTO: NUNCA forneça chave PIX estática (CNPJ, telefone) e NUNCA informe valor R$ 0,00. O PIX é 100% dinâmico gerado pelo Mercado Pago.\n\n' +
+    // ─── C4: hora de Brasília no contexto (saudação correta) ─────────────────
+    // Antes a IA não recebia hora nenhuma e escrevia "Boa tarde" às 09h54.
+    'HORÁRIO ATUAL EM BRASÍLIA: ' +
+    (function () {
+      var brt = new Date(Date.now() - 3 * 60 * 60 * 1000)
+      var hh = String(brt.getUTCHours()).padStart(2, '0')
+      var mi = String(brt.getUTCMinutes()).padStart(2, '0')
+      var hB = brt.getUTCHours()
+      var saud = hB < 12 ? 'Bom dia' : hB < 18 ? 'Boa tarde' : 'Boa noite'
+      return hh + ':' + mi + ' (a saudação correta agora é "' + saud + '", nunca outra)'
+    })() +
+    '\n' +
     'Mensagem recebida do cliente:\n"' +
     messageText +
     '"'
