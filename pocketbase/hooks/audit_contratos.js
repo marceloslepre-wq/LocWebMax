@@ -182,10 +182,40 @@ routerAdd('GET', '/backend/v1/audit-contratos', (e) => {
       }
     }
 
+    // ---------- pagamentos e sinais de contrato parado ----------
+    var pagamentos = []
+    var pagosPorContrato = {}
+    try {
+      var pgs = app.findRecordsByFilter('payments', '', '', 0, 0)
+      var pagoPorContrato = {}
+      for (var pg = 0; pg < pgs.length; pg++) {
+        var rid = ''
+        try {
+          rid = pgs[pg].getString('rental_id') || ''
+        } catch (_) {}
+        if (rid) pagoPorContrato[rid] = (pagoPorContrato[rid] || 0) + 1
+      }
+      for (var ii = 0; ii < detalhe.length; ii++) {
+        detalhe[ii].pagamentos = pagoPorContrato[detalhe[ii].id] || 0
+      }
+    } catch (err) {
+      pagamentos.push('payments: ' + (err && err.message))
+    }
+
+    // contratos do item com prazo vencido mas ainda Ativo
+    var vencidosDoItem = []
+    for (var vv = 0; vv < detalhe.length; vv++) {
+      if (detalhe[vv].previsto && detalhe[vv].previsto < hoje && !detalhe[vv].devolvidoEm) {
+        vencidosDoItem.push(detalhe[vv])
+      }
+    }
+
     return e.json(200, {
       somenteLeitura: true,
       geradoEm: new Date().toISOString(),
       hoje: hoje,
+      avisosPagamento: pagamentos,
+      doItemPrazoVencido: vencidosDoItem,
       resumoGeral: {
         totalContratos: all.length,
         ativosOuAtrasados: ativos,
