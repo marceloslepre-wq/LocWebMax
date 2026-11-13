@@ -344,6 +344,23 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         return e.json(200, { success: true, skipped: 'audio_notice_cooldown' })
       }
 
+      // TRAVA EM MEMÓRIA (o caso dos "três disparos simultâneos" de 13/11).
+      // A checagem no banco não segura eventos que chegam no mesmo instante: os
+      // três leem o campo antes de qualquer um gravar, e os três passam. Fica
+      // DEPOIS das guardas de evento antigo e de id repetido, para não marcar o
+      // telefone como "já avisado" num evento que nem ia gerar aviso.
+      if (typeof globalThis.__audioNoticeAt === 'undefined') {
+        globalThis.__audioNoticeAt = {}
+      }
+      var agoraAudio = Date.now()
+      var ultimoAudioMs = globalThis.__audioNoticeAt[phone] || 0
+      if (ultimoAudioMs && agoraAudio - ultimoAudioMs < AUDIO_NOTICE_COOLDOWN_MIN * 60 * 1000) {
+        audioJaAvisado = true
+      } else {
+        // Marca ANTES de enviar: se dois eventos entrarem juntos, só um envia.
+        globalThis.__audioNoticeAt[phone] = agoraAudio
+      }
+
       if (!audioPaused) {
         var audioNotice =
           'Recebi seu áudio! 🎧 Para eu conseguir te ajudar com o contrato, pode me responder por escrito? ' +
