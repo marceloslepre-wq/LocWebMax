@@ -268,6 +268,82 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         }
       }
 
+      // ─── C6 (rodada 4): TRAVA DO AVISO DE AÚDIO ─────────────────────────────
+      // Este bloco roda ANTES da deduplicação e da trava de rajada, que só
+      // existem mais abaixo no arquivo (para mensagens de texto). Resultado: cada
+      // reentrega da Evolution virava um aviso novo ao cliente. Em 13/11/2026 o
+      // mesmo áudio gerou TRÊS "Recebi seu áudio!" no WhatsApp do cliente.
+      // Aqui: barra id repetido e limita a UM aviso por telefone a cada 3 horas.
+      var AUDIO_NOTICE_COOLDOWN_MIN = 180
+      var audioJaAvisado = false
+
+      // Evento antigo reentregue pela Evolution não gera aviso: responder um
+      // áudio de ontem hoje é pior do que não responder.
+      if (isStaleEvent) {
+        $app
+          .logger()
+          .info('whatsapp_webhook: audio antigo ignorado', 'phone', phone, 'age_s', eventAgeSeconds)
+        return e.json(200, { success: true, skipped: 'stale_audio', age_seconds: eventAgeSeconds })
+      }
+
+      if (waMessageId) {
+        var filaAud = ''
+        try {
+          filaAud = conversationAudio ? conversationAudio.getString('last_message_id') || '' : ''
+        } catch (_) {}
+        if (filaAud && filaAud.indexOf(waMessageId) !== -1) {
+          $app
+            .logger()
+            .info(
+              'whatsapp_webhook: audio duplicado ignorado',
+              'phone',
+              phone,
+              'msg_id',
+              waMessageId,
+            )
+          return e.json(200, { success: true, skipped: 'duplicate_audio', msg_id: waMessageId })
+        }
+      }
+
+      if (conversationAudio) {
+        try {
+          var ultimoAvisoRaw = conversationAudio.getString('last_bot_reply_at') || ''
+          if (ultimoAvisoRaw) {
+            var ultimoAvisoMs = new Date(String(ultimoAvisoRaw).replace(' ', 'T')).getTime()
+            if (
+              ultimoAvisoMs &&
+              Date.now() - ultimoAvisoMs < AUDIO_NOTICE_COOLDOWN_MIN * 60 * 1000
+            ) {
+              audioJaAvisado = true
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (audioJaAvisado) {
+        $app
+          .logger()
+          .info(
+            'whatsapp_webhook: aviso de audio suprimido (ja avisado recentemente)',
+            'phone',
+            phone,
+          )
+        // Guarda o id e a pendência mesmo sem enviar, para a loja ver o caso.
+        try {
+          if (conversationAudio) {
+            var filaAud2 = conversationAudio.getString('last_message_id') || ''
+            var idsAud = filaAud2 ? filaAud2.split('|') : []
+            if (waMessageId && idsAud.indexOf(waMessageId) === -1) idsAud.push(waMessageId)
+            while (idsAud.length > 30) idsAud.shift()
+            conversationAudio.set('last_message_id', idsAud.join('|'))
+            // NÃO marca pending_reply: o vigia reenviaria o áudio como texto.
+            // O caso já vai para helena_pendencias abaixo, que é onde a loja vê.
+            $app.save(conversationAudio)
+          }
+        } catch (_) {}
+        return e.json(200, { success: true, skipped: 'audio_notice_cooldown' })
+      }
+
       if (!audioPaused) {
         var audioNotice =
           'Recebi seu áudio! 🎧 Para eu conseguir te ajudar com o contrato, pode me responder por escrito? ' +
@@ -355,6 +431,21 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
             errPendA.message || String(errPendA),
           )
       }
+
+      // Marca o envio: alimenta a trava acima e a de rajada das próximas msgs.
+      try {
+        var convAudFinal =
+          conversationAudio || $app.findFirstRecordByData('whatsapp_conversations', 'phone', phone)
+        convAudFinal.set('last_bot_reply_at', new Date().toISOString())
+        if (waMessageId) {
+          var filaAud3 = convAudFinal.getString('last_message_id') || ''
+          var idsAud3 = filaAud3 ? filaAud3.split('|') : []
+          if (idsAud3.indexOf(waMessageId) === -1) idsAud3.push(waMessageId)
+          while (idsAud3.length > 30) idsAud3.shift()
+          convAudFinal.set('last_message_id', idsAud3.join('|'))
+        }
+        $app.save(convAudFinal)
+      } catch (_) {}
 
       return e.json(200, { success: true, skipped: 'audio_notice_sent' })
     }
