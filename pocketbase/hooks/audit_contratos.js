@@ -195,8 +195,22 @@ routerAdd('GET', '/backend/v1/audit-contratos', (e) => {
         } catch (_) {}
         if (rid) pagoPorContrato[rid] = (pagoPorContrato[rid] || 0) + 1
       }
+      var statusPg = {}
+      for (var pg2 = 0; pg2 < pgs.length; pg2++) {
+        var rid2 = ''
+        try {
+          rid2 = pgs[pg2].getString('rental_id') || ''
+        } catch (_) {}
+        if (!rid2) continue
+        if (!statusPg[rid2]) statusPg[rid2] = []
+        statusPg[rid2].push({
+          status: pgs[pg2].getString('status'),
+          valor: pgs[pg2].getFloat('amount'),
+        })
+      }
       for (var ii = 0; ii < detalhe.length; ii++) {
         detalhe[ii].pagamentos = pagoPorContrato[detalhe[ii].id] || 0
+        detalhe[ii].listaPagamentos = statusPg[detalhe[ii].id] || []
       }
     } catch (err) {
       pagamentos.push('payments: ' + (err && err.message))
