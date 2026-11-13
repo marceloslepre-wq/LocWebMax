@@ -2,6 +2,30 @@ import { ClientResponseError } from 'pocketbase'
 
 export type FieldErrors = Record<string, string>
 
+/**
+ * Detecta erro de rede (sem resposta HTTP do backend): falha de conexão,
+ * DNS, CORS ou timeout. Usado pelo Index e por telas que degradam graciosamente
+ * quando o backend não responde. Coberto em src/lib/pocketbase/index.ts.
+ */
+export function isNetworkError(error: unknown): boolean {
+  if (error instanceof ClientResponseError) {
+    if (error.status === 0) return true
+    const original = error.originalError as unknown
+    if (
+      original instanceof Error &&
+      (original.name === 'TypeError' || original.name === 'AbortError')
+    ) {
+      return true
+    }
+    const msg = String(error.message || '').toLowerCase()
+    return msg.includes('network') || msg.includes('failed to fetch')
+  }
+  if (error instanceof Error) {
+    return error.name === 'TypeError' || error.name === 'AbortError'
+  }
+  return false
+}
+
 export function extractFieldErrors(error: unknown): FieldErrors {
   if (!(error instanceof ClientResponseError)) return {}
   const data = error.response?.data
@@ -18,33 +42,6 @@ export function extractFieldErrors(error: unknown): FieldErrors {
     }
   }
   return errors
-}
-
-/**
- * Detecta falha de rede (sem resposta HTTP do servidor): "Failed to fetch" do
- * browser, status 0 do PocketBase ou erro de rede no originalError.
- * Usado pela tela de login (Index.tsx) para mostrar aviso de conexão com
- * botão "Tentar novamente". NÃO remover este export — já derrubou 3 builds.
- */
-export function isNetworkError(error: unknown): boolean {
-  if (error instanceof ClientResponseError) {
-    if (error.status === 0) return true
-    const original = error.originalError as unknown
-    if (original instanceof TypeError) return true
-    const msg = String(
-      (original instanceof Error && original.message) || error.message || '',
-    ).toLowerCase()
-    return (
-      msg.includes('failed to fetch') ||
-      msg.includes('fetch failed') ||
-      msg.includes('networkerror') ||
-      msg.includes('network error') ||
-      msg.includes('load failed') ||
-      msg.includes('err_name')
-    )
-  }
-  // fetch() lança TypeError("Failed to fetch") quando não há resposta HTTP
-  return error instanceof TypeError
 }
 
 export function getErrorMessage(error: unknown): string {

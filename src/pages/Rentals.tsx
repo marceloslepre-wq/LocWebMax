@@ -50,6 +50,7 @@ import { ExchangeDialog } from '@/components/rentals/ExchangeDialog'
 import { rentalsService } from '@/services/rentals'
 import { ImportRentalsDialog } from '@/components/rentals/ImportRentalsDialog'
 import { BatchRentalCorrectionDialog } from '@/components/rentals/BatchRentalCorrectionDialog'
+import { ExportLocadosButton } from '@/components/rentals/ExportLocadosButton'
 import { calculateLateFee } from '@/lib/late-fee'
 import { useAuth } from '@/hooks/use-auth'
 
@@ -486,6 +487,7 @@ export default function Rentals() {
           )}
           <ImportRentalsDialog />
           <RentalsReportDialog />
+          <ExportLocadosButton />
           <CreateRentalDialog
             onCreated={(rental) => {
               setReceiptRental(rental)
