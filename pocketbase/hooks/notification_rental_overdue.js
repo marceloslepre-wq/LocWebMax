@@ -5,6 +5,18 @@ onRecordAfterUpdateSuccess((e) => {
 
   if (newStatus !== 'Atrasado' || oldStatus === 'Atrasado') return e.next()
 
+  // CORREÇÃO (disparo em massa): reclassificação em LOTE não avisa o cliente.
+  // O update_overdue muda dezenas de contratos de uma vez; sem esta trava, cada
+  // mudança virava um WhatsApp e o cliente recebia a mesma mensagem em massa.
+  // O aviso de atraso passa a ser responsabilidade da rotina diária da Helena,
+  // que controla estágio e não repete. Aqui só notifica mudança feita na tela.
+  if (typeof globalThis !== 'undefined' && globalThis.__bulkStatusUpdate) {
+    $app
+      .logger()
+      .info('notification_rental_overdue: ignorado (reclassificacao em lote)', 'rental', rentalId)
+    return e.next()
+  }
+
   var rental = null
   try {
     rental = $app.findRecordById('rentals', rentalId)

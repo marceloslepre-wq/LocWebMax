@@ -424,39 +424,30 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     return e.json(200, { success: true, skipped: 'duplicate_event', msg_id: waMessageId })
   }
 
-  // ─── C2: JANELA DE ATENDIMENTO (8h-20h, America/Sao_Paulo) ──────────────────
-  // Não havia NENHUMA trava de horário: mensagem às 3h recebia resposta às 3h.
-  // Fora da janela a mensagem é registrada, marcada como pendente, e a resposta
-  // espera o expediente.
+  // ─── C2: JANELA DE HORÁRIO (8h-20h, America/Sao_Paulo) ──────────────────────
+  // O problema nunca foi o cliente escrever à noite — foi a Helena responder
+  // mensagem de ontem às 3h e disparar em massa. Para quem aluga cama hospitalar,
+  // alguém escrevendo às 22h precisa de resposta: equipamento não espera o
+  // expediente. Então:
+  //   - mensagem do CLIENTE: respondida a qualquer hora;
+  //   - mensagem PROATIVA (cobrança, aviso de vencimento): só em horário
+  //     comercial, e é o cron de cobrança que controla isso, não este hook.
+  // Fora do horário, a resposta sai em tom de plantão e sem cobrança.
   const OPEN_HOUR = 8
   const CLOSE_HOUR = 20
   var nowBrtHour = new Date(Date.now() - 3 * 60 * 60 * 1000).getUTCHours()
-  var isOutsideWindow = nowBrtHour < OPEN_HOUR || nowBrtHour >= CLOSE_HOUR
+  var isQuietHours = nowBrtHour < OPEN_HOUR || nowBrtHour >= CLOSE_HOUR
 
-  if (isOutsideWindow) {
-    try {
-      if (conversation) {
-        conversation.set('last_message', messageText)
-        if (waMessageId) {
-          idQueue.push(waMessageId)
-          while (idQueue.length > BURST_MAX_IDS) idQueue.shift()
-          conversation.set('last_message_id', idQueue.join('|'))
-        }
-        conversation.set('pending_reply', true)
-        conversation.set('pending_message', messageText)
-        $app.save(conversation)
-      }
-    } catch (_) {}
+  if (isQuietHours) {
     $app
       .logger()
       .info(
-        'whatsapp_webhook: fora da janela de atendimento, resposta adiada',
+        'whatsapp_webhook: fora do horario comercial, respondendo em modo plantao',
         'phone',
         phone,
         'hora_brt',
         nowBrtHour,
       )
-    return e.json(200, { success: true, skipped: 'outside_business_hours', hora_brt: nowBrtHour })
   }
 
   // ─── C1: AGRUPAMENTO DE RAJADA ──────────────────────────────────────────────
@@ -1976,6 +1967,13 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         '- NUNCA REPITA o menu padrão ("Como deseja proceder?", "1 Renovar / 2 Devolução"). NUNCA re-cobre o cliente nesta resposta!\n\n'
       : '') +
     'REGRA CRÍTICA DE PAGAMENTO: NUNCA forneça chave PIX estática (CNPJ, telefone) e NUNCA informe valor R$ 0,00. O PIX é 100% dinâmico gerado pelo Mercado Pago.\n\n' +
+    (isQuietHours
+      ? 'MODO PLANTÃO (fora do horário comercial, 8h-20h):\n' +
+        '- Responda o que o cliente precisa agora, de forma direta e acolhedora.\n' +
+        '- NUNCA cobre, NUNCA mencione vencimento em atraso e NUNCA ofereça menu de cobrança.\n' +
+        '- Se precisar de ação da loja (retirada, troca, negociação), diga que a equipe retorna no próximo horário comercial.\n' +
+        '- Não prometa prazo de entrega ou de retorno que dependa de outra pessoa.\n\n'
+      : '') +
     // ─── C4: hora de Brasília no contexto (saudação correta) ─────────────────
     // Antes a IA não recebia hora nenhuma e escrevia "Boa tarde" às 09h54.
     'HORÁRIO ATUAL EM BRASÍLIA: ' +

@@ -39,6 +39,14 @@ routerAdd(
     globalThis.__isUpdateOverdueRunning = true
     globalThis.__lastUpdateOverdueRunTime = nowMs
 
+    // CORREÇÃO (disparo em massa): este endpoint reclassifica em LOTE todos os
+    // contratos vencidos para "Atrasado". Cada $app.save abaixo dispara o hook
+    // notification_rental_overdue, que envia WhatsApp — e o cliente recebia
+    // "Prezado cliente..." sem ninguém ter pedido (12/11: 10h15, 10h16, 10h21).
+    // Enquanto este sinalizador estiver ligado, o hook de notificação ignora a
+    // mudança. Notificação de mudança individual, feita pela tela, continua.
+    globalThis.__bulkStatusUpdate = true
+
     var today = new Date().toISOString().split('T')[0]
     var updatedOverdue = 0
     var updatedActive = 0
@@ -125,6 +133,8 @@ routerAdd(
       $app.logger().error('overdue bidirectional update failed', 'err', err.message || String(err))
     } finally {
       globalThis.__isUpdateOverdueRunning = false
+      // Desliga o modo lote mesmo se algo falhar no meio.
+      globalThis.__bulkStatusUpdate = false
     }
 
     return e.json(200, {
