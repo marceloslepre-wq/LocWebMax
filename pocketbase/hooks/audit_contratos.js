@@ -242,6 +242,29 @@ routerAdd('GET', '/backend/v1/audit-contratos', (e) => {
       semCliente: semCliente.slice(0, 20),
       semItens: semItens.slice(0, 20),
       totalZero: totalZero.slice(0, 20),
+      contratosPorMesLocal: (function () {
+        var g = {}
+        var nl = {}
+        try {
+          var ls = app.findRecordsByFilter('locais', '', '', 0, 0)
+          for (var z = 0; z < ls.length; z++) nl[ls[z].id] = ls[z].getString('nome')
+        } catch (_) {}
+        for (var q = 0; q < all.length; q++) {
+          var rq = all[q]
+          var sq = String(rq.getString('status') || '').toLowerCase()
+          if (sq !== 'ativo' && sq !== 'atrasado') continue
+          var crq = soData(rq.getString('created'))
+          var mes = crq ? crq.slice(0, 7) : '(sem data)'
+          var lq = ''
+          try {
+            lq = rq.getString('local_retirada_id') || ''
+          } catch (_) {}
+          var nomeL = nl[lq] || lq || '(sem local)'
+          if (!g[mes]) g[mes] = {}
+          g[mes][nomeL] = (g[mes][nomeL] || 0) + 1
+        }
+        return g
+      })(),
       itemAnalisado: alvoItem,
       contratosDoItem: detalhe,
       possiveisDuplicados: duplicados,
