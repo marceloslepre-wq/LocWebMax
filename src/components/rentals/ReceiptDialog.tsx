@@ -15,11 +15,12 @@ import {
   sumItemsTotal,
   normalizeRentalItem,
   type NormalizedRentalItem,
-  getDeliveryAddressText,
+  getRentalLocationAddressText,
 } from '@/lib/rental-items'
 import { Printer, MessageCircle, Mail, Link as LinkIcon } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { useMemo } from 'react'
+import { useLocations } from '@/hooks/use-locations'
 import logoImg from '@/assets/logo_hospital_home_final-f2434.jpg'
 
 interface ReceiptDialogProps {
@@ -49,10 +50,28 @@ export function ReceiptDialog({
   renewalInfo,
   returnedItems,
 }: ReceiptDialogProps) {
-  const { customers, inventory, settings } = useMainStore()
+  const { customers, inventory, settings, rentals } = useMainStore()
   const { toast } = useToast()
 
   const customer = rental ? customers.find((c) => c.id === rental.customerId) : null
+
+  const { locations: locaisList } = useLocations()
+
+  // Locais de retirada/devolução do contrato. Fonte da verdade: a locação
+  // gravada no banco (local_retirada_id / local_devolucao_id) — o registro
+  // passado via props pode não ter os campos de local; sem isso o recibo de
+  // devolução cairia no endereço residencial do cliente por engano.
+  const dbRental = useMemo(() => {
+    if (!rental) return null
+    const stored = rentals.find((r) => r.id === rental.id)
+    return stored ? ({ ...stored, ...rental } as Rental) : rental
+  }, [rental, rentals])
+
+  const receiptLocationText = useMemo(() => {
+    if (!dbRental) return 'Não informado'
+    const kind = type === 'return' || type === 'late_fee' ? 'return' : 'pickup'
+    return getRentalLocationAddressText(dbRental, locaisList, customer, kind)
+  }, [dbRental, locaisList, customer, type])
 
   const formatDateStr = (dateStr?: string | null) => {
     if (!dateStr) return '-'
@@ -107,7 +126,7 @@ export function ReceiptDialog({
     if (customerPhone) {
       text += `*Celular:* ${customerPhone}\n`
     }
-    text += `*Endereço de Entrega/Retirada:* ${getDeliveryAddressText(customer)}\n`
+    text += `*Endereço de Entrega/Retirada:* ${receiptLocationText}\n`
     text += `*Contrato:* ${rental.contractNumber || rental.id}\n\n`
 
     if (type === 'late_fee' && renewalInfo) {
@@ -363,7 +382,7 @@ export function ReceiptDialog({
               )}
               <div className="col-span-2">
                 <span className="font-semibold">Endereço de Entrega/Retirada:</span>{' '}
-                {getDeliveryAddressText(customer)}
+                {receiptLocationText}
               </div>
               <div className="col-span-2 pt-1 border-t mt-1">
                 <span className="font-semibold">Forma de Pagamento:</span>{' '}

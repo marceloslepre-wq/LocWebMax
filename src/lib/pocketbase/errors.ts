@@ -20,13 +20,17 @@ export function extractFieldErrors(error: unknown): FieldErrors {
   return errors
 }
 
-/** Detecta erro de rede (sem resposta HTTP) — restaurado por quebrar o build. */
+/**
+ * Detecta falha de rede (servidor inacessível). ClientResponseError com
+ * status === 0 é o formato do PocketBase quando a requisição nem chega a
+ * responder; originalError carrega o erro de rede subjacente (fetch/XHR).
+ */
 export function isNetworkError(error: unknown): boolean {
-  if (error instanceof ClientResponseError) return error.status === 0
-  if (error && typeof error === 'object' && 'originalError' in error) {
-    return isNetworkError((error as { originalError: unknown }).originalError)
-  }
-  return false
+  if (!(error instanceof ClientResponseError)) return false
+  if (error.status === 0) return true
+  const original = error.originalError as { message?: string } | undefined
+  const msg = original?.message || ''
+  return /failed to fetch|networkerror|load failed|network request failed/i.test(msg)
 }
 
 export function getErrorMessage(error: unknown): string {

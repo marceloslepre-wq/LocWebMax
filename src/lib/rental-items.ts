@@ -406,3 +406,69 @@ export function getDeliveryAddressText(customer?: any | null): string {
 
   return parts.length > 0 ? parts.join(', ') : 'Não informado'
 }
+
+/**
+ * Endereço exibido nos recibos (retirada e devolução).
+ * Fonte da verdade: o local gravado no contrato (local_retirada_id /
+ * local_devolucao_id / pickup_location_id), NUNCA o endereço residencial do
+ * cliente — exceto quando o local selecionado é a opção de entrega no endereço
+ * do cliente (pickup_location_id = 'delivery' ou local com nome equivalente).
+ * Somente leitura: não altera nenhum dado gravado.
+ */
+export function formatLocationAddressText(
+  loc?: { nome?: string; endereco?: string } | null,
+): string {
+  const nome = (loc?.nome || '').trim()
+  const endereco = (loc?.endereco || '').trim()
+  if (nome && endereco) return `${nome} - ${endereco}`
+  return nome || endereco || 'Não informado'
+}
+
+const CLIENT_ADDRESS_LOCATION_RE = /endere(ç|c)o do cliente|resid(ê|e)ncia do cliente/i
+
+export function getRentalLocationAddressText(
+  rental: any | null | undefined,
+  locations: { id: string; nome?: string; endereco?: string }[] | null | undefined,
+  customer: any | null | undefined,
+  kind: 'pickup' | 'return',
+): string {
+  const clientAddress = getDeliveryAddressText(customer)
+
+  const pickupFlag = String(rental?.pickupLocationId || rental?.pickup_location_id || '').trim()
+  const pickupId = String(rental?.localRetiradaId || rental?.local_retirada_id || '').trim()
+  const returnId = String(rental?.localDevolucaoId || rental?.local_devolucao_id || '').trim()
+
+  const isClientAddressValue = (v: string) =>
+    v === 'delivery' || v === 'cliente' || CLIENT_ADDRESS_LOCATION_RE.test(v)
+
+  const findLoc = (id: string) => (locations || []).find((l) => l.id === id)
+
+  if (kind === 'return' && returnId) {
+    // Recibo de devolução: prioriza o local de devolução gravado no contrato
+    // (pode ser diferente do local de retirada).
+    const treatAsClient =
+      isClientAddressValue(returnId) || (isClientAddressValue(pickupFlag) && returnId === pickupId)
+    if (treatAsClient) return clientAddress
+    const loc = findLoc(returnId)
+    if (loc) {
+      return isClientAddressValue(loc.nome || '') ? clientAddress : formatLocationAddressText(loc)
+    }
+    // Local devolvido não encontrado no cadastro → mantém comportamento antigo.
+    return clientAddress
+  }
+
+  // Recibo de retirada (ou devolução sem local próprio gravado): usa o local
+  // de retirada do contrato.
+  if (isClientAddressValue(pickupFlag) || isClientAddressValue(pickupId)) {
+    return clientAddress
+  }
+  if (pickupId) {
+    const loc = findLoc(pickupId)
+    if (loc) {
+      return isClientAddressValue(loc.nome || '') ? clientAddress : formatLocationAddressText(loc)
+    }
+    return clientAddress
+  }
+  // Contratos antigos sem local gravado: mantém o endereço do cliente.
+  return clientAddress
+}
