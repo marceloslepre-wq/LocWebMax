@@ -119,23 +119,29 @@ export default function Settings() {
   const [salesReceiptVarSearch, setSalesReceiptVarSearch] = useState('')
   const [showSalesReceiptVarList, setShowSalesReceiptVarList] = useState(true)
 
+  // Regra de assinaturas (decisão do usuário): string vazia salva no banco é
+  // "apagado de propósito" e deve permanecer vazia; fallback padrão só quando
+  // o campo nunca foi configurado (undefined/null).
+  const signatureValue = (value: string | undefined | null, fallback: string): string =>
+    value !== undefined && value !== null ? value : fallback
+
   const [landlordRepName, setLandlordRepName] = useState(
-    settings?.landlordRepName || 'Marcelo da Silveira Lepre',
+    signatureValue(settings?.landlordRepName, 'Marcelo da Silveira Lepre'),
   )
   const [landlordRepDocument, setLandlordRepDocument] = useState(
-    settings?.landlordRepDocument || '022.862.567-05',
+    signatureValue(settings?.landlordRepDocument, '022.862.567-05'),
   )
   const [witness1Name, setWitness1Name] = useState(
-    settings?.witness1Name || 'Cristiani Aparecida de Fretais Pereira Gomes',
+    signatureValue(settings?.witness1Name, 'Cristiani Aparecida de Fretais Pereira Gomes'),
   )
   const [witness1Document, setWitness1Document] = useState(
-    settings?.witness1Document || '106.522.497-44',
+    signatureValue(settings?.witness1Document, '106.522.497-44'),
   )
   const [witness2Name, setWitness2Name] = useState(
-    settings?.witness2Name || 'Tatiane Cardoso Rodrigues',
+    signatureValue(settings?.witness2Name, 'Tatiane Cardoso Rodrigues'),
   )
   const [witness2Document, setWitness2Document] = useState(
-    settings?.witness2Document || '141.122.117-67',
+    signatureValue(settings?.witness2Document, '141.122.117-67'),
   )
   const [signaturesSaving, setSignaturesSaving] = useState(false)
 

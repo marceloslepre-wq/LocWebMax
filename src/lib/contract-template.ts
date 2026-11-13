@@ -623,31 +623,49 @@ export function renderContractHtml(params: RenderContractParams): string {
   html = html.replace(/{{tabelaValorVenda}}/g, tabelaValorVenda)
   html = html.replace(/{{frete}}/g, formatBRL(freightValue))
   html = html.replace(/{{codigoRastreamento}}/g, params.trackingCode || 'Não informado')
+  // Regra de assinaturas (decisão do usuário): string vazia salva no banco é
+  // "apagado de propósito" e deve sair EM BRANCO no contrato; o fallback padrão
+  // só vale quando o campo nunca foi configurado (undefined/null).
+  const signatureValue = (camel: any, snake: any, fallback: string): string => {
+    if (camel !== undefined && camel !== null) return String(camel)
+    if (snake !== undefined && snake !== null) return String(snake)
+    return fallback
+  }
   html = html.replace(
     /{{landlordRepName}}/g,
-    settings?.landlordRepName || settings?.landlord_rep_name || 'Marcelo da Silveira Lepre',
+    signatureValue(
+      settings?.landlordRepName,
+      settings?.landlord_rep_name,
+      'Marcelo da Silveira Lepre',
+    ),
   )
   html = html.replace(
     /{{landlordRepDocument}}/g,
-    settings?.landlordRepDocument || settings?.landlord_rep_document || '022.862.567-05',
+    signatureValue(
+      settings?.landlordRepDocument,
+      settings?.landlord_rep_document,
+      '022.862.567-05',
+    ),
   )
   html = html.replace(
     /{{witness1Name}}/g,
-    settings?.witness1Name ||
-      settings?.witness_1_name ||
+    signatureValue(
+      settings?.witness1Name,
+      settings?.witness_1_name,
       'Cristiani Aparecida de Fretais Pereira Gomes',
+    ),
   )
   html = html.replace(
     /{{witness1Document}}/g,
-    settings?.witness1Document || settings?.witness_1_document || '106.522.497-44',
+    signatureValue(settings?.witness1Document, settings?.witness_1_document, '106.522.497-44'),
   )
   html = html.replace(
     /{{witness2Name}}/g,
-    settings?.witness2Name || settings?.witness_2_name || 'Tatiane Cardoso Rodrigues',
+    signatureValue(settings?.witness2Name, settings?.witness_2_name, 'Tatiane Cardoso Rodrigues'),
   )
   html = html.replace(
     /{{witness2Document}}/g,
-    settings?.witness2Document || settings?.witness_2_document || '141.122.117-67',
+    signatureValue(settings?.witness2Document, settings?.witness_2_document, '141.122.117-67'),
   )
 
   return html

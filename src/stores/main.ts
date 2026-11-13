@@ -7,6 +7,15 @@ import { usersService } from '@/services/users'
 import { useRealtime } from '@/hooks/use-realtime'
 import { masterSupportService, SupportAccessSession } from '@/services/master-support'
 
+// Regra de assinaturas (decisão do usuário): distinguir "nunca configurado" de
+// "apagado de propósito". Fallback padrão só quando o campo nunca foi salvo
+// (undefined/null); string vazia salva no banco deve permanecer vazia.
+const signatureValue = (camel: any, snake: any, fallback: string): string => {
+  if (camel !== undefined && camel !== null) return String(camel)
+  if (snake !== undefined && snake !== null) return String(snake)
+  return fallback
+}
+
 export type Asset = {
   id: string
   assetNumber: string
@@ -398,13 +407,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           companyDocument: (setData as any).company_document || '',
           companyAddress: (setData as any).company_address || '',
           returnResponsibleName: (setData as any).return_responsible_name || '',
-          landlordRepName: (setData as any).landlord_rep_name || 'Marcelo da Silveira Lepre',
-          landlordRepDocument: (setData as any).landlord_rep_document || '022.862.567-05',
-          witness1Name:
-            (setData as any).witness_1_name || 'Cristiani Aparecida de Fretais Pereira Gomes',
-          witness1Document: (setData as any).witness_1_document || '106.522.497-44',
-          witness2Name: (setData as any).witness_2_name || 'Tatiane Cardoso Rodrigues',
-          witness2Document: (setData as any).witness_2_document || '141.122.117-67',
+          landlordRepName: signatureValue(
+            (setData as any).landlordRepName,
+            (setData as any).landlord_rep_name,
+            'Marcelo da Silveira Lepre',
+          ),
+          landlordRepDocument: signatureValue(
+            (setData as any).landlordRepDocument,
+            (setData as any).landlord_rep_document,
+            '022.862.567-05',
+          ),
+          witness1Name: signatureValue(
+            (setData as any).witness1Name,
+            (setData as any).witness_1_name,
+            'Cristiani Aparecida de Fretais Pereira Gomes',
+          ),
+          witness1Document: signatureValue(
+            (setData as any).witness1Document,
+            (setData as any).witness_1_document,
+            '106.522.497-44',
+          ),
+          witness2Name: signatureValue(
+            (setData as any).witness2Name,
+            (setData as any).witness_2_name,
+            'Tatiane Cardoso Rodrigues',
+          ),
+          witness2Document: signatureValue(
+            (setData as any).witness2Document,
+            (setData as any).witness_2_document,
+            '141.122.117-67',
+          ),
           categories: (setData as any).categories || [
             'Ferramentas',
             'Equipamentos Pesados',
@@ -533,13 +565,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             companyDocument: (setData as any).company_document || '',
             companyAddress: (setData as any).company_address || '',
             returnResponsibleName: (setData as any).return_responsible_name || '',
-            landlordRepName: (setData as any).landlord_rep_name || 'Marcelo da Silveira Lepre',
-            landlordRepDocument: (setData as any).landlord_rep_document || '022.862.567-05',
-            witness1Name:
-              (setData as any).witness_1_name || 'Cristiani Aparecida de Fretais Pereira Gomes',
-            witness1Document: (setData as any).witness_1_document || '106.522.497-44',
-            witness2Name: (setData as any).witness_2_name || 'Tatiane Cardoso Rodrigues',
-            witness2Document: (setData as any).witness_2_document || '141.122.117-67',
+            landlordRepName: signatureValue(
+              (setData as any).landlordRepName,
+              (setData as any).landlord_rep_name,
+              'Marcelo da Silveira Lepre',
+            ),
+            landlordRepDocument: signatureValue(
+              (setData as any).landlordRepDocument,
+              (setData as any).landlord_rep_document,
+              '022.862.567-05',
+            ),
+            witness1Name: signatureValue(
+              (setData as any).witness1Name,
+              (setData as any).witness_1_name,
+              'Cristiani Aparecida de Fretais Pereira Gomes',
+            ),
+            witness1Document: signatureValue(
+              (setData as any).witness1Document,
+              (setData as any).witness_1_document,
+              '106.522.497-44',
+            ),
+            witness2Name: signatureValue(
+              (setData as any).witness2Name,
+              (setData as any).witness_2_name,
+              'Tatiane Cardoso Rodrigues',
+            ),
+            witness2Document: signatureValue(
+              (setData as any).witness2Document,
+              (setData as any).witness_2_document,
+              '141.122.117-67',
+            ),
             categories: (setData as any).categories || [
               'Ferramentas',
               'Equipamentos Pesados',
