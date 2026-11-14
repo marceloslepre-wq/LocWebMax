@@ -361,7 +361,14 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         globalThis.__audioNoticeAt[phone] = agoraAudio
       }
 
-      if (!audioPaused) {
+      // PARADA DE EMERGÊNCIA (14/11/2026): o aviso automático de áudio está
+      // DESLIGADO. Ele foi a origem dos "três disparos simultâneos" de ontem e,
+      // mesmo com as travas, continua sendo mensagem que o cliente não pediu.
+      // O caso do áudio segue registrado em helena_pendencias para a loja
+      // responder por escrito. A Helena não fala sozinha sobre áudio.
+      var audioNoticeAtivo = false
+
+      if (audioNoticeAtivo && !audioPaused) {
         var audioNotice =
           'Recebi seu áudio! 🎧 Para eu conseguir te ajudar com o contrato, pode me responder por escrito? ' +
           'Se preferir, já avisei a equipe da loja para te retornar.'
@@ -1169,11 +1176,20 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         }
       } catch (_) {}
 
+      // PARADA DE EMERGÊNCIA (14/11/2026): a resposta "não entendi" está DESLIGADA.
+      //
+      // Ela era a fonte do spam de 10:53: o vigia helena_pending_watchdog
+      // reinjetava conversas antigas a cada 10 minutos com um id novo, e cada
+      // reinjeção caía aqui e mandava "Desculpe, não entendi" de novo. O limite
+      // de 6 horas não segurava porque `last_clarify_at` só era gravado quando
+      // a conversa já existia.
+      //
+      // Enquanto o atendimento não for reescrito, a regra é: na dúvida, SILÊNCIO.
+      // Cliente que escreve algo que a Helena não entende não recebe resposta
+      // automática — fica para a loja. Muito melhor calar do que repetir.
+      var canAskAgain = false
       if (canAskAgain) {
-        var clarifyText = looksLikeLink
-          ? 'Recebi o arquivo, mas não consegui entender o que você precisa. Pode me escrever por favor? Se for sobre o seu contrato de locação (renovação, devolução ou valor), me diga qual é o contrato que eu já te ajudo. 💙'
-          : 'Desculpe, não entendi. Pode repetir por favor? 💙\n\n' +
-            'Se for sobre o seu contrato de locação, me diz se você quer *renovar* ou *devolver*.'
+        var clarifyText = ''
 
         try {
           var apiUrlC = $secrets.get('EVOLUTION_API_URL') || ''
