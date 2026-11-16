@@ -20,13 +20,17 @@ export function extractFieldErrors(error: unknown): FieldErrors {
   return errors
 }
 
+/**
+ * Detecta falha de rede (servidor inacessível / DNS / offline),
+ * diferente de um erro de validação ou credencial do backend.
+ */
 export function isNetworkError(error: unknown): boolean {
   if (error instanceof ClientResponseError) {
-    if (error.status === 0) return true
-    const orig = error.originalError as any
-    if (orig) return true
+    return error.status === 0
   }
-  return false
+  return (
+    error instanceof TypeError || (error instanceof Error && error.message === 'Failed to fetch')
+  )
 }
 
 export function getErrorMessage(error: unknown): string {
