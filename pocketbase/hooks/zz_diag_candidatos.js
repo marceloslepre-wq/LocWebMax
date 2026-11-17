@@ -124,12 +124,20 @@ routerAdd('GET', '/backend/v1/diag/candidatos', (e) => {
             motivoPausa = 'conversa pausada (loja assumiu)'
           }
           var dono = convs[0].getString('last_owner_message_at') || ''
-          if (dono) motivoPausa = (motivoPausa ? motivoPausa + ' / ' : '') + 'loja respondeu ' + String(dono).slice(0, 16)
+          if (dono)
+            motivoPausa =
+              (motivoPausa ? motivoPausa + ' / ' : '') +
+              'loja respondeu ' +
+              String(dono).slice(0, 16)
         }
       }
     } catch (_) {}
 
-    if (motivoPausa && pausadaAte && new Date(String(pausadaAte).replace(' ', 'T')).getTime() > Date.now()) {
+    if (
+      motivoPausa &&
+      pausadaAte &&
+      new Date(String(pausadaAte).replace(' ', 'T')).getTime() > Date.now()
+    ) {
       motivo = 'PAUSADO: ' + motivoPausa
     }
 
