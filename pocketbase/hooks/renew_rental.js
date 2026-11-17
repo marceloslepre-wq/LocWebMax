@@ -238,6 +238,32 @@ routerAdd(
     rental.set('custom_contract_text', '')
     $app.save(rental)
 
+    // ─── FIM DO CICLO ANTERIOR NA COBRANÇA (corrigido em 17/11/2026) ─────────
+    // A renovação mudava expected_return_date e status, mas NÃO encerrava o
+    // registro em helena_cobranca. O cron tem uma trava anti-regressão: se o
+    // estágio já gravado é mais avançado que o de hoje, ele não cobra (para não
+    // mandar "D+4" depois de "D+7"). Consequência: contrato que estava em
+    // atraso_d7 e foi renovado voltava a ter alvo vencimento_hoje — índice 0,
+    // menor que 3 — e NUNCA recebia a cobrança do novo ciclo. Nem o D0 do novo
+    // vencimento, nem D+2, D+4, D+7. O cliente ficava mudo por 30 dias e a
+    // renovação seguinte também não era lembrada.
+    // Encerrar o registro aqui faz o cron começar um ciclo limpo.
+    try {
+      var cobsRenew = $app.findRecordsByFilter(
+        'helena_cobranca',
+        'rental_id = "' + rentalId + '" && status != "encerrado"',
+        '-created',
+        0,
+        0,
+      )
+      for (var cIdx = 0; cIdx < cobsRenew.length; cIdx++) {
+        cobsRenew[cIdx].set('stage', 'encerrado')
+        cobsRenew[cIdx].set('status', 'encerrado')
+        cobsRenew[cIdx].set('notes', 'Ciclo encerrado por renovacao do contrato.')
+        $app.save(cobsRenew[cIdx])
+      }
+    } catch (_) {}
+
     // Limpar snapshot antigo deste contrato
     try {
       var oldSnapshots = $app.findRecordsByFilter(
