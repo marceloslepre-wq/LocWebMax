@@ -100,6 +100,39 @@ routerAdd('GET', '/backend/v1/diag/candidatos', (e) => {
     else if (t === 'esgotado' && pendenciaAberta) motivo = 'esgotado com pendencia aberta'
     else motivo = 'ACIONAVEL'
 
+    // Pausa de conversa: o cron não cobra quem está com atendimento humano aberto.
+    var pausadaAte = ''
+    var motivoPausa = ''
+    try {
+      var custRec = $app.findRecordById('customers', r.getString('customer_id'))
+      var telWA = String(
+        custRec.getString('phone_cell') || custRec.getString('phone_res') || '',
+      ).replace(/\D/g, '')
+      if (telWA && telWA.substring(0, 2) !== '55') telWA = '55' + telWA
+      if (telWA) {
+        var convs = $app.findRecordsByFilter(
+          'whatsapp_conversations',
+          'phone = "' + telWA + '"',
+          '-created',
+          1,
+          0,
+        )
+        if (convs.length > 0) {
+          pausadaAte = convs[0].getString('helena_paused_until') || ''
+          var pn = pausadaAte ? String(pausadaAte).replace(' ', 'T') : ''
+          if (pn && new Date(pn).getTime() > Date.now()) {
+            motivoPausa = 'conversa pausada (loja assumiu)'
+          }
+          var dono = convs[0].getString('last_owner_message_at') || ''
+          if (dono) motivoPausa = (motivoPausa ? motivoPausa + ' / ' : '') + 'loja respondeu ' + String(dono).slice(0, 16)
+        }
+      }
+    } catch (_) {}
+
+    if (motivoPausa && pausadaAte && new Date(String(pausadaAte).replace(' ', 'T')).getTime() > Date.now()) {
+      motivo = 'PAUSADO: ' + motivoPausa
+    }
+
     if (motivo === 'ACIONAVEL') out.acionaveis++
     else out.ja_no_estagio++
 
