@@ -566,14 +566,19 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       continue
     }
 
-    // Determine target stage
+    // ─── CADÊNCIA DEFINIDA PELO MARCELO (17/11/2026): D0, D+3, D+7 ────────────
+    // Antes: D0, D+2, D+4, D+7 (quatro mensagens). Agora três, e depois disso a
+    // conversa passa para a colaboradora Cristiani, que assume o caso.
+    //
+    // O estágio é calculado pela FAIXA, não por igualdade: um contrato com 4 dias
+    // de atraso que não foi cobrado no D+3 (por pausa, falha de envio ou deploy)
+    // recebe a mensagem atrasada em vez de nunca receber. Antes, `daysOverdue === 2`
+    // fazia o contrato pular o estágio para sempre se o cron não rodasse naquele dia.
     var targetStage = null
     if (daysOverdue === 0) {
       targetStage = 'vencimento_hoje'
-    } else if (daysOverdue === 2) {
-      targetStage = 'atraso_d2'
-    } else if (daysOverdue === 4) {
-      targetStage = 'atraso_d4'
+    } else if (daysOverdue >= 3 && daysOverdue < 7) {
+      targetStage = 'atraso_d3'
     } else if (daysOverdue === 7) {
       targetStage = 'atraso_d7'
     } else if (daysOverdue > 7) {
@@ -612,6 +617,14 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         continue
       }
       if (currentStage === 'esgotado' || cobrancaRec.getString('status') === 'repassado_loja') {
+        continue
+      }
+      // Não voltar no tempo: quem já recebeu o D+7 não recebe o D+3 de novo só
+      // porque ficou mais dias em atraso.
+      var ORDEM_ESTAGIOS = ['vencimento_hoje', 'atraso_d3', 'atraso_d7', 'esgotado']
+      var idxAtual = ORDEM_ESTAGIOS.indexOf(currentStage)
+      var idxAlvo = ORDEM_ESTAGIOS.indexOf(targetStage)
+      if (idxAtual !== -1 && idxAlvo !== -1 && idxAlvo < idxAtual) {
         continue
       }
     }
@@ -716,7 +729,38 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
 
     if (targetStage === 'esgotado') {
       try {
+        // ─── CORREÇÃO (17/11/2026): pendência duplicada a cada dia ────────────
+        // Este bloco criava um registro NOVO em helena_pendencias toda vez que
+        // rodava, sem verificar se já havia um aberto. Como `daysOverdue > 7` é
+        // verdade todos os dias, o painel acumulou 72 pendências com contratos
+        // repetidos dois e três vezes (LOC-00475, LOC-00423 no print).
+        // Agora: se já existe pendência aberta deste contrato, atualiza e sai.
         var pendCol = $app.findCollectionByNameOrId('helena_pendencias')
+        var jaAberta = []
+        try {
+          jaAberta = $app.findRecordsByFilter(
+            'helena_pendencias',
+            'rental_id = "' +
+              rentalId +
+              '" && status != "resolvido" && contract_number = "' +
+              contractNumber +
+              '"',
+            '-created',
+            1,
+            0,
+          )
+        } catch (_) {}
+        if (jaAberta && jaAberta.length > 0) {
+          // Já está no painel: não cria outra. Só garante que a cobrança fique
+          // marcada como repassada.
+          if (cobrancaRec) {
+            cobrancaRec.set('stage', 'esgotado')
+            cobrancaRec.set('status', 'repassado_loja')
+            $app.save(cobrancaRec)
+          }
+          continue
+        }
+
         var pRec = new Record(pendCol)
         pRec.set('rental_id', rentalId)
         pRec.set('customer_id', rental.getString('customer_id'))
@@ -726,7 +770,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         pRec.set('status', 'pendente')
         pRec.set(
           'description',
-          'Contrato atrasado há mais de 7 dias (+7 dias). Escalonamento automático da Helena finalizado sem resposta. Repassar cobrança para equipe da loja.',
+          'Contrato atrasado há mais de 7 dias. Helena encerrou o acompanhamento automático e o caso passa para a *Cristiani* (equipe da loja).',
         )
         $app.save(pRec)
 
@@ -838,7 +882,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         ') ou se prefere fazer a DEVOLUÇÃO (' +
         devoluçãoText +
         '). Seja objetiva, simpática e humanizada.'
-    } else if (targetStage === 'atraso_d2') {
+    } else if (targetStage === 'atraso_d3') {
       stageInstruction =
         'O contrato *' +
         contractNumber +
@@ -851,28 +895,18 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         ') ou opção 2 Devolução (' +
         devoluçãoText +
         ').'
-    } else if (targetStage === 'atraso_d4') {
-      stageInstruction =
-        'O contrato *' +
-        contractNumber +
-        '*, referente ao *' +
-        itemsStr +
-        '*, ' +
-        overduePhrase +
-        ' Mensagem firme e clara: reforce a situação e apresente opção 1 Renovar (' +
-        renewalOptionsText +
-        ') ou opção 2 Devolução (' +
-        devoluçãoText +
-        ').'
     } else if (targetStage === 'atraso_d7') {
       stageInstruction =
-        'ÚLTIMO AVISO DE COBRANÇA: O contrato *' +
+        'ÚLTIMO AVISO DA HELENA: O contrato *' +
         contractNumber +
         '*, referente ao *' +
         itemsStr +
         '*, ' +
         overduePhrase +
-        ' Mensagem formal e assertiva: informe que este é o último aviso antes de o contrato ser encaminhado ao setor administrativo/jurídico. Solicite retorno urgente para renovar (' +
+        ' Mensagem formal e assertiva. Informe que, a partir de agora, o acompanhamento passa para a ' +
+        'nossa colaboradora *Cristiani*, da equipe da loja, que dará continuidade ao caso. ' +
+        'Deixe claro que o cliente NÃO deve ficar sem retorno e que a Cristiani entrará em contato. ' +
+        'Ainda ofereça as opções para quem quiser resolver agora: renovar (' +
         renewalOptionsText +
         ') ou devolução (' +
         devoluçãoText +
@@ -1079,22 +1113,42 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
 
     if (targetStage === 'atraso_d7') {
       try {
+        // ─── CORREÇÃO (17/11/2026): handoff para a Cristiani, sem duplicar ────
+        // Este bloco tinha o mesmo defeito do esgotado: criava pendência nova sem
+        // checar a existente. E a mensagem de D+7 é o ÚLTIMO ato da Helena — a
+        // partir daqui o caso é da colaboradora Cristiani, da equipe da loja.
         var pendCol2 = $app.findCollectionByNameOrId('helena_pendencias')
-        var pRec2 = new Record(pendCol2)
-        pRec2.set('rental_id', rentalId)
-        pRec2.set('customer_id', customer.id)
-        pRec2.set('customer_name', customerName)
-        pRec2.set('phone', sanitizedPhone)
-        pRec2.set('contract_number', contractNumber)
-        pRec2.set('type', 'outro')
-        pRec2.set('status', 'pendente')
-        pRec2.set(
-          'description',
-          'Contrato ' +
-            contractNumber +
-            ' atingiu a etapa final de cobrança (+7 dias). Helena enviou último aviso e o caso deve ser acompanhado pela loja.',
-        )
-        $app.save(pRec2)
+        var jaAberta2 = []
+        try {
+          jaAberta2 = $app.findRecordsByFilter(
+            'helena_pendencias',
+            'rental_id = "' +
+              rentalId +
+              '" && status != "resolvido" && contract_number = "' +
+              contractNumber +
+              '"',
+            '-created',
+            1,
+            0,
+          )
+        } catch (_) {}
+        if (!jaAberta2 || jaAberta2.length === 0) {
+          var pRec2 = new Record(pendCol2)
+          pRec2.set('rental_id', rentalId)
+          pRec2.set('customer_id', customer.id)
+          pRec2.set('customer_name', customerName)
+          pRec2.set('phone', sanitizedPhone)
+          pRec2.set('contract_number', contractNumber)
+          pRec2.set('type', 'outro')
+          pRec2.set('status', 'pendente')
+          pRec2.set(
+            'description',
+            'Contrato ' +
+              contractNumber +
+              ' recebeu o último aviso da Helena (+7 dias). A partir de agora o caso é da *Cristiani* (equipe da loja), que deve dar continuidade ao contato.',
+          )
+          $app.save(pRec2)
+        }
       } catch (_) {}
     }
   }
