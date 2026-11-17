@@ -1566,8 +1566,10 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       rentalAnalysis.itemNames.join(', ') +
       '*.' +
       (devLocationsText
-        ? '\n\nA devolução pode ser feita por você em uma de nossas lojas:\n' + devLocationsText
+        ? '\n\nA devolução pode ser feita em qualquer uma de nossas lojas — escolha a mais perto de você:\n' +
+          devLocationsText
         : '\n\nNossa equipe entrará em contato para combinar a retirada.') +
+      '\n\nPrazo de devolução: *2 dias úteis*.' +
       '\n\nEstamos aguardando a devolução para dar baixa no sistema. Qualquer dúvida, estou por aqui! 💙'
 
     sendWhatsAppText(phone, devMsg, devTenantId)
@@ -2014,7 +2016,30 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     lowerIncomingForDate === 'valeu' ||
     lowerIncomingForDate === 'entendido'
 
-  if (isShortAck) {
+  // BUG CORRIGIDO (17/11/2026): a condição descrita no comentário acima
+  // ("e já recebeu resposta da Helena nos últimos 15 minutos") NÃO existia no
+  // código. Resultado: um "ok" seco de quem nunca falou com a Helena recebia
+  // "Combinado! Qualquer dúvida estou por aqui 💙" — resposta sem sentido para o
+  // cliente e, pior, uma resposta automática a uma mensagem sem assunto, que é
+  // justamente o que a regra de silêncio proíbe.
+  //
+  // Agora o ack só é respondido quando existe uma resposta anterior da Helena
+  // nos últimos 15 min (aí o "Combinado" faz sentido: é o fecho de uma conversa
+  // que já estava em andamento). Sem isso, cai na regra normal: silêncio.
+  var houveRespostaRecente = false
+  if (conversation) {
+    try {
+      var ackLastRaw = conversation.getString('last_bot_reply_at') || ''
+      if (ackLastRaw) {
+        var ackLastMs = new Date(String(ackLastRaw).replace(' ', 'T')).getTime()
+        if (ackLastMs && Date.now() - ackLastMs < 15 * 60 * 1000) {
+          houveRespostaRecente = true
+        }
+      }
+    } catch (_) {}
+  }
+
+  if (isShortAck && houveRespostaRecente) {
     var ackText =
       'Combinado! Qualquer dúvida ou quando precisar, estou à disposição por aqui. Um abraço! 💙'
     sendWhatsAppText(phone, ackText, matchedRental ? matchedRental.getString('tenant_id') : '')
