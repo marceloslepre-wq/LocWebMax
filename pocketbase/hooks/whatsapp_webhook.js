@@ -570,11 +570,30 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
   // respondemos agora: a mensagem fica guardada e marcada como pendente. Ao fim
   // da rajada a resposta usa a mensagem MAIS RECENTE — uma resposta coerente em
   // vez de quatro menus iguais.
+  //
+  // SÓ QUE O "FIM DA RAJADA" NUNCA ACONTECIA (bug encontrado nos testes de 17/11).
+  // O bloco guardava a mensagem em `pending_reply` e devolvia `burst_grouped`,
+  // confiando que algo retomaria a conversa depois. Esse algo era o
+  // helena_pending_watchdog, DESLIGADO em 14/11 justamente por causar spam.
+  // Ninguém mais lia `pending_reply`. Efeito real: o cliente mandava "oi" e em
+  // seguida "quero renovar por 30 dias" — a primeira era respondida, a segunda,
+  // que é a que importa, era engolida para sempre. Silêncio no meio do assunto.
+  //
+  // Correção: manter o agrupamento (bom contra o menu repetido), mas não perder
+  // a mensagem. Dentro da janela, a resposta NÃO é adiada: ela é dada agora,
+  // usando a mensagem MAIS RECENTE, que é exatamente o que o agrupamento queria
+  // conseguir. Uma resposta e com o assunto certo é melhor que uma resposta
+  // atrasada que nunca chega.
   if (conversation) {
     var lastReplyRaw = conversation.getString('last_bot_reply_at') || ''
     if (lastReplyRaw) {
       var lastReplyMs = new Date(String(lastReplyRaw).replace(' ', 'T')).getTime()
-      if (lastReplyMs && Date.now() - lastReplyMs < BURST_WINDOW_SEG * 1000) {
+      var dentroDaRajada = lastReplyMs && Date.now() - lastReplyMs < BURST_WINDOW_SEG * 1000
+      // Quando o texto que chega agora é curto demais para ter assunto
+      // (ex.: "oi", "?", "e?"), ele é só continuação da rajada: guarda e não
+      // responde, para não gastar uma resposta com "oi".
+      var textoCurtoSemAssunto = String(messageText || '').trim().length <= 12
+      if (dentroDaRajada && textoCurtoSemAssunto) {
         try {
           conversation.set('last_message', messageText)
           conversation.set('pending_message', messageText)
