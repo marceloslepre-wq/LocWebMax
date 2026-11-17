@@ -64,6 +64,7 @@ routerAdd('GET', '/backend/v1/diag/candidatos', (e) => {
     var stageAtual = '(sem registro)'
     var statusCob = ''
     var contato = ''
+    var notas = ''
     try {
       var c = $app.findRecordsByFilter(
         'helena_cobranca',
@@ -76,7 +77,28 @@ routerAdd('GET', '/backend/v1/diag/candidatos', (e) => {
         stageAtual = c[0].getString('stage') || '(vazio)'
         statusCob = c[0].getString('status')
         contato = c[0].getString('last_contact_date')
+        notas = String(c[0].getString('notes') || '').slice(0, 60)
       }
+    } catch (_) {}
+
+    // O cron PARA de cobrar de propósito quando o cliente já se posicionou.
+    var temIntencao =
+      statusCob === 'intencao_renovacao' ||
+      statusCob === 'aguardando_pagamento' ||
+      notas.indexOf('intencao_renovacao') !== -1 ||
+      notas.indexOf('aguardando_pagamento') !== -1
+
+    // PIX pendente já gerado: o cron não gera outro.
+    var pixPendente = false
+    try {
+      var pays = $app.findRecordsByFilter(
+        'payments',
+        'rental_id = "' + r.id + '" && status = "Pendente"',
+        '-created',
+        1,
+        0,
+      )
+      pixPendente = pays.length > 0
     } catch (_) {}
 
     var pendenciaAberta = false
@@ -140,6 +162,9 @@ routerAdd('GET', '/backend/v1/diag/candidatos', (e) => {
     ) {
       motivo = 'PAUSADO: ' + motivoPausa
     }
+
+    if (temIntencao) motivo = 'PARA DE COBRAR: cliente ja se posicionou (' + statusCob + ')'
+    else if (pixPendente && motivo === 'ACIONAVEL') motivo = 'pix pendente ja gerado'
 
     if (motivo === 'ACIONAVEL') out.acionaveis++
     else out.ja_no_estagio++
