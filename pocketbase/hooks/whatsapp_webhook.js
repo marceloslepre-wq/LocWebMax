@@ -2216,7 +2216,24 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     })
   }
 
-  var responseText = agentResult.content || 'Desculpe, não consegui processar sua mensagem.'
+  // ─── SILÊNCIO É RESPOSTA VÁLIDA (corrigido em 17/11/2026) ───────────────────
+  // O prompt da Helena manda ficar em silêncio quando a mensagem não tem assunto
+  // identificável, e o agente devolve conteúdo vazio nesse caso. Só que aqui o
+  // vazio era trocado por "Desculpe, não consegui processar sua mensagem." — ou
+  // seja, o código violava a regra que o prompt acabara de cumprir, e o cliente
+  // recebia uma resposta constrangedora a um "bom dia".
+  // Sem conteúdo = sem mensagem. A loja assume.
+  var responseText = agentResult.content || ''
+  if (!String(responseText).trim()) {
+    $app.logger().info('whatsapp_webhook: agente optou pelo silencio, nada enviado', 'phone', phone)
+    if (conversation) {
+      try {
+        conversation.set('last_message', messageText)
+        $app.save(conversation)
+      } catch (_) {}
+    }
+    return e.json(200, { success: true, skipped: 'agent_silent' })
+  }
 
   // TRAVA ANTI-ZERO PRICE DE SEGURANÇA NA SAÍDA DO WEBHOOK:
   if (responseText.indexOf('R$ 0,00') !== -1 || responseText.indexOf('R$ 0') !== -1) {
