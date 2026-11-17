@@ -1,6 +1,7 @@
 // Diagnóstico TEMPORÁRIO (17/11/2026) — somente leitura.
-// Replica EXATAMENTE a consulta do cron de cobrança para descobrir por que ele
-// não está contatando ninguém: a consulta devolve candidatos ou está zerada?
+// Por que o cron não contata ninguém? Para cada candidato, compara o estágio-alvo
+// (calculado pela data de vencimento) com o estágio JÁ GRAVADO em helena_cobranca.
+// Se forem iguais, o cron não tem o que fazer hoje — e isso é comportamento certo.
 routerAdd('GET', '/backend/v1/diag/candidatos', (e) => {
   var q = e.requestInfo().query || {}
   if (String(q['token'] || '') !== 'diag_cand_2026') {
@@ -13,67 +14,104 @@ routerAdd('GET', '/backend/v1/diag/candidatos', (e) => {
   var dd = String(brt.getUTCDate()).padStart(2, '0')
   var hoje = yyyy + '-' + mm + '-' + dd
 
-  var out = { hoje_brt: hoje, filtro_usado: '', candidatos: 0, amostra: [] }
-
-  var filtro =
-    '(status = "Ativo" || status = "Atrasado") && actual_return_date = "" && expected_return_date <= "' +
-    hoje +
-    ' 23:59:59.999Z"'
-  out.filtro_usado = filtro
-
-  try {
-    var c = $app.findRecordsByFilter('rentals', filtro, 'expected_return_date', 0, 0)
-    out.candidatos = c.length
-    for (var i = 0; i < c.length && out.amostra.length < 15; i++) {
-      out.amostra.push({
-        contrato: c[i].getString('contract_number'),
-        status: c[i].getString('status'),
-        vencimento: c[i].getString('expected_return_date'),
-        devolvido: c[i].getString('actual_return_date'),
-      })
-    }
-  } catch (err) {
-    out.erro = err.message || String(err)
+  function diasVencido(raw) {
+    if (!raw) return null
+    var clean = String(raw).split('T')[0].split(' ')[0]
+    var parts = clean.split('-')
+    if (parts.length !== 3) return null
+    var target = Date.UTC(
+      parseInt(parts[0], 10),
+      parseInt(parts[1], 10) - 1,
+      parseInt(parts[2], 10),
+    )
+    var current = Date.UTC(yyyy, parseInt(mm, 10) - 1, parseInt(dd, 10))
+    return Math.floor((current - target) / 86400000)
   }
 
-  // Comparação: sem a condição de data
+  function alvo(dias) {
+    if (dias === 0) return 'vencimento_hoje'
+    if (dias >= 2 && dias < 4) return 'atraso_d2'
+    if (dias >= 4 && dias < 7) return 'atraso_d4'
+    if (dias === 7) return 'atraso_d7'
+    if (dias > 7) return 'esgotado'
+    return null
+  }
+
+  var out = { hoje_brt: hoje, candidatos: 0, ja_no_estagio: 0, acionaveis: 0, detalhe: [] }
+
+  var cands = []
   try {
-    var semData = $app.findRecordsByFilter(
+    cands = $app.findRecordsByFilter(
       'rentals',
-      '(status = "Ativo" || status = "Atrasado") && actual_return_date = ""',
-      '-expected_return_date',
+      '(status = "Ativo" || status = "Atrasado") && actual_return_date = "" && expected_return_date <= "' +
+        hoje +
+        ' 23:59:59.999Z"',
+      'expected_return_date',
       0,
       0,
     )
-    out.sem_condicao_data = semData.length
-    // Quantos têm expected_return_date vazio ou nulo?
-    var semVenc = 0
-    var formatos = {}
-    for (var j = 0; j < semData.length; j++) {
-      var v = semData[j].getString('expected_return_date')
-      if (!v) semVenc++
-      else {
-        var chave =
-          v.length > 19 ? 'longo:' + v.slice(0, 10) + v.slice(10, 13) : 'curto:' + v.slice(0, 10)
-        var tipo = /^\d{4}-\d{2}-\d{2}$/.test(v) ? 'data_simples' : 'com_hora'
-        formatos[tipo] = (formatos[tipo] || 0) + 1
-      }
-    }
-    out.sem_expected_return_date = semVenc
-    out.formatos = formatos
   } catch (err) {
-    out.erro2 = err.message || String(err)
+    return e.json(500, { error: err.message || String(err) })
   }
+  out.candidatos = cands.length
 
-  // settings: quantos registros? o cron pega o primeiro
-  try {
-    var s = $app.findRecordsByFilter('settings', "id != ''", '', 0, 0)
-    out.settings_registros = s.length
-    out.settings_ids = s.map(function (r) {
-      return r.id + ' tenant=' + (r.getString('tenant_id') || '(vazio)')
+  for (var i = 0; i < cands.length; i++) {
+    var r = cands[i]
+    var dias = diasVencido(r.getString('expected_return_date'))
+    var t = dias === null ? null : alvo(dias)
+    var contrato = r.getString('contract_number') || r.id
+
+    var stageAtual = '(sem registro)'
+    var statusCob = ''
+    var contato = ''
+    try {
+      var c = $app.findRecordsByFilter(
+        'helena_cobranca',
+        'rental_id = "' + r.id + '"',
+        '-created',
+        1,
+        0,
+      )
+      if (c.length > 0) {
+        stageAtual = c[0].getString('stage') || '(vazio)'
+        statusCob = c[0].getString('status')
+        contato = c[0].getString('last_contact_date')
+      }
+    } catch (_) {}
+
+    var pendenciaAberta = false
+    try {
+      var p = $app.findRecordsByFilter(
+        'helena_pendencias',
+        'rental_id = "' + r.id + '" && status != "resolvido"',
+        '-created',
+        1,
+        0,
+      )
+      pendenciaAberta = p.length > 0
+    } catch (_) {}
+
+    // Regras de skip do cron
+    var motivo = ''
+    if (t === null) motivo = 'fora do ciclo (D+1)'
+    else if (stageAtual === t) motivo = 'ja esta no estagio de hoje'
+    else if (stageAtual === 'esgotado' || statusCob === 'repassado_loja')
+      motivo = 'ja repassado a Cristiani'
+    else if (t === 'esgotado' && pendenciaAberta) motivo = 'esgotado com pendencia aberta'
+    else motivo = 'ACIONAVEL'
+
+    if (motivo === 'ACIONAVEL') out.acionaveis++
+    else out.ja_no_estagio++
+
+    out.detalhe.push({
+      contrato: contrato,
+      dias: dias,
+      alvo: t,
+      atual: stageAtual,
+      status: statusCob,
+      contato: contato,
+      motivo: motivo,
     })
-  } catch (err) {
-    out.erro3 = err.message || String(err)
   }
 
   return e.json(200, out)
