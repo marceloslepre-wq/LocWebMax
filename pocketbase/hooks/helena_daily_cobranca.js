@@ -566,19 +566,22 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       continue
     }
 
-    // ─── CADÊNCIA DEFINIDA PELO MARCELO (17/11/2026): D0, D+3, D+7 ────────────
-    // Antes: D0, D+2, D+4, D+7 (quatro mensagens). Agora três, e depois disso a
-    // conversa passa para a colaboradora Cristiani, que assume o caso.
+    // ─── CADÊNCIA: D0, D+2, D+4, D+7 ───────────────────────────────────────────
+    // Mantida a cadência original a pedido do Marcelo (17/11/2026). A tentativa
+    // de reduzir para D0/D+3/D+7 foi revertida. Depois do D+7 a Helena encerra o
+    // acompanhamento e o caso passa para a colaboradora Cristiani, da loja.
     //
-    // O estágio é calculado pela FAIXA, não por igualdade: um contrato com 4 dias
-    // de atraso que não foi cobrado no D+3 (por pausa, falha de envio ou deploy)
+    // O estágio é calculado pela FAIXA, não por igualdade: um contrato com 3 dias
+    // de atraso que não foi cobrado no D+2 (por pausa, falha de envio ou deploy)
     // recebe a mensagem atrasada em vez de nunca receber. Antes, `daysOverdue === 2`
     // fazia o contrato pular o estágio para sempre se o cron não rodasse naquele dia.
     var targetStage = null
     if (daysOverdue === 0) {
       targetStage = 'vencimento_hoje'
-    } else if (daysOverdue >= 3 && daysOverdue < 7) {
-      targetStage = 'atraso_d3'
+    } else if (daysOverdue >= 2 && daysOverdue < 4) {
+      targetStage = 'atraso_d2'
+    } else if (daysOverdue >= 4 && daysOverdue < 7) {
+      targetStage = 'atraso_d4'
     } else if (daysOverdue === 7) {
       targetStage = 'atraso_d7'
     } else if (daysOverdue > 7) {
@@ -619,9 +622,9 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       if (currentStage === 'esgotado' || cobrancaRec.getString('status') === 'repassado_loja') {
         continue
       }
-      // Não voltar no tempo: quem já recebeu o D+7 não recebe o D+3 de novo só
+      // Não voltar no tempo: quem já recebeu o D+7 não recebe o D+4 de novo só
       // porque ficou mais dias em atraso.
-      var ORDEM_ESTAGIOS = ['vencimento_hoje', 'atraso_d3', 'atraso_d7', 'esgotado']
+      var ORDEM_ESTAGIOS = ['vencimento_hoje', 'atraso_d2', 'atraso_d4', 'atraso_d7', 'esgotado']
       var idxAtual = ORDEM_ESTAGIOS.indexOf(currentStage)
       var idxAlvo = ORDEM_ESTAGIOS.indexOf(targetStage)
       if (idxAtual !== -1 && idxAlvo !== -1 && idxAlvo < idxAtual) {
@@ -882,7 +885,7 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         ') ou se prefere fazer a DEVOLUÇÃO (' +
         devoluçãoText +
         '). Seja objetiva, simpática e humanizada.'
-    } else if (targetStage === 'atraso_d3') {
+    } else if (targetStage === 'atraso_d2') {
       stageInstruction =
         'O contrato *' +
         contractNumber +
@@ -891,6 +894,19 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         '*, ' +
         overduePhrase +
         ' Comunique com gentileza mas firmeza: opção 1 Renovar (' +
+        renewalOptionsText +
+        ') ou opção 2 Devolução (' +
+        devoluçãoText +
+        ').'
+    } else if (targetStage === 'atraso_d4') {
+      stageInstruction =
+        'O contrato *' +
+        contractNumber +
+        '*, referente ao *' +
+        itemsStr +
+        '*, ' +
+        overduePhrase +
+        ' Mensagem firme e clara: reforce a situação e apresente opção 1 Renovar (' +
         renewalOptionsText +
         ') ou opção 2 Devolução (' +
         devoluçãoText +
