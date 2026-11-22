@@ -826,6 +826,16 @@ routerAdd(
               } catch (_) {}
             }
 
+            // ECO: registra este envio automático ANTES de enviar. A Evolution devolve a
+            // mensagem ao webhook como fromMe; sem este registro ela era confundida com
+            // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
+            try {
+              var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
+              ecoRec.set('phone_tail', String(sanitizedPhone || '').replace(/\D/g, '').slice(-8))
+              ecoRec.set('text_key', String(messageText || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+              ecoRec.set('origin', 'helena_cobranca_manual')
+              $app.save(ecoRec)
+            } catch (_) {}
             var res = $http.send({
               url: apiUrl.replace(/\/+$/, '') + '/message/sendText/' + targetInstance,
               method: 'POST',

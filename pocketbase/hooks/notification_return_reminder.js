@@ -285,6 +285,16 @@ cronAdd('notification_return_reminder', '0 9 * * *', () => {
     }
 
     try {
+      // ECO: registra este envio automático ANTES de enviar. A Evolution devolve a
+      // mensagem ao webhook como fromMe; sem este registro ela era confundida com
+      // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
+      try {
+        var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
+        ecoRec.set('phone_tail', String(sanitized || '').replace(/\D/g, '').slice(-8))
+        ecoRec.set('text_key', String(msg || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+        ecoRec.set('origin', 'lembrete_devolucao')
+        $app.save(ecoRec)
+      } catch (_) {}
       $http.send({
         url: apiUrl.replace(/\/+$/, '') + '/message/sendText/' + rentalInstance,
         method: 'POST',
