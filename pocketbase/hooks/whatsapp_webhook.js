@@ -149,6 +149,61 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
   // chega como fromMe. Reconhece "Helena deixa que eu continuo" (pausa por 48h) e
   // "Helena pode continuar" (retoma), gravando na conversa do cliente.
   if (fromMe) {
+    // ─── CORREÇÃO (22/11/2026): ECO DAS MENSAGENS AUTOMÁTICAS ───────────────────
+    // Tudo o que sai pelo número da loja volta para este webhook como fromMe,
+    // INCLUSIVE as mensagens que a própria Helena, a cobrança, o recibo do PIX e
+    // os avisos automáticos enviam pela Evolution. Antes, esse eco era tratado
+    // como "a loja respondeu": gravava last_owner_message_at e a Helena se
+    // pausava sozinha por 2h logo depois de falar com o cliente. Pior: um texto
+    // da Helena que contivesse "Helena" + "continua"/"pausa" virava comando.
+    // Agora: todo envio automático registra o texto em whatsapp_outgoing ANTES
+    // de enviar; se o fromMe que chegou bate com um desses registros, é eco e é
+    // ignorado. Só mensagem digitada por uma pessoa da loja pausa a Helena.
+    var ecoEvent = String(body.event || '')
+      .toLowerCase()
+      .replace(/_/g, '.')
+    if (ecoEvent && ecoEvent !== 'messages.upsert') {
+      // send.message = confirmação de envio feito pela API (nunca é uma pessoa);
+      // messages.update/ack = status de entrega. Nenhum deles é atendimento humano.
+      return e.json(200, { success: true, skipped: 'own_event_' + ecoEvent })
+    }
+    var isOwnEcho = false
+    try {
+      var ecoSince = new Date(Date.now() - 15 * 60 * 1000).toISOString().replace('T', ' ')
+      var ecoKey = String(messageText || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 200)
+      var ecoRecs = $app.findRecordsByFilter(
+        'whatsapp_outgoing',
+        'phone_tail = {:tail} && created >= {:since}',
+        '-created',
+        30,
+        0,
+        { tail: phone.slice(-8), since: ecoSince },
+      )
+      for (var ei = 0; ei < ecoRecs.length; ei++) {
+        var ecoRecTxt = ecoRecs[ei].getString('text_key')
+        var ecoRecOrigin = ecoRecs[ei].getString('origin')
+        if (ecoKey && ecoRecTxt === ecoKey) {
+          isOwnEcho = true
+          break
+        }
+        // QR Code do PIX: a imagem volta sem o texto original.
+        if (messageKind === 'imagem' && ecoRecOrigin === 'helena_midia') {
+          isOwnEcho = true
+          break
+        }
+      }
+    } catch (errEco) {
+      $app
+        .logger()
+        .warn('whatsapp_webhook: falha ao checar eco', 'err', errEco.message || String(errEco))
+    }
+    if (isOwnEcho) {
+      return e.json(200, { success: true, skipped: 'own_echo' })
+    }
+
     const cmdText = String(messageText || '')
       .toLowerCase()
       .normalize('NFD')
@@ -389,6 +444,16 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
             } catch (_) {}
           }
           if (apiUrlA && apiKeyA && instA) {
+            // ECO: registra este envio automático ANTES de enviar. A Evolution devolve a
+            // mensagem ao webhook como fromMe; sem este registro ela era confundida com
+            // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
+            try {
+              var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
+              ecoRec.set('phone_tail', String(phone || '').replace(/\D/g, '').slice(-8))
+              ecoRec.set('text_key', String(audioNotice || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+              ecoRec.set('origin', 'helena_aviso_audio')
+              $app.save(ecoRec)
+            } catch (_) {}
             $http.send({
               url: apiUrlA.replace(/\/+$/, '') + '/message/sendText/' + instA,
               method: 'POST',
@@ -1196,6 +1261,16 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
           var apiKeyC = $secrets.get('EVOLUTION_API_KEY') || ''
           var instC = receivedInstance || $secrets.get('EVOLUTION_INSTANCE') || ''
           if (apiUrlC && apiKeyC && instC) {
+            // ECO: registra este envio automático ANTES de enviar. A Evolution devolve a
+            // mensagem ao webhook como fromMe; sem este registro ela era confundida com
+            // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
+            try {
+              var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
+              ecoRec.set('phone_tail', String(phone || '').replace(/\D/g, '').slice(-8))
+              ecoRec.set('text_key', String(clarifyText || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+              ecoRec.set('origin', 'helena_esclarecimento')
+              $app.save(ecoRec)
+            } catch (_) {}
             $http.send({
               url: apiUrlC.replace(/\/+$/, '') + '/message/sendText/' + instC,
               method: 'POST',
@@ -1276,6 +1351,16 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         const baseUrl = apiUrl.replace(/\/+$/, '')
         const endpoint = baseUrl + '/message/sendText/' + instance
         try {
+          // ECO: registra este envio automático ANTES de enviar. A Evolution devolve a
+          // mensagem ao webhook como fromMe; sem este registro ela era confundida com
+          // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
+          try {
+            var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
+            ecoRec.set('phone_tail', String(phone || '').replace(/\D/g, '').slice(-8))
+            ecoRec.set('text_key', String(noticeText || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+            ecoRec.set('origin', 'helena_nao_cliente')
+            $app.save(ecoRec)
+          } catch (_) {}
           $http.send({
             url: endpoint,
             method: 'POST',
@@ -1354,6 +1439,16 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     var baseUrl = apiUrl.replace(/\/+$/, '')
     var endpoint = baseUrl + '/message/sendText/' + instanceToSend
     try {
+      // ECO: registra este envio automático ANTES de enviar. A Evolution devolve a
+      // mensagem ao webhook como fromMe; sem este registro ela era confundida com
+      // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
+      try {
+        var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
+        ecoRec.set('phone_tail', String(targetPhone || '').replace(/\D/g, '').slice(-8))
+        ecoRec.set('text_key', String(textToSend || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+        ecoRec.set('origin', 'helena_texto')
+        $app.save(ecoRec)
+      } catch (_) {}
       var res = $http.send({
         url: endpoint,
         method: 'POST',
@@ -1402,6 +1497,16 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     var endpoint = baseUrl + '/message/sendMedia/' + instanceToSend
 
     try {
+      // ECO: registra este envio automático ANTES de enviar. A Evolution devolve a
+      // mensagem ao webhook como fromMe; sem este registro ela era confundida com
+      // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
+      try {
+        var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
+        ecoRec.set('phone_tail', String(targetPhone || '').replace(/\D/g, '').slice(-8))
+        ecoRec.set('text_key', String(captionText || '[midia]' || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+        ecoRec.set('origin', 'helena_midia')
+        $app.save(ecoRec)
+      } catch (_) {}
       var res = $http.send({
         url: endpoint,
         method: 'POST',
@@ -1672,6 +1777,14 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         var contractNum = matchedRental.getString('contract_number') || matchedRental.id
         var tenantId = matchedRental.getString('tenant_id') || ''
         var rentalCustEmail = matchedCustomer ? matchedCustomer.getString('email') : ''
+        // CORREÇÃO (22/11/2026): o Mercado Pago exige e-mail do pagador para PIX.
+        // Cliente sem e-mail (ou com e-mail inválido) fazia a cobrança ser recusada
+        // e a Helena não conseguia mandar o PIX. Usa um e-mail padrão nesses casos.
+        rentalCustEmail = String(rentalCustEmail || '').trim()
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rentalCustEmail)) {
+          rentalCustEmail =
+            $secrets.get('MP_PAYER_EMAIL_PADRAO') || 'pagador.pix@hospitalhome.com.br'
+        }
         var siteUrl = $secrets.get('SITE_URL') || ''
         var notificationUrl = ''
         if (siteUrl && siteUrl.indexOf('internal') === -1) {

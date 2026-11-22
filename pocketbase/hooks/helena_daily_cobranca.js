@@ -1,4 +1,18 @@
 cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
+  // Limpeza do registro de envios (eco): só os últimos 15 minutos importam.
+  try {
+    var ecoLimite = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ')
+    var ecoVelhos = $app.findRecordsByFilter(
+      'whatsapp_outgoing',
+      'created < {:lim}',
+      '',
+      2000,
+      0,
+      { lim: ecoLimite },
+    )
+    for (var ev = 0; ev < ecoVelhos.length; ev++) $app.delete(ecoVelhos[ev])
+  } catch (_) {}
+
   // Cron 0 12 * * * UTC = 09:00:00 BRT (disparo diário às 09h)
   $app.logger().info('helena_daily_cobranca: iniciando rotina diária de cobrança da Helena')
 
@@ -1028,6 +1042,16 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     var endpoint = apiUrl.replace(/\/+$/, '') + '/message/sendText/' + targetInstance
     var sendOk = false
     try {
+      // ECO: registra este envio automático ANTES de enviar. A Evolution devolve a
+      // mensagem ao webhook como fromMe; sem este registro ela era confundida com
+      // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
+      try {
+        var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
+        ecoRec.set('phone_tail', String(sanitizedPhone || '').replace(/\D/g, '').slice(-8))
+        ecoRec.set('text_key', String(messageText || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+        ecoRec.set('origin', 'helena_cobranca')
+        $app.save(ecoRec)
+      } catch (_) {}
       var res = $http.send({
         url: endpoint,
         method: 'POST',
