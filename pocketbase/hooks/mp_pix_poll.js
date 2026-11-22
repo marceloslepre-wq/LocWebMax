@@ -55,7 +55,13 @@ cronAdd('mp_pix_poll', '*/10 * * * *', () => {
     } catch (err) {
       $app
         .logger()
-        .warn('mp_pix_poll: falha ao consultar', 'payment', pay.id, 'err', err.message || String(err))
+        .warn(
+          'mp_pix_poll: falha ao consultar',
+          'payment',
+          pay.id,
+          'err',
+          err.message || String(err),
+        )
     }
   }
 })
