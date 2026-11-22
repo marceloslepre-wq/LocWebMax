@@ -308,14 +308,9 @@ onRecordAfterUpdateSuccess((e) => {
 
   // A cobrança da Helena para este contrato está resolvida.
   try {
-    var cobr = $app.findRecordsByFilter(
-      'helena_cobranca',
-      'rental_id = {:r}',
-      '-created',
-      20,
-      0,
-      { r: rental.id },
-    )
+    var cobr = $app.findRecordsByFilter('helena_cobranca', 'rental_id = {:r}', '-created', 20, 0, {
+      r: rental.id,
+    })
     for (var c = 0; c < cobr.length; c++) {
       cobr[c].set('status', 'finalizado')
       cobr[c].set('notes', 'Renovado automaticamente pelo PIX ' + mpPaymentId)
@@ -344,7 +339,8 @@ onRecordAfterUpdateSuccess((e) => {
 
   var phoneRaw = customer.getString('phone_cell') || customer.getString('phone_res') || ''
   var sanitizedPhone = String(phoneRaw).replace(/\D/g, '')
-  if (sanitizedPhone && sanitizedPhone.substring(0, 2) !== '55') sanitizedPhone = '55' + sanitizedPhone
+  if (sanitizedPhone && sanitizedPhone.substring(0, 2) !== '55')
+    sanitizedPhone = '55' + sanitizedPhone
   if (!sanitizedPhone) return e.next()
 
   var compName = 'Hospital Home'
@@ -414,7 +410,8 @@ onRecordAfterUpdateSuccess((e) => {
   if (tId) {
     try {
       var tRec = $app.findRecordById('tenants', tId)
-      if (tRec.getString('whatsapp_instance_name')) instance = tRec.getString('whatsapp_instance_name')
+      if (tRec.getString('whatsapp_instance_name'))
+        instance = tRec.getString('whatsapp_instance_name')
     } catch (_) {}
   }
   if (!apiUrl || !apiKey || !instance) return e.next()

@@ -449,8 +449,19 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
             // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
             try {
               var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
-              ecoRec.set('phone_tail', String(phone || '').replace(/\D/g, '').slice(-8))
-              ecoRec.set('text_key', String(audioNotice || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+              ecoRec.set(
+                'phone_tail',
+                String(phone || '')
+                  .replace(/\D/g, '')
+                  .slice(-8),
+              )
+              ecoRec.set(
+                'text_key',
+                String(audioNotice || '')
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                  .slice(0, 200),
+              )
               ecoRec.set('origin', 'helena_aviso_audio')
               $app.save(ecoRec)
             } catch (_) {}
@@ -1285,8 +1296,19 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
             // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
             try {
               var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
-              ecoRec.set('phone_tail', String(phone || '').replace(/\D/g, '').slice(-8))
-              ecoRec.set('text_key', String(clarifyText || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+              ecoRec.set(
+                'phone_tail',
+                String(phone || '')
+                  .replace(/\D/g, '')
+                  .slice(-8),
+              )
+              ecoRec.set(
+                'text_key',
+                String(clarifyText || '')
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                  .slice(0, 200),
+              )
               ecoRec.set('origin', 'helena_esclarecimento')
               $app.save(ecoRec)
             } catch (_) {}
@@ -1375,8 +1397,19 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
           // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
           try {
             var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
-            ecoRec.set('phone_tail', String(phone || '').replace(/\D/g, '').slice(-8))
-            ecoRec.set('text_key', String(noticeText || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+            ecoRec.set(
+              'phone_tail',
+              String(phone || '')
+                .replace(/\D/g, '')
+                .slice(-8),
+            )
+            ecoRec.set(
+              'text_key',
+              String(noticeText || '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 200),
+            )
             ecoRec.set('origin', 'helena_nao_cliente')
             $app.save(ecoRec)
           } catch (_) {}
@@ -1463,8 +1496,19 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
       try {
         var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
-        ecoRec.set('phone_tail', String(targetPhone || '').replace(/\D/g, '').slice(-8))
-        ecoRec.set('text_key', String(textToSend || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+        ecoRec.set(
+          'phone_tail',
+          String(targetPhone || '')
+            .replace(/\D/g, '')
+            .slice(-8),
+        )
+        ecoRec.set(
+          'text_key',
+          String(textToSend || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 200),
+        )
         ecoRec.set('origin', 'helena_texto')
         $app.save(ecoRec)
       } catch (_) {}
@@ -1521,8 +1565,19 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       // uma pessoa da loja e pausava a Helena por 2h (ver whatsapp_webhook.js).
       try {
         var ecoRec = new Record($app.findCollectionByNameOrId('whatsapp_outgoing'))
-        ecoRec.set('phone_tail', String(targetPhone || '').replace(/\D/g, '').slice(-8))
-        ecoRec.set('text_key', String(captionText || '[midia]' || '').replace(/\s+/g, ' ').trim().slice(0, 200))
+        ecoRec.set(
+          'phone_tail',
+          String(targetPhone || '')
+            .replace(/\D/g, '')
+            .slice(-8),
+        )
+        ecoRec.set(
+          'text_key',
+          String(captionText || '[midia]' || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 200),
+        )
         ecoRec.set('origin', 'helena_midia')
         $app.save(ecoRec)
       } catch (_) {}
