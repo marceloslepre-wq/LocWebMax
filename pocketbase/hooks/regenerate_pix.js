@@ -62,9 +62,15 @@ routerAdd(
     }
 
     var siteUrl = $secrets.get('SITE_URL') || ''
-    if (siteUrl && siteUrl.indexOf('internal') === -1) {
-      paymentData.notification_url = siteUrl.replace(/\/+$/, '') + '/backend/v1/payments/mp-webhook'
+    // CORREÇÃO (22/11/2026): o backend publicado fica em *.internal.goskip.dev, e a
+    // antiga trava "indexOf('internal')" descartava o endereço: o Mercado Pago nunca
+    // era avisado do pagamento. Agora usa MP_WEBHOOK_URL (endereço completo do
+    // /backend/v1/payments/mp-webhook) ou, na falta dele, SITE_URL.
+    var mpWebhookUrl = $secrets.get('MP_WEBHOOK_URL') || ''
+    if (!mpWebhookUrl && /^https:\/\//.test(siteUrl)) {
+      mpWebhookUrl = siteUrl.replace(/\/+$/, '') + '/backend/v1/payments/mp-webhook'
     }
+    if (mpWebhookUrl) paymentData.notification_url = mpWebhookUrl
 
     if (payerEmail) {
       paymentData.payer = { email: payerEmail }
