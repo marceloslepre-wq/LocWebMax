@@ -258,6 +258,12 @@ onRecordAfterUpdateSuccess((e) => {
       var mMonthly = Number(mInv.get('monthly_price') || 0)
       if (mMonthly <= 0) mMonthly = Number(mInv.get('daily_price') || 0) * 30
       mensalTotal += mMonthly * (mQty - mRet)
+    } else {
+      // Item sem cadastro no Estoque: usa o preço gravado no próprio item.
+      var mItemMonthly =
+        Number(mItem.monthlyPrice || mItem.monthly_price || 0) ||
+        Number(mItem.dailyPrice || mItem.daily_price || 0) * 30
+      if (mItemMonthly > 0) mensalTotal += mItemMonthly * (mQty - mRet)
     }
     var mDigits = mCode.replace(/\D/g, '')
     for (var si = 0; si < SPECIAL_REFS.length; si++) {
