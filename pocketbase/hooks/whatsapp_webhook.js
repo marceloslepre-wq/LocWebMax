@@ -955,6 +955,8 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     var itemNames = []
     var codes = []
     var hasSpecialProduct = false
+    var specialItemNames = []
+    var commonItemNames = []
     var totalMonthlyPrice = 0
     var hasValidPrice = false
 
@@ -986,7 +988,14 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       var activeQty = qty - returnedQty
 
       var itemName =
-        rawItem.name || rawItem.description || rawItem.productName || rawItem.product_name || ''
+        rawItem.name ||
+        rawItem.description ||
+        rawItem.productName ||
+        rawItem.product_name ||
+        rawItem.nome ||
+        rawItem.produto ||
+        rawItem.descricao ||
+        ''
       var itemCode = String(rawItem.code || rawItem.sku || rawItem.product_code || '').trim()
 
       var inv = resolveInventoryProduct(itemId, itemCode, itemName)
@@ -1049,16 +1058,30 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         codes.push(itemCode)
       }
 
-      var nameOrCode = (itemCode + ' ' + itemName).toLowerCase()
+      // PRODUTO ESPECIAL (23/11/2026): só 30 dias E entrega/retirada na casa do
+      // cliente (caminhão). Compara o CÓDIGO exato (ou a ref entre parênteses no
+      // nome, ex. "Cama Hospitalar (820)"). Antes, qualquer número dentro do
+      // nome ou do código casava, e itens sem itemId eram descartados — o
+      // produto especial passava como comum e a Helena oferecia 15 dias.
+      var isThisSpecial = false
+      var codeDigits = String(itemCode || '').replace(/\D/g, '')
       for (var sIdx = 0; sIdx < SPECIAL_REFS.length; sIdx++) {
         var sRef = SPECIAL_REFS[sIdx]
-        if (itemCode === sRef || itemCode.indexOf(sRef) !== -1 || nameOrCode.indexOf(sRef) !== -1) {
-          hasSpecialProduct = true
+        if (
+          codeDigits === sRef ||
+          String(itemName).indexOf('(' + sRef + ')') !== -1 ||
+          new RegExp('(^|\\D)' + sRef + '(\\D|$)').test(String(itemCode || ''))
+        ) {
+          isThisSpecial = true
           break
         }
       }
+      if (isThisSpecial) hasSpecialProduct = true
 
-      itemNames.push((activeQty > 1 ? activeQty + ' x ' : '') + itemName)
+      var displayName = (activeQty > 1 ? activeQty + ' x ' : '') + itemName
+      itemNames.push(displayName)
+      if (isThisSpecial) specialItemNames.push(displayName)
+      else commonItemNames.push(displayName)
     }
 
     var renewal30 = Math.round(totalMonthlyPrice * 100) / 100
@@ -1068,6 +1091,8 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       itemNames: itemNames,
       codes: codes,
       hasSpecialProduct: hasSpecialProduct,
+      specialItemNames: specialItemNames,
+      commonItemNames: commonItemNames,
       hasValidPrice: hasValidPrice && renewal30 > 0,
       renewal30: renewal30,
       renewal15: renewal15,
@@ -1092,22 +1117,49 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
   const dd = String(brtDate.getUTCDate()).padStart(2, '0')
   const todayStr = yyyy + '-' + mm + '-' + dd
 
-  // 1. Check if phone matches any customer with contract expiring today or overdue
+  // 1. Localiza o cliente pelo telefone.
+  // CORREÇÃO (23/11/2026): o filtro antigo procurava os dígitos corridos
+  // ("27999654092") dentro do cadastro, mas o telefone fica gravado formatado
+  // ("(27) 99965-4092") e o WhatsApp de muitos clientes do ES chega SEM o 9º
+  // dígito ("552799654092"). O cliente não era encontrado e a Helena ficava
+  // calada (ex.: cliente respondeu "1" ao menu e ninguém respondeu).
+  // Agora: busca candidatos pelos 4 últimos dígitos e compara os 8 últimos
+  // dígitos de cada telefone, ignorando formatação, 55 e o 9º dígito.
+  var tail8 = phone.replace(/\D/g, '').slice(-8)
+  var tail4 = tail8.slice(-4)
+  var sameNumber = function (raw) {
+    var d = String(raw || '').replace(/\D/g, '')
+    return d.length >= 8 && d.slice(-8) === tail8
+  }
+  var helenaMediaOrTopic = false
+  try {
+    var topicTxt = String(messageText || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+    helenaMediaOrTopic =
+      messageKind === 'imagem' ||
+      /renov|devolv|devolu|pix|pag|venc|contrat|comprovante|recibo|boleto|valor|^\s*[12]\s*$/.test(
+        topicTxt,
+      )
+  } catch (_) {}
   try {
     const custFilter =
-      'phone_cell ~ "' +
-      phoneDigits +
-      '" || phone_res ~ "' +
-      phoneDigits +
-      '" || phone_com ~ "' +
-      phoneDigits +
-      '" || phone_cell ~ "' +
-      phone +
-      '" || phone_res ~ "' +
-      phone +
-      '"'
-    const foundCusts = $app.findRecordsByFilter('customers', custFilter, '-created', 10, 0)
-    for (let cIdx = 0; cIdx < foundCusts.length; cIdx++) {
+      'phone_cell ~ "' + tail4 + '" || phone_res ~ "' + tail4 + '" || phone_com ~ "' + tail4 + '"'
+    const foundCandidates = $app.findRecordsByFilter('customers', custFilter, '-created', 200, 0)
+    const foundCusts = []
+    for (let fc = 0; fc < foundCandidates.length; fc++) {
+      const fcRec = foundCandidates[fc]
+      if (
+        sameNumber(fcRec.getString('phone_cell')) ||
+        sameNumber(fcRec.getString('phone_res')) ||
+        sameNumber(fcRec.getString('phone_com'))
+      ) {
+        foundCusts.push(fcRec)
+      }
+    }
+    // 1a. Contrato vencendo hoje ou vencido (prioridade).
+    for (let cIdx = 0; cIdx < foundCusts.length && !isEligible; cIdx++) {
       const cCandidate = foundCusts[cIdx]
       const rFilter =
         'customer_id = "' +
@@ -1120,7 +1172,22 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
         isEligible = true
         matchedCustomer = cCandidate
         matchedRental = foundRents[0]
-        break
+      }
+    }
+    // 1b. CORREÇÃO (23/11/2026): cliente com contrato ativo que ainda NÃO venceu
+    // (acabou de renovar, quer devolver antes, mandou comprovante) também é
+    // cliente. Só entra quando a mensagem é mídia ou fala do contrato.
+    for (let cIdx2 = 0; cIdx2 < foundCusts.length && !isEligible && helenaMediaOrTopic; cIdx2++) {
+      const cCand2 = foundCusts[cIdx2]
+      const rFilter2 =
+        'customer_id = "' +
+        cCand2.id +
+        '" && (status = "Ativo" || status = "Atrasado") && actual_return_date = ""'
+      const foundRents2 = $app.findRecordsByFilter('rentals', rFilter2, 'expected_return_date', 1, 0)
+      if (foundRents2.length > 0) {
+        isEligible = true
+        matchedCustomer = cCand2
+        matchedRental = foundRents2[0]
       }
     }
   } catch (errCustCheck) {
@@ -1610,10 +1677,82 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
     }
   }
 
+  // COMPROVANTE / ARQUIVO (23/11/2026): cliente mandou imagem ou PDF. Antes caía
+  // no agente como "[cliente enviou um documento]" (ou nem chegava aqui, se o
+  // contrato já estava renovado) e ficava sem resposta. Agora: confirma o
+  // recebimento e abre pendência para a loja conferir.
+  if (messageKind === 'imagem' && matchedRental) {
+    var compNum = matchedRental.getString('contract_number') || matchedRental.id
+    var compFirst = matchedCustomer ? matchedCustomer.getString('name').split(' ')[0] : ''
+    sendWhatsAppText(
+      phone,
+      'Recebi seu arquivo' +
+        (compFirst ? ', ' + compFirst : '') +
+        '! 📎 Vou repassar para a nossa equipe conferir e, se for comprovante de pagamento, a baixa do contrato *' +
+        compNum +
+        '* é feita em seguida. 💙',
+      matchedRental.getString('tenant_id') || '',
+    )
+    try {
+      var compPend = new Record($app.findCollectionByNameOrId('helena_pendencias'))
+      compPend.set('rental_id', matchedRental.id)
+      if (matchedCustomer) compPend.set('customer_id', matchedCustomer.id)
+      compPend.set(
+        'customer_name',
+        matchedCustomer ? matchedCustomer.getString('name') : 'Contrato ' + compNum,
+      )
+      compPend.set('phone', phone)
+      compPend.set('contract_number', compNum)
+      compPend.set('type', 'outro')
+      compPend.set('status', 'pendente')
+      compPend.set(
+        'description',
+        'Cliente enviou um arquivo (provável comprovante) pelo WhatsApp. Conferir no WhatsApp da loja e dar baixa se for pagamento.',
+      )
+      $app.save(compPend)
+    } catch (errComp) {
+      $app
+        .logger()
+        .error('whatsapp_webhook: falha ao abrir pendencia de comprovante', 'err', errComp.message || String(errComp))
+    }
+    return e.json(200, { success: true, action: 'file_received' })
+  }
+
   // DETECT CLIENT RENEWAL INTENT (30 or 15 days)
   // If the client expresses intent to renew, create a dynamic Mercado Pago PIX charge!
   var rentalAnalysis = analyzeRental(matchedRental)
   var lowerMsg = String(messageText).toLowerCase().trim()
+  // CORREÇÃO (23/11/2026): resposta ao "qual prazo?". O menu de prazo numera
+  // as opções (1 = 15 dias, 2 = 30 dias), mas "2" também era lido como
+  // DEVOLUÇÃO e "1" como "renovar" de novo. Agora, se a Helena acabou de
+  // perguntar o prazo (últimas 24h), "1"/"2"/"sim" respondem ESSA pergunta.
+  try {
+    if (conversation && conversation.getString('helena_awaiting') === 'prazo') {
+      var awAt = conversation.getString('helena_awaiting_at') || ''
+      var awMs = awAt ? new Date(String(awAt).replace(' ', 'T')).getTime() : 0
+      if (awMs && Date.now() - awMs < 24 * 60 * 60 * 1000) {
+        var awSpecial = analyzeRental(matchedRental).hasSpecialProduct
+        var awAnswer = ''
+        if (lowerMsg === '1' || lowerMsg === 'opcao 1' || lowerMsg === 'opção 1') {
+          awAnswer = awSpecial ? '30' : '15'
+        } else if (lowerMsg === '2' || lowerMsg === 'opcao 2' || lowerMsg === 'opção 2') {
+          awAnswer = '30'
+        } else if (
+          awSpecial &&
+          /^(sim|s|ok|pode|pode sim|quero|isso|confirmo|pode gerar|manda)\b/.test(
+            lowerMsg.normalize('NFD').replace(/[\u0300-\u036f]/g, ''),
+          )
+        ) {
+          awAnswer = '30'
+        }
+        if (awAnswer) {
+          lowerMsg = awAnswer
+          conversation.set('helena_awaiting', '')
+          $app.save(conversation)
+        }
+      }
+    }
+  } catch (_) {}
   var isRenewalIntent = false
   var chosenDays = 30 // default
 
@@ -1672,19 +1811,24 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       '*,' +
       (rentalAnalysis.hasValidPrice && rentalAnalysis.renewal30 > 0
         ? rentalAnalysis.hasSpecialProduct
-          ? ' o prazo disponível é de *30 dias* no valor de *' +
+          ? ' a renovação é de *30 dias* no valor de *' +
             rentalAnalysis.renewal30Formatted +
-            '*.'
+            '*.\n\nPosso gerar o PIX? Responda *sim*. 💙'
           : ' você pode escolher:\n\n*1* – *15 dias* por *' +
             rentalAnalysis.renewal15Formatted +
             '*\n*2* – *30 dias* por *' +
             rentalAnalysis.renewal30Formatted +
-            '*'
-        : ' nossa equipe confirmará o valor exato do prazo escolhido (15 ou 30 dias).') +
-      '\n\nQual prazo você prefere? 💙'
+            '*\n\nResponda *1* ou *2*. 💙'
+        : rentalAnalysis.hasSpecialProduct
+          ? ' a renovação é de *30 dias*; nossa equipe confirmará o valor exato. 💙'
+          : ' nossa equipe confirmará o valor exato do prazo escolhido (15 ou 30 dias). 💙')
     sendWhatsAppText(phone, menuMsg, matchedRental ? matchedRental.getString('tenant_id') : '')
     if (conversation) {
       try {
+        if (rentalAnalysis.hasValidPrice && rentalAnalysis.renewal30 > 0) {
+          conversation.set('helena_awaiting', 'prazo')
+          conversation.set('helena_awaiting_at', new Date().toISOString().replace('T', ' '))
+        }
         conversation.set('last_message', messageText)
         $app.save(conversation)
       } catch (_) {}
@@ -1736,6 +1880,13 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       devLocationsText = devLines.join('\n')
     } catch (_) {}
 
+    var devRespName = 'Cristiani'
+    try {
+      var devSet = $app.findRecordsByFilter('settings', "id != ''", '', 1, 0)
+      if (devSet.length > 0 && devSet[0].getString('return_responsible_name')) {
+        devRespName = devSet[0].getString('return_responsible_name')
+      }
+    } catch (_) {}
     var devMsg =
       'Combinado, ' +
       (matchedCustomer ? matchedCustomer.getString('name').split(' ')[0] : '') +
@@ -1744,11 +1895,29 @@ routerAdd('POST', '/backend/v1/whatsapp/webhook', (e) => {
       '* referente a *' +
       rentalAnalysis.itemNames.join(', ') +
       '*.' +
-      (devLocationsText
-        ? '\n\nA devolução pode ser feita em qualquer uma de nossas lojas — escolha a mais perto de você:\n' +
-          devLocationsText
-        : '\n\nNossa equipe entrará em contato para combinar a retirada.') +
-      '\n\nPrazo de devolução: *2 dias úteis*.' +
+      // PRODUTO ESPECIAL (23/11/2026): camas, poltronas, guincho, cadeira de
+      // transferência etc. são retirados pela equipe na casa do cliente
+      // (caminhão). Antes a mensagem mandava o cliente levar até a loja.
+      (rentalAnalysis.specialItemNames && rentalAnalysis.specialItemNames.length > 0
+        ? '\n\n🚚 *' +
+          rentalAnalysis.specialItemNames.join(', ') +
+          '*: a retirada é feita pela nossa equipe *na sua residência*. A ' +
+          devRespName +
+          ' vai entrar em contato para agendar o dia e o horário.' +
+          (rentalAnalysis.commonItemNames && rentalAnalysis.commonItemNames.length > 0
+            ? devLocationsText
+              ? '\n\n📦 *' +
+                rentalAnalysis.commonItemNames.join(', ') +
+                '*: pode ser devolvido em qualquer uma de nossas lojas — escolha a mais perto de você:\n' +
+                devLocationsText +
+                '\n\nPrazo de devolução: *2 dias úteis*.'
+              : ''
+            : '')
+        : (devLocationsText
+            ? '\n\nA devolução pode ser feita em qualquer uma de nossas lojas — escolha a mais perto de você:\n' +
+              devLocationsText
+            : '\n\nNossa equipe entrará em contato para combinar a retirada.') +
+          '\n\nPrazo de devolução: *2 dias úteis*.') +
       '\n\nEstamos aguardando a devolução para dar baixa no sistema. Qualquer dúvida, estou por aqui! 💙'
 
     sendWhatsAppText(phone, devMsg, devTenantId)
