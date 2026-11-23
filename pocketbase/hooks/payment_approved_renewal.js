@@ -165,8 +165,15 @@ onRecordAfterUpdateSuccess((e) => {
 
   // 3. Prazo: "15 dias" na descrição vence; senão o que veio na cobrança; senão 30.
   var renewalDays = 30
-  if (/\b15\s*dias\b/.test(descNorm)) renewalDays = 15
-  else if (refData && Number(refData.days) === 15) renewalDays = 15
+  var prazoExplicito = false
+  if (/\b15\s*dias\b/.test(descNorm)) {
+    renewalDays = 15
+    prazoExplicito = true
+  } else if (/\b30\s*dias\b/.test(descNorm)) {
+    prazoExplicito = true
+  } else if (refData && Number(refData.days) === 15) {
+    renewalDays = 15
+  }
 
   var pad = function (n) {
     return String(n).padStart(2, '0')
@@ -215,6 +222,70 @@ onRecordAfterUpdateSuccess((e) => {
     rawItems = []
   }
   if (!Array.isArray(rawItems)) rawItems = []
+
+  // 3b. CORREÇÃO (23/11/2026): cobrança gerada pela tela Pagamentos não diz o
+  // prazo (descrição "Locação LOC-xxxx" e dias = 30 por padrão). Um PIX de 15
+  // dias era renovado por 30 (ex.: LOC-00704, R$ 40,00). Sem prazo escrito na
+  // descrição, o prazo é deduzido pelo VALOR: até 75% do valor mensal dos itens
+  // ativos = 15 dias; acima disso = 30. Produto especial é SEMPRE 30 dias.
+  var SPECIAL_REFS = ['820', '830', '840', '821', '831', '841', '900', '800', '730', '720', '652']
+  var mensalTotal = 0
+  var temEspecial = false
+  for (var mi = 0; mi < rawItems.length; mi++) {
+    var mItem = rawItems[mi]
+    if (!mItem || typeof mItem !== 'object') continue
+    var mId = String(mItem.itemId || mItem.item_id || mItem.inventory_id || mItem.id || '').trim()
+    if (mId === 'freight' || mId === 'frete') continue
+    var mQty = Number(mItem.qty || mItem.quantity || 1) || 1
+    var mRet = Number(mItem.returnedQty || mItem.returned_qty || 0) || 0
+    if (mRet >= mQty) continue
+    var mInv = null
+    if (mId) {
+      try {
+        mInv = $app.findRecordById('inventory', mId)
+      } catch (_) {}
+    }
+    var mCode = String(mItem.code || mItem.sku || '').trim()
+    if (!mInv && mCode && mCode !== '-') {
+      try {
+        mInv = $app.findFirstRecordByData('inventory', 'code', mCode)
+      } catch (_) {}
+    }
+    var mName = String(mItem.name || mItem.nome || mItem.description || '')
+    if (mInv) {
+      mCode = String(mInv.getString('code') || mCode).trim()
+      mName = mInv.getString('name') || mName
+      var mMonthly = Number(mInv.get('monthly_price') || 0)
+      if (mMonthly <= 0) mMonthly = Number(mInv.get('daily_price') || 0) * 30
+      mensalTotal += mMonthly * (mQty - mRet)
+    }
+    var mDigits = mCode.replace(/\D/g, '')
+    for (var si = 0; si < SPECIAL_REFS.length; si++) {
+      if (mDigits === SPECIAL_REFS[si] || mName.indexOf('(' + SPECIAL_REFS[si] + ')') !== -1) {
+        temEspecial = true
+      }
+    }
+  }
+  if (temEspecial) {
+    renewalDays = 30
+  } else if (!prazoExplicito && mensalTotal > 0) {
+    renewalDays = paidAmount <= mensalTotal * 0.75 ? 15 : 30
+  }
+  $app
+    .logger()
+    .info(
+      'renovacao_pix: prazo definido',
+      'rental',
+      rentalId,
+      'dias',
+      renewalDays,
+      'pago',
+      paidAmount,
+      'mensal',
+      mensalTotal,
+      'especial',
+      temEspecial,
+    )
 
   var preRentalState = {
     status: rental.getString('status'),

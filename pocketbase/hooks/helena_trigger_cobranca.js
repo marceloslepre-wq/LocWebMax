@@ -306,7 +306,20 @@ routerAdd(
         var itemId = String(
           rawItem.itemId || rawItem.item_id || rawItem.inventory_id || rawItem.id || '',
         )
-        if (itemId === 'freight' || itemId === '' || itemId === 'undefined') continue
+        // CORREÇÃO (23/11/2026): item importado sem itemId (só nome/código).
+        var hasNameOrCode = !!(
+          rawItem.name ||
+          rawItem.description ||
+          rawItem.descricao ||
+          rawItem.productName ||
+          rawItem.product_name ||
+          rawItem.nome ||
+          rawItem.produto ||
+          rawItem.code ||
+          rawItem.sku
+        )
+        if (itemId === 'freight' || itemId === 'frete') continue
+        if ((itemId === '' || itemId === 'undefined') && !hasNameOrCode) continue
         var qty = Number(rawItem.qty || rawItem.quantity || rawItem.quantidade || 1)
         if (!qty || qty < 1) qty = 1
         var returnedQty = Number(rawItem.returnedQty || rawItem.returned_qty || 0)
@@ -315,7 +328,14 @@ routerAdd(
         var activeQty = qty - returnedQty
 
         var itemName =
-          rawItem.name || rawItem.description || rawItem.productName || rawItem.product_name || ''
+          rawItem.name ||
+          rawItem.description ||
+          rawItem.productName ||
+          rawItem.product_name ||
+          rawItem.nome ||
+          rawItem.produto ||
+          rawItem.descricao ||
+          ''
         var itemCode = String(rawItem.code || rawItem.sku || rawItem.product_code || '').trim()
 
         var inv = resolveInventoryProduct(itemId, itemCode, itemName)
@@ -374,13 +394,14 @@ routerAdd(
           codes.push(itemCode)
         }
 
-        var nameOrCode = (itemCode + ' ' + itemName).toLowerCase()
+        // Produto especial: código exato ou ref entre parênteses no nome (23/11/2026).
+        var codeDigits = String(itemCode || '').replace(/\D/g, '')
         for (var sIdx = 0; sIdx < SPECIAL_REFS.length; sIdx++) {
           var sRef = SPECIAL_REFS[sIdx]
           if (
-            itemCode === sRef ||
-            itemCode.indexOf(sRef) !== -1 ||
-            nameOrCode.indexOf(sRef) !== -1
+            codeDigits === sRef ||
+            String(itemName).indexOf('(' + sRef + ')') !== -1 ||
+            new RegExp('(^|\\D)' + sRef + '(\\D|$)').test(String(itemCode || ''))
           ) {
             hasSpecialProduct = true
             break

@@ -410,6 +410,8 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
     var itemNames = []
     var codes = []
     var hasSpecialProduct = false
+    var specialItemNames = []
+    var commonItemNames = []
     var totalMonthlyPrice = 0
     var hasValidPrice = false
 
@@ -419,7 +421,22 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       var itemId = String(
         rawItem.itemId || rawItem.item_id || rawItem.inventory_id || rawItem.id || '',
       )
-      if (itemId === 'freight' || itemId === '' || itemId === 'undefined') continue
+      // CORREÇÃO (23/11/2026): contrato importado tem item SÓ com nome/código,
+      // sem itemId. Antes o item era descartado e a cobrança saía com "*item
+      // locado*", sem valor e sem reconhecer produto especial (ex. LOC-00117).
+      var hasNameOrCode = !!(
+        rawItem.name ||
+        rawItem.description ||
+        rawItem.descricao ||
+        rawItem.productName ||
+        rawItem.product_name ||
+        rawItem.nome ||
+        rawItem.produto ||
+        rawItem.code ||
+        rawItem.sku
+      )
+      if (itemId === 'freight' || itemId === 'frete') continue
+      if ((itemId === '' || itemId === 'undefined') && !hasNameOrCode) continue
       var qty = Number(rawItem.qty || rawItem.quantity || rawItem.quantidade || 1)
       if (!qty || qty < 1) qty = 1
       var returnedQty = Number(rawItem.returnedQty || rawItem.returned_qty || 0)
@@ -428,7 +445,14 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       var activeQty = qty - returnedQty
 
       var itemName =
-        rawItem.name || rawItem.description || rawItem.productName || rawItem.product_name || ''
+        rawItem.name ||
+        rawItem.description ||
+        rawItem.productName ||
+        rawItem.product_name ||
+        rawItem.nome ||
+        rawItem.produto ||
+        rawItem.descricao ||
+        ''
       var itemCode = String(rawItem.code || rawItem.sku || rawItem.product_code || '').trim()
 
       var inv = resolveInventoryProduct(itemId, itemCode, itemName)
@@ -490,17 +514,30 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
         codes.push(itemCode)
       }
 
-      // Checagem de produto especial por código ou texto do nome
-      var nameOrCode = (itemCode + ' ' + itemName).toLowerCase()
+      // PRODUTO ESPECIAL (23/11/2026): só 30 dias E entrega/retirada na casa do
+      // cliente (caminhão). Compara o CÓDIGO exato (ou a ref entre parênteses no
+      // nome, ex. "Cama Hospitalar (820)"). Antes, qualquer número dentro do
+      // nome ou do código casava, e itens sem itemId eram descartados — o
+      // produto especial passava como comum e a Helena oferecia 15 dias.
+      var isThisSpecial = false
+      var codeDigits = String(itemCode || '').replace(/\D/g, '')
       for (var sIdx = 0; sIdx < SPECIAL_REFS.length; sIdx++) {
         var sRef = SPECIAL_REFS[sIdx]
-        if (itemCode === sRef || itemCode.indexOf(sRef) !== -1 || nameOrCode.indexOf(sRef) !== -1) {
-          hasSpecialProduct = true
+        if (
+          codeDigits === sRef ||
+          String(itemName).indexOf('(' + sRef + ')') !== -1 ||
+          new RegExp('(^|\\D)' + sRef + '(\\D|$)').test(String(itemCode || ''))
+        ) {
+          isThisSpecial = true
           break
         }
       }
+      if (isThisSpecial) hasSpecialProduct = true
 
-      itemNames.push((activeQty > 1 ? activeQty + ' x ' : '') + itemName)
+      var displayName = (activeQty > 1 ? activeQty + ' x ' : '') + itemName
+      itemNames.push(displayName)
+      if (isThisSpecial) specialItemNames.push(displayName)
+      else commonItemNames.push(displayName)
     }
 
     var renewal30 = Math.round(totalMonthlyPrice * 100) / 100
@@ -510,6 +547,8 @@ cronAdd('helena_daily_cobranca', '0 12 * * *', () => {
       itemNames: itemNames,
       codes: codes,
       hasSpecialProduct: hasSpecialProduct,
+      specialItemNames: specialItemNames,
+      commonItemNames: commonItemNames,
       hasValidPrice: hasValidPrice && renewal30 > 0,
       renewal30: renewal30,
       renewal15: renewal15,
