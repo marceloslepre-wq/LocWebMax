@@ -39,6 +39,7 @@ export const paymentsService = {
     payer_email?: string
     description?: string
     tenant_id?: string
+    days?: number
   }) {
     const payload = { ...data }
     if (payload.payer_email !== undefined) {

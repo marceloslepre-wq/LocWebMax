@@ -79,6 +79,10 @@ export default function Payments() {
   const [rentalId, setRentalId] = useState('')
   const [amount, setAmount] = useState('')
   const [paymentType, setPaymentType] = useState('pix')
+  // Prazo da renovação (23/11/2026): sem ele, o sistema não sabia se o PIX era
+  // de 15 ou 30 dias e renovava sempre por 30.
+  const [renewalDays, setRenewalDays] = useState<'nenhum' | '15' | '30'>('nenhum')
+  const [selectedContractNum, setSelectedContractNum] = useState('')
   const [payerEmail, setPayerEmail] = useState('')
   const [description, setDescription] = useState('')
   const [rentalOpen, setRentalOpen] = useState(false)
@@ -167,6 +171,8 @@ export default function Payments() {
       )
       if (customer?.email) setPayerEmail(customer.email)
       const contractNum = rental.contractNumber || (rental as any).contract_number || id
+      setSelectedContractNum(String(contractNum))
+      setRenewalDays('nenhum')
       setDescription(`Locação ${contractNum}`)
     }
     setFieldErrors({})
@@ -216,6 +222,7 @@ export default function Payments() {
         payer_email: cleanPayerEmail || undefined,
         description,
         tenant_id: activeTenantId || undefined,
+        days: renewalDays === 'nenhum' ? undefined : Number(renewalDays),
       })
 
       if (result.duplicate) {
@@ -275,6 +282,7 @@ export default function Payments() {
       setAmount('')
       setPayerEmail('')
       setDescription('')
+      setRenewalDays('nenhum')
     } catch (err) {
       const errors = extractFieldErrors(err)
       if (Object.keys(errors).length > 0) {
@@ -786,6 +794,32 @@ export default function Payments() {
                 {fieldErrors.payer_email && (
                   <span className="text-sm text-destructive">{fieldErrors.payer_email}</span>
                 )}
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Prazo da renovação</Label>
+                <Select
+                  value={renewalDays}
+                  onValueChange={(v) => {
+                    const val = v as 'nenhum' | '15' | '30'
+                    setRenewalDays(val)
+                    const num = selectedContractNum || ''
+                    setDescription(
+                      val === 'nenhum'
+                        ? `Locação ${num}`.trim()
+                        : `Renovação ${val} dias - Locação ${num}`.trim(),
+                    )
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="nenhum">Não é renovação</SelectItem>
+                    <SelectItem value="15">Renovação de 15 dias</SelectItem>
+                    <SelectItem value="30">Renovação de 30 dias</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="grid gap-2">
